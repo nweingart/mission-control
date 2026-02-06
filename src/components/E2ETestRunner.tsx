@@ -24,6 +24,7 @@ interface LogEntry {
 interface E2EConfig {
   idea: string;
   includeDiscovery: boolean;
+  includePlanning: boolean;
   includeDeploy: boolean;
 }
 
@@ -130,6 +131,7 @@ export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
   const [config, setConfig] = useState<E2EConfig>({
     idea: DEFAULT_IDEA,
     includeDiscovery: true,
+    includePlanning: true,
     includeDeploy: false,
   });
   const [phases, setPhases] = useState<PhaseResult[]>([]);
@@ -138,6 +140,7 @@ export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
   const [totalDuration, setTotalDuration] = useState<number | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const cancelledRef = useRef(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -393,8 +396,11 @@ Do not ask questions - make reasonable decisions and proceed.`;
   async function phasePreview(): Promise<Record<string, string | number>> {
     log('Checking preview...');
 
-    // BuildScreen should have auto-navigated to preview
-    // If not, navigate manually
+    // Update project status to previewing and persist it
+    await store.getState().updateProject({ status: 'previewing' });
+    log('Project status updated to previewing');
+
+    // Navigate to preview screen if not already there
     if (store.getState().screen !== 'previewing') {
       store.getState().setScreen('previewing');
     }
@@ -413,6 +419,122 @@ Do not ask questions - make reasonable decisions and proceed.`;
 
     return {
       screenReached: 1,
+    };
+  }
+
+  async function phasePlanningV2(): Promise<Record<string, string | number>> {
+    const { currentProject } = store.getState();
+    if (!currentProject) throw new Error('No current project');
+
+    log('[Planning] Starting V2 planning session (parallel with build)...');
+
+    // Create a new planning chat
+    const chatId = store.getState().createPlanningChat('E2E Test Planning');
+    log(`[Planning] Created planning chat: ${chatId}`);
+
+    // Load backlog to get current state
+    await store.getState().loadBacklog();
+    const initialBacklogCount = store.getState().backlog.length;
+
+    // Build the planning prompt
+    const prd = await window.api.storage.getPRD(currentProject.slug);
+    const tasks = store.getState().tasks;
+    const v1Features = tasks.map((t) => `- ${t.title}`).join('\n') || 'None specified';
+
+    const planningPrompt = `You are helping plan V2 features for "${currentProject.name}".
+
+Context:
+- PRD: ${prd || 'Not available'}
+- V1 Features being built:
+${v1Features}
+
+Your role:
+1. Suggest potential V2 features based on natural extensions of the MVP
+2. When suggesting a feature to add, use this exact format:
+
+**Add to backlog?**
+Title: [Feature title]
+Description: [1-2 sentence description]
+Priority: [high/medium/low]
+
+Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exact format above for each suggestion.`;
+
+    // Send the planning message
+    log('[Planning] Sending planning request to Claude...');
+    store.getState().addPlanningMessage({ role: 'user', content: 'What V2 features should we plan for this project?' });
+
+    const planningStart = Date.now();
+    const response = await window.api.claude.chat(currentProject.projectPath, planningPrompt);
+    const planningDuration = Date.now() - planningStart;
+    checkCancelled();
+
+    if (!response || response.length < 50) {
+      throw new Error(`Planning response too short (${response?.length || 0} chars)`);
+    }
+
+    // Add assistant response to chat
+    store.getState().addPlanningMessage({ role: 'assistant', content: response });
+    log(`[Planning] Claude responded (${response.length} chars, ${(planningDuration / 1000).toFixed(1)}s)`, 'success');
+
+    // Try to extract backlog suggestions using the shared utility pattern
+    const suggestionMatches = response.match(/\*\*Add to backlog\?\*\*[\s\S]*?Title:\s*([^\n]+)/gi) || [];
+    const suggestionsFound = suggestionMatches.length;
+    log(`[Planning] Found ${suggestionsFound} backlog suggestions in response`);
+
+    // Add a test backlog item programmatically
+    store.getState().addBacklogItem({
+      title: 'E2E Test Feature',
+      description: 'A test feature added during E2E testing',
+      priority: 'medium',
+      chatId: chatId,
+    });
+    log('[Planning] Added test backlog item');
+
+    // If Claude suggested items, try to parse and add the first one
+    if (suggestionsFound > 0) {
+      const titleMatch = suggestionMatches[0].match(/Title:\s*([^\n]+)/i);
+      if (titleMatch) {
+        const title = titleMatch[1].trim();
+        // Check for description and priority in the full response
+        const suggestionBlock = response.substring(response.indexOf(suggestionMatches[0]));
+        const descMatch = suggestionBlock.match(/Description:\s*([^\n]+)/i);
+        const prioMatch = suggestionBlock.match(/Priority:\s*(high|medium|low)/i);
+
+        store.getState().addBacklogItem({
+          title: title,
+          description: descMatch ? descMatch[1].trim() : '',
+          priority: (prioMatch ? prioMatch[1].toLowerCase() : 'medium') as 'high' | 'medium' | 'low',
+          chatId: chatId,
+        });
+        log(`[Planning] Added Claude's suggestion: "${title}"`, 'success');
+      }
+    }
+
+    // Save the planning data
+    await store.getState().savePlanningChats();
+    await store.getState().saveBacklog();
+
+    // Verify persistence by reloading
+    await store.getState().loadBacklog();
+    await store.getState().loadPlanningChats();
+
+    const finalBacklogCount = store.getState().backlog.length;
+    const chatMessages = store.getState().planningChatMessages.length;
+
+    log(`[Planning] Verified: ${finalBacklogCount} backlog items, ${chatMessages} chat messages`);
+
+    if (finalBacklogCount <= initialBacklogCount) {
+      throw new Error('Backlog items were not persisted correctly');
+    }
+
+    return {
+      chatId,
+      responseChars: response.length,
+      responseDuration: Math.round(planningDuration / 1000),
+      suggestionsFound,
+      backlogItemsAdded: finalBacklogCount - initialBacklogCount,
+      totalBacklogItems: finalBacklogCount,
+      chatMessages,
     };
   }
 
@@ -475,8 +597,23 @@ Do not ask questions - make reasonable decisions and proceed.`;
       const freshStatus = await window.api.github.checkGitStatus(projectPath);
       repoUrl = (freshStatus.remoteUrl || '').replace(/\.git$/, '');
     } else {
-      const repoResult = await window.api.github.createRepoAndPush(projectPath, currentProject.slug);
-      repoUrl = repoResult.repoUrl;
+      // Use a unique name to avoid "Name already exists" error
+      const uniqueSlug = `${currentProject.slug}-${Date.now().toString(36)}`;
+      try {
+        const repoResult = await window.api.github.createRepoAndPush(projectPath, uniqueSlug);
+        repoUrl = repoResult.repoUrl;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('Name already exists')) {
+          // Extremely unlikely with timestamp, but handle it
+          log('Repo name collision, retrying with new name...', 'warn');
+          const retrySlug = `${currentProject.slug}-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 4)}`;
+          const repoResult = await window.api.github.createRepoAndPush(projectPath, retrySlug);
+          repoUrl = repoResult.repoUrl;
+        } else {
+          throw err;
+        }
+      }
     }
 
     await store.getState().updateProject({ githubRepo: repoUrl });
@@ -502,14 +639,16 @@ Do not ask questions - make reasonable decisions and proceed.`;
     setLogs([]);
     setTotalDuration(null);
     setCopied(false);
+    setMinimized(false);
 
     // Define phases
+    // Note: 'building+planning' is a special parallel phase
     const phaseList: { name: string; key: string; skip: boolean }[] = [
       { name: 'Create Project', key: 'create', skip: false },
       { name: 'Discovery Chat', key: 'discovery', skip: !config.includeDiscovery },
       { name: 'PRD Generation', key: 'prd', skip: false },
       { name: 'Task Generation', key: 'tasks', skip: false },
-      { name: 'Building', key: 'building', skip: false },
+      { name: 'Building + V2 Planning', key: 'building+planning', skip: false },
       { name: 'Preview', key: 'preview', skip: false },
       { name: 'Deploy', key: 'deploy', skip: !config.includeDeploy },
     ];
@@ -565,8 +704,31 @@ Do not ask questions - make reasonable decisions and proceed.`;
           case 'tasks':
             metrics = await phaseTaskGeneration();
             break;
-          case 'building':
-            metrics = await phaseBuilding();
+          case 'building+planning':
+            // Run building and planning in parallel (the core V2 Planning feature test)
+            if (config.includePlanning) {
+              log('Running Building and V2 Planning in PARALLEL...');
+              log('This tests the core feature: planning V2 while building V1');
+
+              const [buildMetrics, planMetrics] = await Promise.all([
+                phaseBuilding(),
+                phasePlanningV2(),
+              ]);
+
+              // Merge metrics from both phases
+              metrics = {
+                ...buildMetrics,
+                ...Object.fromEntries(
+                  Object.entries(planMetrics).map(([k, v]) => [`planning_${k}`, v])
+                ),
+                parallelExecution: 'true',
+              };
+            } else {
+              // Just run building without planning
+              log('Running Building only (planning disabled)...');
+              metrics = await phaseBuilding();
+              metrics.parallelExecution = 'false';
+            }
             break;
           case 'preview':
             metrics = await phasePreview();
@@ -618,6 +780,10 @@ Do not ask questions - make reasonable decisions and proceed.`;
     store.getState().setTasks([]);
     store.getState().setChatMessages([]);
     store.getState().clearTerminalOutput();
+
+    // Clear planning data (will be reloaded per-project)
+    store.getState().setActivePlanningChat(null);
+
     store.getState().setScreen('home');
 
     try {
@@ -745,6 +911,19 @@ Do not ask questions - make reasonable decisions and proceed.`;
               <label className="flex items-center space-x-3 cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={config.includePlanning}
+                  onChange={e => setConfig(c => ({ ...c, includePlanning: e.target.checked }))}
+                  className="w-4 h-4 rounded border-charcoal-500 bg-charcoal-950 text-terracotta-500 focus:ring-terracotta-500"
+                />
+                <div>
+                  <span className="text-sm text-charcoal-200">V2 Planning (Parallel)</span>
+                  <p className="text-[10px] text-charcoal-500">Test planning V2 features while building (two Claude sessions)</p>
+                </div>
+              </label>
+
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input
+                  type="checkbox"
                   checked={config.includeDeploy}
                   onChange={e => setConfig(c => ({ ...c, includeDeploy: e.target.checked }))}
                   className="w-4 h-4 rounded border-charcoal-500 bg-charcoal-950 text-terracotta-500 focus:ring-terracotta-500"
@@ -761,17 +940,24 @@ Do not ask questions - make reasonable decisions and proceed.`;
               <p className="text-[10px] text-charcoal-400 font-medium mb-2 uppercase tracking-wide">Test Phases</p>
               <div className="space-y-1.5">
                 {[
-                  { name: 'Create Project', active: true },
-                  { name: 'Discovery Chat', active: config.includeDiscovery },
-                  { name: 'PRD Generation', active: true },
-                  { name: 'Task Generation', active: true },
-                  { name: 'Building', active: true },
-                  { name: 'Preview', active: true },
-                  { name: 'Deploy', active: config.includeDeploy },
+                  { name: 'Create Project', active: true, parallel: false },
+                  { name: 'Discovery Chat', active: config.includeDiscovery, parallel: false },
+                  { name: 'PRD Generation', active: true, parallel: false },
+                  { name: 'Task Generation', active: true, parallel: false },
+                  { name: config.includePlanning ? 'Building + V2 Planning' : 'Building', active: true, parallel: config.includePlanning },
+                  { name: 'Preview', active: true, parallel: false },
+                  { name: 'Deploy', active: config.includeDeploy, parallel: false },
                 ].map((p, i) => (
                   <div key={i} className="flex items-center space-x-2 text-xs">
                     <div className={`w-1.5 h-1.5 rounded-full ${p.active ? 'bg-terracotta-500' : 'bg-charcoal-600'}`} />
-                    <span className={p.active ? 'text-charcoal-200' : 'text-charcoal-600 line-through'}>{p.name}</span>
+                    <span className={p.active ? 'text-charcoal-200' : 'text-charcoal-600 line-through'}>
+                      {p.name}
+                    </span>
+                    {p.parallel && (
+                      <span className="text-[9px] text-terracotta-400 bg-terracotta-500/10 px-1.5 py-0.5 rounded">
+                        parallel
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -797,6 +983,34 @@ Do not ask questions - make reasonable decisions and proceed.`;
   // ─── Running View ─────────────────────────────────────────────
 
   if (view === 'running') {
+    // Minimized view - small floating indicator
+    if (minimized) {
+      const runningPhase = phases.find(p => p.status === 'running');
+      const passedCount = phases.filter(p => p.status === 'passed').length;
+      return (
+        <div
+          className="fixed bottom-4 right-4 z-[100] bg-charcoal-900 border border-charcoal-600 rounded-lg shadow-xl shadow-black/40 p-3 cursor-pointer hover:border-charcoal-500 transition-colors"
+          onClick={() => setMinimized(false)}
+        >
+          <div className="flex items-center space-x-3">
+            <svg className="animate-spin h-4 w-4 text-terracotta-500" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <div>
+              <p className="text-xs font-medium text-cream-100">E2E Test Running</p>
+              <p className="text-[10px] text-charcoal-400">
+                {runningPhase ? runningPhase.name : `${passedCount}/${phases.length} phases`}
+              </p>
+            </div>
+            <svg className="w-4 h-4 text-charcoal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60">
         <div className="bg-charcoal-900 border border-charcoal-600 rounded-xl shadow-2xl shadow-black/40 w-[560px] max-h-[85vh] overflow-hidden flex flex-col">
@@ -809,13 +1023,24 @@ Do not ask questions - make reasonable decisions and proceed.`;
               </svg>
               <h3 className="font-semibold text-cream-100 text-sm">E2E Test Running</h3>
             </div>
-            <button
-              onClick={cancelTest}
-              disabled={!isRunning}
-              className="px-3 py-1 text-xs bg-rust-500/20 text-rust-400 rounded-lg hover:bg-rust-500/30 disabled:opacity-30 transition-colors"
-            >
-              Cancel
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setMinimized(true)}
+                className="p-1.5 text-charcoal-400 hover:text-charcoal-200 rounded transition-colors"
+                title="Minimize"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <button
+                onClick={cancelTest}
+                disabled={!isRunning}
+                className="px-3 py-1 text-xs bg-rust-500/20 text-rust-400 rounded-lg hover:bg-rust-500/30 disabled:opacity-30 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
 
           {/* Phase progress */}

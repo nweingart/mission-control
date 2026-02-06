@@ -38,6 +38,7 @@ export type Screen =
   | 'onboarding'
   | 'setup-workspace'
   | 'setup-deploy'
+  | 'setup-ready'
   | 'home'
   | 'idea'
   | 'discovery'
@@ -46,7 +47,8 @@ export type Screen =
   | 'building'
   | 'previewing'
   | 'deploying'
-  | 'complete';
+  | 'complete'
+  | 'planning-chats';
 
 export interface AppState {
   screen: Screen;
@@ -103,3 +105,20 @@ export type TaskPhase =
   | 'complete'
   | 'needs_input'
   | 'error';
+
+export interface BacklogItem {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  createdAt: string;
+  chatId?: string; // links to originating planning chat
+}
+
+export interface PlanningChat {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}

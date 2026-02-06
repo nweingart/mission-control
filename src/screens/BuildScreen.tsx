@@ -3,6 +3,8 @@ import { useAppStore } from '../store/useAppStore';
 import Terminal from '../components/Terminal';
 import ProgressBar from '../components/ProgressBar';
 import KanbanBoard from '../components/KanbanBoard';
+import BuildProgressBadge from '../components/BuildProgressBadge';
+import PlanningView from '../components/PlanningView';
 import type { Task, TaskPhase, ReviewFinding, ReviewArtifact } from '../types';
 
 function slugify(text: string): string {
@@ -148,6 +150,10 @@ export default function BuildScreen() {
     flowTestMode,
   } = useAppStore();
 
+  // Tab state for Build vs Plan V2
+  const [activeTab, setActiveTab] = useState<'build' | 'plan'>('build');
+  const [prd, setPrd] = useState<string>('');
+
   // Per-task pipeline state
   const [taskPhase, setTaskPhase] = useState<TaskPhase>('idle');
   const [currentBranch, setCurrentBranch] = useState('main');
@@ -177,6 +183,19 @@ export default function BuildScreen() {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Load PRD for planning view
+  useEffect(() => {
+    const loadPrd = async () => {
+      if (currentProject) {
+        const prdContent = await window.api.storage.getPRD(currentProject.slug);
+        if (prdContent && isMountedRef.current) {
+          setPrd(prdContent);
+        }
+      }
+    };
+    loadPrd();
+  }, [currentProject]);
 
   // Keep taskPhaseRef in sync so the exit listener always sees the current phase
   useEffect(() => {
@@ -968,18 +987,56 @@ Do not work on anything else.`;
         </div>
       </header>
 
+      {/* Tab Toggle */}
+      <div className="bg-charcoal-800 border-b border-charcoal-600 px-6">
+        <div className="flex gap-1">
+          <button
+            onClick={() => setActiveTab('build')}
+            className={`px-4 py-3 text-sm font-medium transition-colors relative ${
+              activeTab === 'build'
+                ? 'text-cream-100'
+                : 'text-charcoal-400 hover:text-charcoal-200'
+            }`}
+          >
+            <BuildProgressBadge
+              tasks={tasks}
+              currentTaskId={currentTaskId}
+              taskPhase={taskPhase}
+            />
+            {activeTab === 'build' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-terracotta-500" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('plan')}
+            className={`px-4 py-3 text-sm font-medium transition-colors relative ${
+              activeTab === 'plan'
+                ? 'text-cream-100'
+                : 'text-charcoal-400 hover:text-charcoal-200'
+            }`}
+          >
+            Plan V2
+            {activeTab === 'plan' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-terracotta-500" />
+            )}
+          </button>
+        </div>
+      </div>
+
       {/* Content */}
       <main className="flex-1 overflow-hidden flex flex-col p-6">
-        {/* Progress section */}
-        <div className="mb-6">
-          <ProgressBar
-            progress={progress}
-            label={`Building: ${completedTasks} of ${tasks.length} tasks complete`}
-          />
-        </div>
+        {activeTab === 'build' ? (
+          <>
+            {/* Progress section */}
+            <div className="mb-6">
+              <ProgressBar
+                progress={progress}
+                label={`Building: ${completedTasks} of ${tasks.length} tasks complete`}
+              />
+            </div>
 
-        {/* Current task with controls */}
-        <div className="mb-4 bg-charcoal-700 rounded-lg border border-charcoal-600 p-4">
+            {/* Current task with controls */}
+            <div className="mb-4 bg-charcoal-700 rounded-lg border border-charcoal-600 p-4">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-sm text-charcoal-300">Current Task:</span>
@@ -1073,6 +1130,17 @@ Do not work on anything else.`;
             </svg>
           </button>
         </div>
+          </>
+        ) : (
+          /* Plan V2 Tab */
+          <PlanningView
+            tasks={tasks}
+            prd={prd}
+            currentTaskId={currentTaskId}
+            taskPhase={taskPhase}
+            isBuilding={!!buildSessionId}
+          />
+        )}
       </main>
     </div>
   );

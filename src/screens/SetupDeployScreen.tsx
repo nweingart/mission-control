@@ -192,7 +192,7 @@ export default function SetupDeployScreen() {
   };
 
   const handleContinue = () => {
-    setScreen('home');
+    setScreen('setup-ready');
   };
 
   return (

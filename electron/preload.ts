@@ -64,6 +64,10 @@ contextBridge.exposeInMainWorld('api', {
     savePRD: (slug: string, prd: string) => ipcRenderer.invoke('storage:savePRD', slug, prd),
     getChatHistory: (slug: string) => ipcRenderer.invoke('storage:getChatHistory', slug),
     saveChatHistory: (slug: string, messages: unknown) => ipcRenderer.invoke('storage:saveChatHistory', slug, messages),
+    getBacklog: (slug: string) => ipcRenderer.invoke('storage:getBacklog', slug),
+    saveBacklog: (slug: string, items: unknown) => ipcRenderer.invoke('storage:saveBacklog', slug, items),
+    getPlanningChats: (slug: string) => ipcRenderer.invoke('storage:getPlanningChats', slug),
+    savePlanningChats: (slug: string, chats: unknown) => ipcRenderer.invoke('storage:savePlanningChats', slug, chats),
   },
 
   // CLI Check

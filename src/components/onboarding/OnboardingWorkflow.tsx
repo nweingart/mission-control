@@ -54,20 +54,20 @@ const STAGES = [
 
 function MockupIdea() {
   return (
-    <div className="bg-charcoal-800 rounded-lg p-4 space-y-3">
-      <div className="text-xs text-charcoal-400 font-medium uppercase tracking-wider">Your Idea</div>
-      <div className="bg-charcoal-700 rounded-lg p-3 border border-charcoal-600">
-        <div className="text-sm text-cream-100 leading-relaxed">
+    <div className="bg-charcoal-800 rounded-xl p-5 space-y-4">
+      <div className="text-sm text-charcoal-400 font-medium uppercase tracking-wider">Your Idea</div>
+      <div className="bg-charcoal-700 rounded-lg p-4 border border-charcoal-600">
+        <div className="text-base text-cream-100 leading-relaxed">
           A habit tracker app where users can set daily goals, track streaks, and see progress charts.
           It should have user auth and a clean, minimal UI...
         </div>
-        <div className="animate-pulse inline-block w-0.5 h-4 bg-terracotta-500 ml-0.5 -mb-0.5" />
+        <div className="animate-pulse inline-block w-0.5 h-5 bg-terracotta-500 ml-0.5 -mb-0.5" />
       </div>
       <div className="flex items-center justify-between">
-        <div className="bg-charcoal-700 rounded px-3 py-1.5 text-xs text-charcoal-300 border border-charcoal-600">
+        <div className="bg-charcoal-700 rounded px-4 py-2 text-sm text-charcoal-300 border border-charcoal-600">
           Project Name: <span className="text-cream-100">habit-tracker</span>
         </div>
-        <div className="bg-terracotta-500 text-charcoal-950 text-xs font-medium rounded px-3 py-1.5">Start Building</div>
+        <div className="bg-terracotta-500 text-charcoal-950 text-sm font-medium rounded px-4 py-2">Start Building</div>
       </div>
     </div>
   );
@@ -75,28 +75,28 @@ function MockupIdea() {
 
 function MockupDiscovery() {
   return (
-    <div className="bg-charcoal-800 rounded-lg p-4 space-y-2.5">
+    <div className="bg-charcoal-800 rounded-xl p-5 space-y-3">
       <div className="flex justify-end">
-        <div className="bg-terracotta-500/15 text-terracotta-200 text-xs rounded-lg px-3 py-2 max-w-[75%]">
+        <div className="bg-terracotta-500/15 text-terracotta-200 text-sm rounded-lg px-4 py-2.5 max-w-[75%]">
           I want it to have streak tracking with a calendar view
         </div>
       </div>
       <div className="flex justify-start">
-        <div className="bg-charcoal-700 text-charcoal-100 text-xs rounded-lg px-3 py-2 max-w-[75%] border border-charcoal-600">
+        <div className="bg-charcoal-700 text-charcoal-100 text-sm rounded-lg px-4 py-2.5 max-w-[75%] border border-charcoal-600">
           Great idea! Should streaks reset if you miss a day, or allow a "grace day" to keep motivation up?
         </div>
       </div>
       <div className="flex justify-end">
-        <div className="bg-terracotta-500/15 text-terracotta-200 text-xs rounded-lg px-3 py-2 max-w-[75%]">
+        <div className="bg-terracotta-500/15 text-terracotta-200 text-sm rounded-lg px-4 py-2.5 max-w-[75%]">
           Grace day sounds good — let's allow 1 skip per week
         </div>
       </div>
       <div className="flex justify-start">
-        <div className="bg-charcoal-700 text-charcoal-100 text-xs rounded-lg px-3 py-2 max-w-[75%] border border-charcoal-600">
-          <div className="flex items-center space-x-1">
-            <div className="w-1 h-1 bg-charcoal-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-            <div className="w-1 h-1 bg-charcoal-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-            <div className="w-1 h-1 bg-charcoal-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        <div className="bg-charcoal-700 text-charcoal-100 text-sm rounded-lg px-4 py-2.5 max-w-[75%] border border-charcoal-600">
+          <div className="flex items-center space-x-1.5">
+            <div className="w-1.5 h-1.5 bg-charcoal-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-1.5 h-1.5 bg-charcoal-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-1.5 h-1.5 bg-charcoal-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
           </div>
         </div>
       </div>
@@ -106,12 +106,12 @@ function MockupDiscovery() {
 
 function MockupPRD() {
   return (
-    <div className="bg-charcoal-800 rounded-lg p-4 space-y-2">
-      <div className="flex items-center space-x-2 mb-1">
-        <div className="w-4 h-4 rounded bg-terracotta-500/20 flex items-center justify-center">
-          <svg className="w-2.5 h-2.5 text-terracotta-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+    <div className="bg-charcoal-800 rounded-xl p-5 space-y-3">
+      <div className="flex items-center space-x-2.5 mb-2">
+        <div className="w-6 h-6 rounded bg-terracotta-500/20 flex items-center justify-center">
+          <svg className="w-3.5 h-3.5 text-terracotta-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
         </div>
-        <span className="text-xs font-medium text-cream-100">Product Requirements Document</span>
+        <span className="text-sm font-medium text-cream-100">Product Requirements Document</span>
       </div>
       {[
         { label: 'Overview', text: 'A habit tracking application with daily goals...' },
@@ -119,9 +119,9 @@ function MockupPRD() {
         { label: 'Tech Stack', text: 'Next.js 14, Supabase Auth, Tailwind CSS...' },
         { label: 'Data Model', text: 'Users → Habits → DailyEntries → Streaks' },
       ].map((section) => (
-        <div key={section.label} className="bg-charcoal-700 rounded px-3 py-2 border border-charcoal-600">
-          <div className="text-[10px] text-terracotta-500 font-semibold uppercase tracking-wider">{section.label}</div>
-          <div className="text-xs text-charcoal-200 mt-0.5">{section.text}</div>
+        <div key={section.label} className="bg-charcoal-700 rounded-lg px-4 py-2.5 border border-charcoal-600">
+          <div className="text-xs text-terracotta-500 font-semibold uppercase tracking-wider">{section.label}</div>
+          <div className="text-sm text-charcoal-200 mt-1">{section.text}</div>
         </div>
       ))}
     </div>
@@ -137,16 +137,16 @@ function MockupPlanning() {
     { done: false, text: 'Add calendar view component' },
   ];
   return (
-    <div className="bg-charcoal-800 rounded-lg p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-cream-100">Task Breakdown</span>
-        <span className="text-[10px] text-charcoal-400">2/5 complete</span>
+    <div className="bg-charcoal-800 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-medium text-cream-100">Task Breakdown</span>
+        <span className="text-xs text-charcoal-400">2/5 complete</span>
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {tasks.map((t, i) => (
-          <div key={i} className={`flex items-center space-x-2 rounded px-2.5 py-1.5 text-xs ${t.done ? 'bg-sage-500/10 border border-sage-500/20' : 'bg-charcoal-700 border border-charcoal-600'}`}>
-            <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${t.done ? 'bg-sage-500 border-sage-500' : 'border-charcoal-400'}`}>
-              {t.done && <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+          <div key={i} className={`flex items-center space-x-3 rounded-lg px-3.5 py-2.5 text-sm ${t.done ? 'bg-sage-500/10 border border-sage-500/20' : 'bg-charcoal-700 border border-charcoal-600'}`}>
+            <div className={`w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${t.done ? 'bg-sage-500 border-sage-500' : 'border-charcoal-400'}`}>
+              {t.done && <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
             </div>
             <span className={t.done ? 'text-charcoal-400 line-through' : 'text-charcoal-100'}>{t.text}</span>
           </div>
@@ -158,23 +158,23 @@ function MockupPlanning() {
 
 function MockupBuilding() {
   return (
-    <div className="bg-charcoal-800 rounded-lg p-4 space-y-2">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium text-cream-100">Building: Create habit CRUD API routes</span>
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-terracotta-500/15 text-terracotta-400">
-          <svg className="animate-spin h-2.5 w-2.5 mr-1" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+    <div className="bg-charcoal-800 rounded-xl p-5 space-y-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium text-cream-100">Building: Create habit CRUD API routes</span>
+        <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-terracotta-500/15 text-terracotta-400">
+          <svg className="animate-spin h-3 w-3 mr-1.5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
           In progress
         </span>
       </div>
-      <div className="bg-charcoal-950 rounded p-2.5 font-mono text-[11px] leading-relaxed">
+      <div className="bg-charcoal-950 rounded-lg p-3.5 font-mono text-sm leading-relaxed">
         <div><span className="text-sage-400">+</span> <span className="text-charcoal-300">app/api/habits/route.ts</span></div>
         <div><span className="text-sage-400">+</span> <span className="text-charcoal-300">app/api/habits/[id]/route.ts</span></div>
         <div><span className="text-sage-400">+</span> <span className="text-charcoal-300">lib/habits.ts</span></div>
-        <div className="mt-1.5 text-charcoal-400">3 files changed, 147 insertions(+)</div>
+        <div className="mt-2 text-charcoal-400">3 files changed, 147 insertions(+)</div>
       </div>
-      <div className="flex items-center space-x-1.5">
-        <div className="w-2 h-2 rounded-full bg-sage-500" />
-        <span className="text-[10px] text-charcoal-300">Code review passed — auto-merging to main</span>
+      <div className="flex items-center space-x-2">
+        <div className="w-2.5 h-2.5 rounded-full bg-sage-500" />
+        <span className="text-xs text-charcoal-300">Code review passed — auto-merging to main</span>
       </div>
     </div>
   );
@@ -182,40 +182,40 @@ function MockupBuilding() {
 
 function MockupPreview() {
   return (
-    <div className="bg-charcoal-800 rounded-lg p-4 space-y-2">
-      <div className="bg-charcoal-950 rounded-lg overflow-hidden border border-charcoal-600">
+    <div className="bg-charcoal-800 rounded-xl p-5 space-y-3">
+      <div className="bg-charcoal-950 rounded-xl overflow-hidden border border-charcoal-600">
         {/* Browser chrome */}
-        <div className="bg-charcoal-900 px-3 py-1.5 flex items-center space-x-2">
-          <div className="flex space-x-1">
-            <div className="w-2 h-2 rounded-full bg-red-500/60" />
-            <div className="w-2 h-2 rounded-full bg-yellow-500/60" />
-            <div className="w-2 h-2 rounded-full bg-green-500/60" />
+        <div className="bg-charcoal-900 px-4 py-2 flex items-center space-x-3">
+          <div className="flex space-x-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
+            <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
+            <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
           </div>
-          <div className="flex-1 bg-charcoal-800 rounded px-2 py-0.5 text-[10px] text-charcoal-400 text-center">
+          <div className="flex-1 bg-charcoal-800 rounded px-3 py-1 text-xs text-charcoal-400 text-center">
             localhost:3000
           </div>
         </div>
         {/* App preview */}
-        <div className="p-3 space-y-2">
-          <div className="text-xs font-semibold text-cream-100">My Habits</div>
-          <div className="flex space-x-2">
+        <div className="p-4 space-y-3">
+          <div className="text-sm font-semibold text-cream-100">My Habits</div>
+          <div className="flex space-x-3">
             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => (
               <div key={d} className="flex flex-col items-center">
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] ${i < 4 ? 'bg-sage-500 text-white' : 'bg-charcoal-700 text-charcoal-400'}`}>
-                  {i < 4 && <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${i < 4 ? 'bg-sage-500 text-white' : 'bg-charcoal-700 text-charcoal-400'}`}>
+                  {i < 4 && <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
                 </div>
-                <span className="text-[8px] text-charcoal-400 mt-0.5">{d}</span>
+                <span className="text-[10px] text-charcoal-400 mt-1">{d}</span>
               </div>
             ))}
           </div>
-          <div className="bg-charcoal-700 rounded px-2 py-1 text-[10px] text-sage-400 border border-charcoal-600">
+          <div className="bg-charcoal-700 rounded-lg px-3 py-2 text-xs text-sage-400 border border-charcoal-600">
             4-day streak! Keep it up
           </div>
         </div>
       </div>
-      <div className="flex items-center space-x-1.5">
-        <div className="w-2 h-2 rounded-full bg-sage-500" />
-        <span className="text-[10px] text-charcoal-300">Dev server running on port 3000</span>
+      <div className="flex items-center space-x-2">
+        <div className="w-2.5 h-2.5 rounded-full bg-sage-500" />
+        <span className="text-xs text-charcoal-300">Dev server running on port 3000</span>
       </div>
     </div>
   );
@@ -223,25 +223,25 @@ function MockupPreview() {
 
 function MockupDeploy() {
   return (
-    <div className="bg-charcoal-800 rounded-lg p-4 space-y-3">
+    <div className="bg-charcoal-800 rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-center">
-        <div className="w-12 h-12 rounded-full bg-sage-500/20 flex items-center justify-center">
-          <svg className="w-6 h-6 text-sage-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-16 h-16 rounded-full bg-sage-500/20 flex items-center justify-center">
+          <svg className="w-8 h-8 text-sage-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
       </div>
       <div className="text-center">
-        <div className="text-xs font-semibold text-cream-100">Deployed!</div>
+        <div className="text-base font-semibold text-cream-100">Deployed!</div>
       </div>
-      <div className="space-y-1.5">
-        <div className="bg-charcoal-700 rounded px-3 py-1.5 flex items-center justify-between border border-charcoal-600">
-          <span className="text-[10px] text-charcoal-300">GitHub</span>
-          <span className="text-[10px] text-sage-400">github.com/you/habit-tracker</span>
+      <div className="space-y-2">
+        <div className="bg-charcoal-700 rounded-lg px-4 py-2.5 flex items-center justify-between border border-charcoal-600">
+          <span className="text-xs text-charcoal-300">GitHub</span>
+          <span className="text-xs text-sage-400">github.com/you/habit-tracker</span>
         </div>
-        <div className="bg-charcoal-700 rounded px-3 py-1.5 flex items-center justify-between border border-charcoal-600">
-          <span className="text-[10px] text-charcoal-300">Live URL</span>
-          <span className="text-[10px] text-sage-400">habit-tracker.vercel.app</span>
+        <div className="bg-charcoal-700 rounded-lg px-4 py-2.5 flex items-center justify-between border border-charcoal-600">
+          <span className="text-xs text-charcoal-300">Live URL</span>
+          <span className="text-xs text-sage-400">habit-tracker.vercel.app</span>
         </div>
       </div>
     </div>
@@ -285,47 +285,47 @@ export default function OnboardingWorkflow({ onNext, onBack }: OnboardingWorkflo
   const Mockup = MOCKUP_MAP[stage.mockup];
 
   return (
-    <div className="max-w-lg w-full">
+    <div className="max-w-2xl w-full">
       {/* Header */}
-      <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold text-cream-100 mb-1">How It Works</h2>
-        <p className="text-charcoal-300 text-sm">7 stages from idea to live app</p>
+      <div className="text-center mb-8">
+        <h2 className="text-3xl font-bold text-cream-100 mb-2">How It Works</h2>
+        <p className="text-charcoal-300 text-base">7 stages from idea to live app</p>
       </div>
 
       {/* Stage nav dots */}
-      <div className="flex items-center justify-center space-x-1.5 mb-5">
+      <div className="flex items-center justify-center space-x-2.5 mb-8">
         {STAGES.map((s, i) => (
           <button
             key={i}
             onClick={() => goTo(i)}
-            className={`h-1.5 rounded-full transition-all duration-300 ${
-              i === active ? 'w-6 bg-terracotta-500' : 'w-1.5 bg-charcoal-600 hover:bg-charcoal-500'
+            className={`h-2.5 rounded-full transition-all duration-300 ${
+              i === active ? 'w-8 bg-terracotta-500' : 'w-2.5 bg-charcoal-600 hover:bg-charcoal-500'
             }`}
           />
         ))}
       </div>
 
       {/* Current stage */}
-      <div className="mb-4">
-        <div className="flex items-center space-x-2 mb-3">
-          <div className="w-6 h-6 rounded-full bg-terracotta-500/20 text-terracotta-500 flex items-center justify-center text-xs font-bold">
+      <div className="mb-6">
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-terracotta-500/20 text-terracotta-500 flex items-center justify-center text-lg font-bold">
             {active + 1}
           </div>
           <div>
-            <div className="text-sm font-semibold text-cream-100">{stage.title}</div>
-            <div className="text-xs text-charcoal-400">{stage.subtitle}</div>
+            <div className="text-lg font-semibold text-cream-100">{stage.title}</div>
+            <div className="text-sm text-charcoal-400">{stage.subtitle}</div>
           </div>
         </div>
-        <p className="text-sm text-charcoal-300 mb-3">{stage.description}</p>
+        <p className="text-base text-charcoal-300 mb-5">{stage.description}</p>
 
         {/* Mockup */}
-        <div className="bg-charcoal-950 rounded-xl border border-charcoal-600 p-3 shadow-lg shadow-black/30">
+        <div className="bg-charcoal-950 rounded-2xl border border-charcoal-600 p-5 shadow-xl shadow-black/40">
           <Mockup />
         </div>
       </div>
 
       {/* Progress bar */}
-      <div className="h-0.5 bg-charcoal-700 rounded-full mb-6 overflow-hidden">
+      <div className="h-1 bg-charcoal-700 rounded-full mb-8 overflow-hidden">
         <div
           className="h-full bg-terracotta-500/50 transition-all duration-300"
           style={{ width: `${((active + 1) / STAGES.length) * 100}%` }}
@@ -336,19 +336,19 @@ export default function OnboardingWorkflow({ onNext, onBack }: OnboardingWorkflo
       <div className="flex justify-between items-center">
         <button
           onClick={handleBack}
-          className="flex items-center space-x-2 px-4 py-2 text-charcoal-300 hover:text-cream-100 transition-colors"
+          className="flex items-center space-x-2 px-5 py-2.5 text-charcoal-300 hover:text-cream-100 transition-colors text-base"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
           <span>Back</span>
         </button>
         <button
           onClick={handleNext}
-          className="flex items-center space-x-2 px-6 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors font-medium"
+          className="flex items-center space-x-2 px-8 py-2.5 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors font-medium text-base"
         >
           <span>{active < STAGES.length - 1 ? 'Next' : 'Continue'}</span>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </button>

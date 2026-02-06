@@ -8,6 +8,7 @@ import E2ETestRunner from './components/E2ETestRunner';
 import HomeScreen from './screens/HomeScreen';
 import SetupWorkspaceScreen from './screens/SetupWorkspaceScreen';
 import SetupDeployScreen from './screens/SetupDeployScreen';
+import SetupReadyScreen from './screens/SetupReadyScreen';
 import IdeaScreen from './screens/IdeaScreen';
 import DiscoveryScreen from './screens/DiscoveryScreen';
 import PRDReviewScreen from './screens/PRDReviewScreen';
@@ -16,6 +17,7 @@ import BuildScreen from './screens/BuildScreen';
 import PreviewScreen from './screens/PreviewScreen';
 import DeployScreen from './screens/DeployScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
+import PlanningChatsScreen from './screens/PlanningChatsScreen';
 
 function App() {
   const { screen, initialize, isLoading, error } = useAppStore();
@@ -88,6 +90,8 @@ function App() {
         return <SetupWorkspaceScreen />;
       case 'setup-deploy':
         return <SetupDeployScreen />;
+      case 'setup-ready':
+        return <SetupReadyScreen />;
       case 'home':
         return <HomeScreen />;
       case 'idea':
@@ -106,6 +110,8 @@ function App() {
         return <DeployScreen />;
       case 'complete':
         return <DeployScreen />;
+      case 'planning-chats':
+        return <PlanningChatsScreen />;
       default:
         return <HomeScreen />;
     }

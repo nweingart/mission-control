@@ -59,6 +59,8 @@ export default function DeployScreen() {
   // GitHub state
   const [githubRepoUrl, setGithubRepoUrl] = useState(currentProject?.githubRepo || '');
   const [pushMessage, setPushMessage] = useState('');
+  const [customRepoName, setCustomRepoName] = useState('');
+  const [showRepoNameInput, setShowRepoNameInput] = useState(false);
 
   const isMountedRef = useRef(true);
 
@@ -184,13 +186,27 @@ export default function DeployScreen() {
         setProgress(35);
         setStatusMessage('Creating GitHub repository...');
 
-        const repoResult = await window.api.github.createRepoAndPush(
-          currentProject.projectPath,
-          currentProject.slug
-        );
-        if (!isMountedRef.current) return;
-
-        newRepoUrl = repoResult.repoUrl;
+        const repoName = customRepoName || currentProject.slug;
+        try {
+          const repoResult = await window.api.github.createRepoAndPush(
+            currentProject.projectPath,
+            repoName
+          );
+          if (!isMountedRef.current) return;
+          newRepoUrl = repoResult.repoUrl;
+        } catch (repoErr) {
+          const errMsg = repoErr instanceof Error ? repoErr.message : String(repoErr);
+          if (errMsg.includes('Name already exists') || errMsg.includes('already exists on this account')) {
+            // Show repo name input so user can choose a different name
+            setShowRepoNameInput(true);
+            setCustomRepoName(repoName);
+            setError(`Repository "${repoName}" already exists on your GitHub account. Please choose a different name.`);
+            setDeployStep('setup');
+            setIsDeploying(false);
+            return;
+          }
+          throw repoErr;
+        }
       }
 
       setGithubRepoUrl(newRepoUrl);
@@ -300,6 +316,7 @@ export default function DeployScreen() {
     setStatusMessage('');
     setDeployStep('setup');
     setIsDeploying(false);
+    // Don't clear customRepoName or showRepoNameInput - user may want to keep editing
   };
 
   // ──────────────────────────────────────────────
@@ -377,6 +394,28 @@ export default function DeployScreen() {
                   <li>Future changes: just push to GitHub!</li>
                 </ol>
               </div>
+
+              {/* Repo name input - shown when name collision occurs */}
+              {showRepoNameInput && (
+                <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-4 mb-6">
+                  <h3 className="font-medium text-cream-100 mb-4">GitHub Repository Name</h3>
+                  <div>
+                    <label className="block text-sm font-medium text-charcoal-100 mb-1">
+                      Repository Name
+                    </label>
+                    <input
+                      type="text"
+                      value={customRepoName}
+                      onChange={(e) => setCustomRepoName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                      placeholder={currentProject.slug}
+                      className="w-full px-3 py-2 border border-charcoal-500 rounded-lg focus:ring-2 focus:ring-terracotta-500 focus:border-terracotta-500 bg-charcoal-800 text-cream-100 font-mono"
+                    />
+                    <p className="text-xs text-charcoal-300 mt-1">
+                      Choose a unique name for your GitHub repository
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-4">
                 <h3 className="font-medium text-cream-100 mb-4">Supabase Configuration</h3>

@@ -126,6 +126,10 @@ ipcMain.handle('storage:getPRD', (_, slug) => storageService.getPRD(slug));
 ipcMain.handle('storage:savePRD', (_, slug, prd) => storageService.savePRD(slug, prd));
 ipcMain.handle('storage:getChatHistory', (_, slug) => storageService.getChatHistory(slug));
 ipcMain.handle('storage:saveChatHistory', (_, slug, messages) => storageService.saveChatHistory(slug, messages));
+ipcMain.handle('storage:getBacklog', (_, slug) => storageService.getBacklog(slug));
+ipcMain.handle('storage:saveBacklog', (_, slug, items) => storageService.saveBacklog(slug, items));
+ipcMain.handle('storage:getPlanningChats', (_, slug) => storageService.getPlanningChats(slug));
+ipcMain.handle('storage:savePlanningChats', (_, slug, chats) => storageService.savePlanningChats(slug, chats));
 
 // IPC Handlers - CLI Check
 ipcMain.handle('cli:checkAll', () => cliCheckService.checkAll());

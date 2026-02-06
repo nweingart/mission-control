@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Screen, Project, CLIStatus, Task, ChatMessage } from '../types';
+import type { Screen, Project, CLIStatus, Task, ChatMessage, BacklogItem, PlanningChat } from '../types';
 
 // Maximum number of terminal output lines to keep in memory
 const MAX_TERMINAL_LINES = 5000;
@@ -17,6 +17,12 @@ interface AppState {
   terminalOutput: string[];
   buildSessionId: string | null;
   flowTestMode: boolean;
+
+  // Planning V2 state
+  backlog: BacklogItem[];
+  planningChats: PlanningChat[];
+  activePlanningChatId: string | null;
+  planningChatMessages: ChatMessage[];
 
   // Actions
   initialize: () => Promise<void>;
@@ -61,6 +67,23 @@ interface AppState {
   // Flow test mode
   setFlowTestMode: (mode: boolean) => void;
 
+  // Backlog actions
+  addBacklogItem: (item: Omit<BacklogItem, 'id' | 'createdAt'>) => void;
+  updateBacklogItem: (id: string, updates: Partial<BacklogItem>) => void;
+  removeBacklogItem: (id: string) => void;
+  saveBacklog: () => Promise<void>;
+  loadBacklog: () => Promise<void>;
+
+  // Planning chat actions
+  createPlanningChat: (title?: string) => string;
+  setActivePlanningChat: (chatId: string | null) => void;
+  addPlanningMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
+  deletePlanningChat: (chatId: string) => void;
+  renamePlanningChat: (chatId: string, newTitle: string) => void;
+  savePlanningChats: () => Promise<void>;
+  loadPlanningChats: () => Promise<void>;
+  goToPlanningChats: () => void;
+
   // Navigation helpers
   goToHome: () => void;
   startNewProject: () => void;
@@ -86,6 +109,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   terminalOutput: [],
   buildSessionId: null,
   flowTestMode: false,
+
+  // Planning V2 initial state
+  backlog: [],
+  planningChats: [],
+  activePlanningChatId: null,
+  planningChatMessages: [],
 
   setFlowTestMode: (mode) => set({ flowTestMode: mode }),
 
@@ -355,6 +384,167 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearTerminalOutput: () => set({ terminalOutput: [] }),
 
   setBuildSessionId: (sessionId) => set({ buildSessionId: sessionId }),
+
+  // Backlog actions
+  addBacklogItem: (item) => {
+    const newItem: BacklogItem = {
+      ...item,
+      id: `backlog-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => ({ backlog: [...state.backlog, newItem] }));
+  },
+
+  updateBacklogItem: (id, updates) => {
+    set((state) => ({
+      backlog: state.backlog.map((item) =>
+        item.id === id ? { ...item, ...updates } : item
+      ),
+    }));
+  },
+
+  removeBacklogItem: (id) => {
+    set((state) => ({
+      backlog: state.backlog.filter((item) => item.id !== id),
+    }));
+  },
+
+  saveBacklog: async () => {
+    const { currentProject, backlog } = get();
+    if (currentProject) {
+      try {
+        await window.api.storage.saveBacklog(currentProject.slug, backlog);
+      } catch (err) {
+        console.error('Failed to save backlog:', err);
+      }
+    }
+  },
+
+  loadBacklog: async () => {
+    const { currentProject } = get();
+    if (currentProject) {
+      try {
+        const items = await window.api.storage.getBacklog(currentProject.slug);
+        set({ backlog: items });
+      } catch (err) {
+        console.error('Failed to load backlog:', err);
+        set({ backlog: [] });
+      }
+    }
+  },
+
+  // Planning chat actions
+  createPlanningChat: (title) => {
+    const chatId = `chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const now = new Date().toISOString();
+    const newChat: PlanningChat = {
+      id: chatId,
+      title: title || `Planning Session ${new Date().toLocaleDateString()}`,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    set((state) => ({
+      planningChats: [...state.planningChats, newChat],
+      activePlanningChatId: chatId,
+      planningChatMessages: [],
+    }));
+    return chatId;
+  },
+
+  setActivePlanningChat: (chatId) => {
+    const { planningChats } = get();
+    const chat = planningChats.find((c) => c.id === chatId);
+    set({
+      activePlanningChatId: chatId,
+      planningChatMessages: chat?.messages || [],
+    });
+  },
+
+  addPlanningMessage: (message) => {
+    const newMessage: ChatMessage = {
+      ...message,
+      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date(),
+    };
+    set((state) => {
+      const updatedMessages = [...state.planningChatMessages, newMessage];
+      // Also update the chat in planningChats
+      const updatedChats = state.planningChats.map((chat) =>
+        chat.id === state.activePlanningChatId
+          ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+          : chat
+      );
+      return {
+        planningChatMessages: updatedMessages,
+        planningChats: updatedChats,
+      };
+    });
+  },
+
+  deletePlanningChat: (chatId) => {
+    const { planningChats, activePlanningChatId } = get();
+    const filtered = planningChats.filter((c) => c.id !== chatId);
+
+    // If we deleted the active chat, select another or clear
+    if (chatId === activePlanningChatId) {
+      if (filtered.length > 0) {
+        // Select the most recent remaining chat
+        const sorted = [...filtered].sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+        set({
+          planningChats: filtered,
+          activePlanningChatId: sorted[0].id,
+          planningChatMessages: sorted[0].messages,
+        });
+      } else {
+        set({
+          planningChats: filtered,
+          activePlanningChatId: null,
+          planningChatMessages: [],
+        });
+      }
+    } else {
+      set({ planningChats: filtered });
+    }
+  },
+
+  renamePlanningChat: (chatId, newTitle) => {
+    const { planningChats } = get();
+    const updated = planningChats.map((chat) =>
+      chat.id === chatId
+        ? { ...chat, title: newTitle, updatedAt: new Date().toISOString() }
+        : chat
+    );
+    set({ planningChats: updated });
+  },
+
+  savePlanningChats: async () => {
+    const { currentProject, planningChats } = get();
+    if (currentProject) {
+      try {
+        await window.api.storage.savePlanningChats(currentProject.slug, planningChats);
+      } catch (err) {
+        console.error('Failed to save planning chats:', err);
+      }
+    }
+  },
+
+  loadPlanningChats: async () => {
+    const { currentProject } = get();
+    if (currentProject) {
+      try {
+        const chats = await window.api.storage.getPlanningChats(currentProject.slug);
+        set({ planningChats: chats });
+      } catch (err) {
+        console.error('Failed to load planning chats:', err);
+        set({ planningChats: [] });
+      }
+    }
+  },
+
+  goToPlanningChats: () => set({ screen: 'planning-chats' }),
 
   // Onboarding actions
   completeOnboarding: async () => {

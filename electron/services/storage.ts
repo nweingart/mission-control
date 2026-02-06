@@ -34,6 +34,23 @@ interface ChatMessage {
   timestamp: Date;
 }
 
+interface BacklogItem {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  createdAt: string;
+  chatId?: string;
+}
+
+interface PlanningChat {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export class StorageService {
   private forgeDir: string;
   private projectsDir: string;
@@ -339,6 +356,44 @@ export class StorageService {
     // Create backup before saving
     this.createBackup(chatPath);
     this.atomicWriteFile(chatPath, JSON.stringify(messages, null, 2));
+  }
+
+  // Backlog methods
+  getBacklog(slug: string): BacklogItem[] {
+    const backlogPath = join(this.projectsDir, slug, 'backlog.json');
+    if (!existsSync(backlogPath)) {
+      return [];
+    }
+
+    const content = readFileSync(backlogPath, 'utf-8');
+    const items = this.safeJsonParse<BacklogItem[]>(content, backlogPath);
+    return items ?? [];
+  }
+
+  saveBacklog(slug: string, items: BacklogItem[]): void {
+    const backlogPath = join(this.projectsDir, slug, 'backlog.json');
+    // Create backup before saving
+    this.createBackup(backlogPath);
+    this.atomicWriteFile(backlogPath, JSON.stringify(items, null, 2));
+  }
+
+  // Planning chats methods
+  getPlanningChats(slug: string): PlanningChat[] {
+    const chatsPath = join(this.projectsDir, slug, 'planning-chats.json');
+    if (!existsSync(chatsPath)) {
+      return [];
+    }
+
+    const content = readFileSync(chatsPath, 'utf-8');
+    const chats = this.safeJsonParse<PlanningChat[]>(content, chatsPath);
+    return chats ?? [];
+  }
+
+  savePlanningChats(slug: string, chats: PlanningChat[]): void {
+    const chatsPath = join(this.projectsDir, slug, 'planning-chats.json');
+    // Create backup before saving
+    this.createBackup(chatsPath);
+    this.atomicWriteFile(chatsPath, JSON.stringify(chats, null, 2));
   }
 
   // Helper methods

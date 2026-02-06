@@ -59,6 +59,24 @@ const TEST_CHAT_MESSAGES = [
   { id: 'msg-5', role: 'user' as const, content: 'Yes, generate the PRD!', timestamp: new Date() },
 ];
 
+// V2 Planning test data
+const TEST_PLANNING_CHAT = {
+  id: 'planning-chat-1',
+  title: 'V2 Feature Planning',
+  messages: [
+    { id: 'plan-msg-1', role: 'user' as const, content: 'What V2 features should we plan for this habit tracker?', timestamp: new Date() },
+    { id: 'plan-msg-2', role: 'assistant' as const, content: 'Based on the MVP, here are some great V2 features to consider:\n\n**Add to backlog?**\nTitle: Social Sharing\nDescription: Allow users to share their streaks and achievements with friends\nPriority: medium\n\n**Add to backlog?**\nTitle: Weekly/Custom Frequencies\nDescription: Support habits that repeat weekly or on custom schedules\nPriority: high\n\n**Add to backlog?**\nTitle: Progress Analytics\nDescription: Charts and insights showing habit completion trends over time\nPriority: medium', timestamp: new Date() },
+  ],
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+const TEST_BACKLOG_ITEMS = [
+  { id: 'backlog-1', title: 'Social Sharing', description: 'Allow users to share their streaks and achievements with friends', priority: 'medium' as const, createdAt: new Date().toISOString(), chatId: 'planning-chat-1' },
+  { id: 'backlog-2', title: 'Weekly/Custom Frequencies', description: 'Support habits that repeat weekly or on custom schedules', priority: 'high' as const, createdAt: new Date().toISOString(), chatId: 'planning-chat-1' },
+  { id: 'backlog-3', title: 'Progress Analytics', description: 'Charts and insights showing habit completion trends over time', priority: 'medium' as const, createdAt: new Date().toISOString() },
+];
+
 const STEP_DELAY = 2500;
 
 function delay(ms: number) {
@@ -159,6 +177,55 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
         store.getState().setScreen('building');
         await delay(STEP_DELAY);
         console.log('[FlowTest:Building] Done.');
+      },
+    },
+    {
+      name: 'V2 Planning',
+      screen: 'building (plan tab)',
+      run: async () => {
+        console.log('[FlowTest:V2Planning] Setting up planning data...');
+
+        // Set up planning chat
+        const state = store.getState();
+
+        // Create a planning chat with test messages
+        const chatId = state.createPlanningChat(TEST_PLANNING_CHAT.title);
+        console.log('[FlowTest:V2Planning] Created planning chat:', chatId);
+
+        // Add the test messages to the planning chat
+        TEST_PLANNING_CHAT.messages.forEach(msg => {
+          state.addPlanningMessage({ role: msg.role, content: msg.content });
+        });
+        console.log('[FlowTest:V2Planning] Added planning messages');
+
+        // Add backlog items
+        TEST_BACKLOG_ITEMS.forEach(item => {
+          state.addBacklogItem({
+            title: item.title,
+            description: item.description,
+            priority: item.priority,
+            chatId: item.chatId,
+          });
+        });
+        console.log('[FlowTest:V2Planning] Added backlog items:', TEST_BACKLOG_ITEMS.length);
+
+        // Verify the data is in the store
+        const { backlog, planningChatMessages } = store.getState();
+        console.log(`[FlowTest:V2Planning] Store state: ${backlog.length} backlog items, ${planningChatMessages.length} planning messages`);
+
+        // Stay on building screen (the Plan V2 tab is part of BuildScreen)
+        await delay(STEP_DELAY);
+        console.log('[FlowTest:V2Planning] Done.');
+      },
+    },
+    {
+      name: 'Planning Chats',
+      screen: 'planning-chats',
+      run: async () => {
+        console.log('[FlowTest:PlanningChats] Navigating to planning chats screen...');
+        store.getState().setScreen('planning-chats');
+        await delay(STEP_DELAY);
+        console.log('[FlowTest:PlanningChats] Done.');
       },
     },
     {
@@ -266,6 +333,12 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
       store.getState().setTasks([]);
       store.getState().setChatMessages([]);
       store.getState().clearTerminalOutput();
+
+      // Clear planning data
+      store.getState().setActivePlanningChat(null);
+      // Note: backlog and planningChats are per-project and loaded from disk,
+      // so they'll be cleared when we load a different project
+
       store.getState().setScreen('home');
 
       // Restore real projects list from disk
