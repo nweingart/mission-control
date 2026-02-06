@@ -1,0 +1,158 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      fontFamily: {
+        'logo': ['"Space Grotesk"', 'sans-serif'],
+      },
+      colors: {
+        // Warm charcoal backgrounds (coffee shop vibes)
+        charcoal: {
+          50: '#FAF9F7',
+          100: '#F5F3F0',
+          200: '#E7E4DF',
+          300: '#D6D2CB',
+          400: '#A8A29E',
+          500: '#78716C',
+          600: '#57534E',
+          700: '#44403C',
+          800: '#292524',
+          900: '#1C1917',
+          950: '#0F0E0D',
+        },
+        // Terracotta/Coral accent (craftsman feel)
+        terracotta: {
+          50: '#FEF5F3',
+          100: '#FCE8E4',
+          200: '#FAD5CD',
+          300: '#F5B8AA',
+          400: '#ED9580',
+          500: '#E07A5F',
+          600: '#C86A4F',
+          700: '#A85540',
+          800: '#8A4736',
+          900: '#723D30',
+          950: '#3D1E17',
+        },
+        // Vibrant green for success states
+        sage: {
+          50: '#ECFDF5',
+          100: '#D1FAE5',
+          200: '#A7F3D0',
+          300: '#6EE7B7',
+          400: '#34D399',
+          500: '#10B981',
+          600: '#059669',
+          700: '#047857',
+          800: '#065F46',
+          900: '#064E3B',
+          950: '#022C22',
+        },
+        // Rust for errors (softer than vermillion)
+        rust: {
+          50: '#FEF4F2',
+          100: '#FDE6E2',
+          200: '#FCD2CA',
+          300: '#F8B2A5',
+          400: '#F18872',
+          500: '#E56B52',
+          600: '#C45B4A',
+          700: '#A5493B',
+          800: '#894035',
+          900: '#723A31',
+          950: '#3E1B16',
+        },
+        // Cream for text
+        cream: {
+          50: '#FEFDFB',
+          100: '#FAF9F6',
+          200: '#F5F3EE',
+          300: '#EBE7DF',
+          400: '#DDD7CB',
+          500: '#C9C1B1',
+          600: '#A89E8C',
+          700: '#8A8070',
+          800: '#6E665A',
+          900: '#5A544A',
+          950: '#2F2C27',
+        },
+        // Keep navy for backwards compatibility during transition
+        navy: {
+          50: '#F0F2F7',
+          100: '#D9DDE8',
+          200: '#B3BBCF',
+          300: '#8C99B6',
+          400: '#66779D',
+          500: '#3F5584',
+          600: '#2B3D64',
+          700: '#1F2E50',
+          800: '#1B2A4A',
+          900: '#141F38',
+          950: '#0D1526',
+        },
+        // Keep gold for backwards compatibility during transition
+        gold: {
+          50: '#FDF8EB',
+          100: '#FAF0D0',
+          200: '#F5E0A1',
+          300: '#EFD172',
+          400: '#DFC05B',
+          500: '#C9A84C',
+          600: '#B08F3A',
+          700: '#8E7230',
+          800: '#6B5624',
+          900: '#493A18',
+          950: '#2D2410',
+        },
+        // Keep teal for backwards compatibility during transition
+        teal: {
+          50: '#ECFAF8',
+          100: '#C9F0EB',
+          200: '#96E0D5',
+          300: '#62CFC0',
+          400: '#42AFA2',
+          500: '#3A8F85',
+          600: '#2F736B',
+          700: '#255A53',
+          800: '#1C423D',
+          900: '#132B28',
+          950: '#0A1917',
+        },
+        // Keep vermillion for backwards compatibility during transition
+        vermillion: {
+          50: '#FEF2F1',
+          100: '#FDE0DE',
+          200: '#FBBCB7',
+          300: '#F59089',
+          400: '#E05A50',
+          500: '#C0392B',
+          600: '#A52F24',
+          700: '#85251D',
+          800: '#651C16',
+          900: '#46130F',
+          950: '#2C0B09',
+        },
+        offwhite: '#FAF9F6',
+      },
+      animation: {
+        'fade-in': 'fadeIn 0.3s ease-out',
+        'slide-up': 'slideUp 0.3s ease-out',
+      },
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        slideUp: {
+          '0%': { opacity: '0', transform: 'translateY(16px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+    },
+  },
+  plugins: [],
+}

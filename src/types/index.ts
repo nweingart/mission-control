@@ -1,0 +1,105 @@
+export interface Project {
+  slug: string;
+  name: string;
+  status: ProjectStatus;
+  createdAt: string;
+  projectPath: string;
+  vercelUrl?: string;
+  supabaseRef?: string;
+  githubRepo?: string;
+  idea?: string;
+  prd?: string;
+  envVars?: Record<string, string>;
+}
+
+export type ProjectStatus =
+  | 'idea'
+  | 'discovery'
+  | 'planning'
+  | 'building'
+  | 'previewing'
+  | 'deploying'
+  | 'complete';
+
+export interface Task {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export interface CLIStatus {
+  claude: { installed: boolean; authenticated: boolean };
+  github: { installed: boolean; authenticated: boolean };
+  vercel: { installed: boolean; authenticated: boolean };
+  supabase: { installed: boolean; authenticated: boolean };
+}
+
+export type Screen =
+  | 'onboarding'
+  | 'setup-workspace'
+  | 'setup-deploy'
+  | 'home'
+  | 'idea'
+  | 'discovery'
+  | 'prd-review'
+  | 'planning'
+  | 'building'
+  | 'previewing'
+  | 'deploying'
+  | 'complete';
+
+export interface AppState {
+  screen: Screen;
+  currentProject: Project | null;
+  projects: Project[];
+  cliStatus: CLIStatus | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
+
+export interface Config {
+  developmentPath: string;
+  theme?: 'light' | 'dark';
+  hasCompletedOnboarding?: boolean;
+  hasSetWorkspace?: boolean;
+}
+
+export interface ReviewFinding {
+  severity: 'critical' | 'warning' | 'info';
+  category: string;
+  description: string;
+  file?: string;
+  fixed: boolean;
+}
+
+export interface ReviewArtifact {
+  taskId: string;
+  taskTitle: string;
+  branchName: string;
+  findings: ReviewFinding[];
+  summary: string;
+  autoFixApplied: boolean;
+  canAutoFix: boolean;
+  diffStat: string;
+  timestamp: string;
+}
+
+export type TaskPhase =
+  | 'idle'
+  | 'branching'
+  | 'building'
+  | 'committing'
+  | 'reviewing'
+  | 'fixing'
+  | 'merging'
+  | 'pushing'
+  | 'complete'
+  | 'needs_input'
+  | 'error';
