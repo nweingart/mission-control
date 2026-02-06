@@ -327,17 +327,16 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
     } finally {
       console.log('[FlowTest] Cleaning up...');
 
-      // Reset state and navigate back to home
+      // Reset all project-scoped state and navigate back to home
       await delay(500);
       store.getState().setCurrentProject(null);
       store.getState().setTasks([]);
       store.getState().setChatMessages([]);
       store.getState().clearTerminalOutput();
 
-      // Clear planning data
+      // Clear planning data and git events
       store.getState().setActivePlanningChat(null);
-      // Note: backlog and planningChats are per-project and loaded from disk,
-      // so they'll be cleared when we load a different project
+      store.setState({ gitEvents: [], backlog: [], planningChats: [], planningChatMessages: [] });
 
       store.getState().setScreen('home');
 

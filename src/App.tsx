@@ -18,6 +18,8 @@ import PreviewScreen from './screens/PreviewScreen';
 import DeployScreen from './screens/DeployScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import PlanningChatsScreen from './screens/PlanningChatsScreen';
+import GitHistoryScreen from './screens/GitHistoryScreen';
+import ProjectLayout from './components/ProjectLayout';
 
 function App() {
   const { screen, initialize, isLoading, error } = useAppStore();
@@ -82,20 +84,8 @@ function App() {
     );
   }
 
-  const renderScreen = () => {
+  const renderProjectScreen = () => {
     switch (screen) {
-      case 'onboarding':
-        return <OnboardingScreen />;
-      case 'setup-workspace':
-        return <SetupWorkspaceScreen />;
-      case 'setup-deploy':
-        return <SetupDeployScreen />;
-      case 'setup-ready':
-        return <SetupReadyScreen />;
-      case 'home':
-        return <HomeScreen />;
-      case 'idea':
-        return <IdeaScreen />;
       case 'discovery':
         return <DiscoveryScreen />;
       case 'prd-review':
@@ -112,8 +102,33 @@ function App() {
         return <DeployScreen />;
       case 'planning-chats':
         return <PlanningChatsScreen />;
+      case 'git-history':
+        return <GitHistoryScreen />;
       default:
         return <HomeScreen />;
+    }
+  };
+
+  const renderScreen = () => {
+    switch (screen) {
+      case 'onboarding':
+        return <OnboardingScreen />;
+      case 'setup-workspace':
+        return <SetupWorkspaceScreen />;
+      case 'setup-deploy':
+        return <SetupDeployScreen />;
+      case 'setup-ready':
+        return <SetupReadyScreen />;
+      case 'home':
+        return <HomeScreen />;
+      case 'idea':
+        return <IdeaScreen />;
+      default:
+        return (
+          <ProjectLayout>
+            {renderProjectScreen()}
+          </ProjectLayout>
+        );
     }
   };
 

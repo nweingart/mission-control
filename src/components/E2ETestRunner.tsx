@@ -775,14 +775,15 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
       log(`Test project kept on disk at: ${testProject.projectPath}`);
     }
 
-    // Reset store state and go home
+    // Reset all project-scoped state and go home
     store.getState().setCurrentProject(null);
     store.getState().setTasks([]);
     store.getState().setChatMessages([]);
     store.getState().clearTerminalOutput();
 
-    // Clear planning data (will be reloaded per-project)
+    // Clear planning data and git events
     store.getState().setActivePlanningChat(null);
+    store.setState({ gitEvents: [], backlog: [], planningChats: [], planningChatMessages: [] });
 
     store.getState().setScreen('home');
 

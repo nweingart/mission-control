@@ -200,7 +200,7 @@ ${prdContent}`;
     return (
       <div className="flex-1 overflow-hidden flex flex-col bg-charcoal-800">
         {/* Header */}
-        <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4 drag-region header-with-traffic-lights">
+        <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <div>
@@ -272,7 +272,7 @@ ${prdContent}`;
   return (
     <div className="flex-1 overflow-hidden flex flex-col bg-charcoal-800">
       {/* Header */}
-      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4 drag-region header-with-traffic-lights">
+      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
