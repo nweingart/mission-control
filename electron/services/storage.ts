@@ -51,6 +51,18 @@ interface PlanningChat {
   updatedAt: string;
 }
 
+interface GitEvent {
+  id: string;
+  type: string;
+  taskId?: string;
+  taskTitle?: string;
+  branchName?: string;
+  commitHash?: string;
+  commitMessage?: string;
+  reviewArtifact?: unknown;
+  timestamp: string;
+}
+
 export class StorageService {
   private forgeDir: string;
   private projectsDir: string;
@@ -394,6 +406,24 @@ export class StorageService {
     // Create backup before saving
     this.createBackup(chatsPath);
     this.atomicWriteFile(chatsPath, JSON.stringify(chats, null, 2));
+  }
+
+  // Git events methods
+  getGitEvents(slug: string): GitEvent[] {
+    const eventsPath = join(this.projectsDir, slug, 'git-events.json');
+    if (!existsSync(eventsPath)) {
+      return [];
+    }
+
+    const content = readFileSync(eventsPath, 'utf-8');
+    const events = this.safeJsonParse<GitEvent[]>(content, eventsPath);
+    return events ?? [];
+  }
+
+  saveGitEvents(slug: string, events: GitEvent[]): void {
+    const eventsPath = join(this.projectsDir, slug, 'git-events.json');
+    this.createBackup(eventsPath);
+    this.atomicWriteFile(eventsPath, JSON.stringify(events, null, 2));
   }
 
   // Helper methods

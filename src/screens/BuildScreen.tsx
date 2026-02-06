@@ -148,6 +148,7 @@ export default function BuildScreen() {
     goToPlanning,
     goToPreview,
     flowTestMode,
+    addGitEvent,
   } = useAppStore();
 
   // Tab state for Build vs Plan V2
@@ -286,6 +287,7 @@ export default function BuildScreen() {
         // Delete leftover branch from a previous failed attempt (non-fatal)
         await window.api.github.deleteBranch(projectPath, branchName);
         await window.api.github.createAndCheckoutBranch(projectPath, branchName);
+        addGitEvent({ type: 'branch_created', taskId: task.id, taskTitle: task.title, branchName });
 
         // 2. BUILDING (interactive session, one task only)
         if (!isMountedRef.current) return;
@@ -359,7 +361,8 @@ Do not work on anything else.`;
         // 3. COMMITTING
         if (!isMountedRef.current) return;
         setTaskPhase('committing');
-        await window.api.github.gitAddAndCommit(projectPath, `feat: ${task.title}`);
+        const commitResult = await window.api.github.gitAddAndCommit(projectPath, `feat: ${task.title}`);
+        addGitEvent({ type: 'committed', taskId: task.id, taskTitle: task.title, branchName, commitHash: commitResult.commitHash, commitMessage: `feat: ${task.title}` });
 
         // 4. REVIEWING
         if (!isMountedRef.current) return;
@@ -404,6 +407,7 @@ Do not work on anything else.`;
 
           const artifact = parseReviewResponse(reviewResponse, task, branchName, diffStat);
           setReviewArtifact(artifact);
+          addGitEvent({ type: 'review_completed', taskId: task.id, taskTitle: task.title, branchName, reviewArtifact: artifact });
 
           // 5. FIXING (if needed)
           if (hasFixableIssues(artifact)) {
@@ -424,10 +428,11 @@ Do not work on anything else.`;
             artifact.autoFixApplied = true;
             setReviewArtifact({ ...artifact });
 
-            await window.api.github.gitAddAndCommit(
+            const fixResult = await window.api.github.gitAddAndCommit(
               projectPath,
               `fix: review findings for ${task.title}`
             );
+            addGitEvent({ type: 'auto_fixed', taskId: task.id, taskTitle: task.title, branchName, commitHash: fixResult.commitHash, commitMessage: `fix: review findings for ${task.title}` });
           }
 
           if (hasCriticalUnfixable(artifact)) {
@@ -452,6 +457,7 @@ Do not work on anything else.`;
         await window.api.github.mergeBranch(projectPath, branchName);
         await window.api.github.deleteBranch(projectPath, branchName);
         setCurrentBranch('main');
+        addGitEvent({ type: 'merged', taskId: task.id, taskTitle: task.title, branchName });
 
         // 7. PUSHING
         if (!isMountedRef.current) return;
@@ -460,6 +466,7 @@ Do not work on anything else.`;
           const gitStatus = await window.api.github.checkGitStatus(projectPath);
           if (gitStatus.hasRemote) {
             await window.api.github.gitPush(projectPath);
+            addGitEvent({ type: 'pushed', taskId: task.id, taskTitle: task.title });
           }
         } catch {
           // Push failure is non-fatal; DeployScreen handles initial push
@@ -496,6 +503,7 @@ Do not work on anything else.`;
       saveTasks,
       waitForTaskComplete,
       waitForUserInput,
+      addGitEvent,
     ]
   );
 
@@ -1077,7 +1085,7 @@ Do not work on anything else.`;
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Header */}
-      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4 drag-region header-with-traffic-lights">
+      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button

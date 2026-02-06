@@ -252,7 +252,7 @@ export default function PreviewScreen() {
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Header */}
-      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4 drag-region header-with-traffic-lights flex-shrink-0">
+      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button

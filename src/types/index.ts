@@ -48,7 +48,8 @@ export type Screen =
   | 'previewing'
   | 'deploying'
   | 'complete'
-  | 'planning-chats';
+  | 'planning-chats'
+  | 'git-history';
 
 export interface AppState {
   screen: Screen;
@@ -113,6 +114,18 @@ export interface BacklogItem {
   priority: 'high' | 'medium' | 'low';
   createdAt: string;
   chatId?: string; // links to originating planning chat
+}
+
+export interface GitEvent {
+  id: string;
+  type: 'branch_created' | 'committed' | 'review_completed' | 'auto_fixed' | 'merged' | 'pushed';
+  taskId?: string;
+  taskTitle?: string;
+  branchName?: string;
+  commitHash?: string;
+  commitMessage?: string;
+  reviewArtifact?: ReviewArtifact;
+  timestamp: string;
 }
 
 export interface PlanningChat {

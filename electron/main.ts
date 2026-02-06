@@ -130,6 +130,8 @@ ipcMain.handle('storage:getBacklog', (_, slug) => storageService.getBacklog(slug
 ipcMain.handle('storage:saveBacklog', (_, slug, items) => storageService.saveBacklog(slug, items));
 ipcMain.handle('storage:getPlanningChats', (_, slug) => storageService.getPlanningChats(slug));
 ipcMain.handle('storage:savePlanningChats', (_, slug, chats) => storageService.savePlanningChats(slug, chats));
+ipcMain.handle('storage:getGitEvents', (_, slug) => storageService.getGitEvents(slug));
+ipcMain.handle('storage:saveGitEvents', (_, slug, events) => storageService.saveGitEvents(slug, events));
 
 // IPC Handlers - CLI Check
 ipcMain.handle('cli:checkAll', () => cliCheckService.checkAll());

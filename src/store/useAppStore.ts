@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Screen, Project, CLIStatus, Task, ChatMessage, BacklogItem, PlanningChat } from '../types';
+import type { Screen, Project, CLIStatus, Task, ChatMessage, BacklogItem, PlanningChat, GitEvent } from '../types';
 
 // Maximum number of terminal output lines to keep in memory
 const MAX_TERMINAL_LINES = 5000;
@@ -17,6 +17,9 @@ interface AppState {
   terminalOutput: string[];
   buildSessionId: string | null;
   flowTestMode: boolean;
+
+  // Git events state
+  gitEvents: GitEvent[];
 
   // Planning V2 state
   backlog: BacklogItem[];
@@ -84,6 +87,12 @@ interface AppState {
   loadPlanningChats: () => Promise<void>;
   goToPlanningChats: () => void;
 
+  // Git events actions
+  addGitEvent: (event: Omit<GitEvent, 'id' | 'timestamp'>) => void;
+  saveGitEvents: () => Promise<void>;
+  loadGitEvents: () => Promise<void>;
+  goToGitHistory: () => void;
+
   // Navigation helpers
   goToHome: () => void;
   startNewProject: () => void;
@@ -109,6 +118,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   terminalOutput: [],
   buildSessionId: null,
   flowTestMode: false,
+
+  // Git events initial state
+  gitEvents: [],
 
   // Planning V2 initial state
   backlog: [],
@@ -229,6 +241,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           await get().loadChatHistory();
         } catch (err) {
           console.error('Failed to load chat history:', err);
+        }
+
+        try {
+          await get().loadGitEvents();
+        } catch (err) {
+          console.error('Failed to load git events:', err);
         }
 
         // Navigate to appropriate screen based on project status
@@ -546,6 +564,57 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   goToPlanningChats: () => set({ screen: 'planning-chats' }),
 
+  // Git events actions
+  addGitEvent: (event) => {
+    const { currentProject } = get();
+    if (!currentProject) {
+      console.warn('addGitEvent called without a current project — event will not be persisted');
+      return;
+    }
+    const newEvent: GitEvent = {
+      ...event,
+      id: `git-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date().toISOString(),
+    };
+    set((state) => ({ gitEvents: [...state.gitEvents, newEvent] }));
+    // Auto-save: capture slug now so even if project changes, we write to the right place
+    const slug = currentProject.slug;
+    window.api.storage.saveGitEvents(slug, get().gitEvents).catch((err) => {
+      console.error('Failed to save git events:', err);
+    });
+  },
+
+  saveGitEvents: async () => {
+    const { currentProject, gitEvents } = get();
+    if (!currentProject) {
+      console.warn('saveGitEvents called without a current project');
+      return;
+    }
+    try {
+      await window.api.storage.saveGitEvents(currentProject.slug, gitEvents);
+    } catch (err) {
+      console.error('Failed to save git events:', err);
+    }
+  },
+
+  loadGitEvents: async () => {
+    const { currentProject } = get();
+    if (currentProject) {
+      try {
+        const events = await window.api.storage.getGitEvents(currentProject.slug);
+        set({ gitEvents: events });
+      } catch (err) {
+        console.error('Failed to load git events:', err);
+        set({ gitEvents: [] });
+      }
+    }
+  },
+
+  goToGitHistory: () => {
+    if (!get().currentProject) return;
+    set({ screen: 'git-history' });
+  },
+
   // Onboarding actions
   completeOnboarding: async () => {
     try {
@@ -605,6 +674,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       chatMessages: [],
       terminalOutput: [],
       buildSessionId: null,
+      gitEvents: [],
+      backlog: [],
+      planningChats: [],
+      activePlanningChatId: null,
+      planningChatMessages: [],
     });
   },
 
@@ -616,6 +690,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       tasks: [],
       chatMessages: [],
       terminalOutput: [],
+      gitEvents: [],
+      backlog: [],
+      planningChats: [],
+      activePlanningChatId: null,
+      planningChatMessages: [],
     });
   },
 
