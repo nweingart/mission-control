@@ -206,6 +206,20 @@ ipcMain.handle('claude:sendInput', (_, sessionId, input) => claudeCodeService.se
 ipcMain.handle('claude:resize', (_, sessionId, cols, rows) => claudeCodeService.resize(sessionId, cols, rows));
 ipcMain.handle('claude:kill', (_, sessionId) => claudeCodeService.kill(sessionId));
 
+// Completion detection IPC handlers
+ipcMain.handle('claude:enableCompletionDetection', (_, sessionId: string) => {
+  claudeCodeService.enableCompletionDetection(sessionId, () => {
+    console.log('[main.ts] Completion detected for session:', sessionId);
+    safeSend('claude:completionDetected', { sessionId });
+  });
+});
+ipcMain.handle('claude:resetCompletionDetection', (_, sessionId: string) => {
+  claudeCodeService.resetCompletionDetection(sessionId);
+});
+ipcMain.handle('claude:confirmCompletion', (_, sessionId: string) => {
+  claudeCodeService.disableCompletionDetection(sessionId);
+});
+
 // IPC Handlers - Vercel
 ipcMain.handle('vercel:deploy', (event, projectPath, envVars) => {
   return vercelService.deploy(projectPath, envVars, (data) => {

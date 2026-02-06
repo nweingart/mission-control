@@ -44,6 +44,10 @@ export interface ElectronAPI {
     sendInput: (sessionId: string, input: string) => Promise<void>;
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>;
     kill: (sessionId: string) => Promise<void>;
+    enableCompletionDetection: (sessionId: string) => Promise<void>;
+    resetCompletionDetection: (sessionId: string) => Promise<void>;
+    confirmCompletion: (sessionId: string) => Promise<void>;
+    onCompletionDetected: (callback: (data: { sessionId: string }) => void) => void;
     removeListeners: () => void;
   };
 

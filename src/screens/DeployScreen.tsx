@@ -418,7 +418,17 @@ export default function DeployScreen() {
               )}
 
               <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-4">
-                <h3 className="font-medium text-cream-100 mb-4">Supabase Configuration</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-medium text-cream-100">Supabase Configuration</h3>
+                  {currentProject.supabaseRef && (
+                    <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sage-500/15 text-sage-400">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>Auto-provisioned</span>
+                    </span>
+                  )}
+                </div>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-charcoal-100 mb-1">

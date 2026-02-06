@@ -521,32 +521,48 @@ export default function PreviewScreen() {
                   <span className="font-medium">Add Variable</span>
                 </button>
 
-                {/* Supabase setup help */}
-                <div className="mt-6 p-4 bg-sage-500/10 border border-sage-500/30 rounded-lg">
-                  <div className="flex items-start space-x-3">
-                    <svg className="w-6 h-6 text-sage-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div>
-                      <h4 className="font-medium text-sage-400">Need a Supabase project?</h4>
-                      <p className="text-sm text-sage-400 mt-1">
-                        Create a free Supabase project to get your database URL and anon key.
-                      </p>
-                      <button
-                        onClick={() => window.api.shell.openExternal('https://supabase.com/dashboard')}
-                        className="mt-2 inline-flex items-center space-x-1 text-sm font-medium text-sage-400 hover:text-sage-300 underline"
-                      >
-                        <span>Go to Supabase Dashboard</span>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </button>
-                      <p className="text-xs text-sage-500 mt-2">
-                        After creating a project, find your credentials in Project Settings → API
-                      </p>
+                {/* Supabase status */}
+                {currentProject?.supabaseRef ? (
+                  <div className="mt-6 p-4 bg-sage-500/10 border border-sage-500/30 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <svg className="w-6 h-6 text-sage-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <div>
+                        <h4 className="font-medium text-sage-400">Supabase Connected</h4>
+                        <p className="text-sm text-sage-500 mt-0.5">
+                          Project auto-provisioned — credentials are pre-filled above.
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-6 p-4 bg-sage-500/10 border border-sage-500/30 rounded-lg">
+                    <div className="flex items-start space-x-3">
+                      <svg className="w-6 h-6 text-sage-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div>
+                        <h4 className="font-medium text-sage-400">Need a Supabase project?</h4>
+                        <p className="text-sm text-sage-400 mt-1">
+                          Create a free Supabase project to get your database URL and anon key.
+                        </p>
+                        <button
+                          onClick={() => window.api.shell.openExternal('https://supabase.com/dashboard')}
+                          className="mt-2 inline-flex items-center space-x-1 text-sm font-medium text-sage-400 hover:text-sage-300 underline"
+                        >
+                          <span>Go to Supabase Dashboard</span>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </button>
+                        <p className="text-xs text-sage-500 mt-2">
+                          After creating a project, find your credentials in Project Settings → API
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Help text */}
                 <div className="mt-4 p-4 bg-terracotta-500/10 border border-terracotta-500/30 rounded-lg">

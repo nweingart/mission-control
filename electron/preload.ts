@@ -108,6 +108,11 @@ contextBridge.exposeInMainWorld('api', {
     sendInput: (sessionId: string, input: string) => ipcRenderer.invoke('claude:sendInput', sessionId, input),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('claude:resize', sessionId, cols, rows),
     kill: (sessionId: string) => ipcRenderer.invoke('claude:kill', sessionId),
+    enableCompletionDetection: (sessionId: string) => ipcRenderer.invoke('claude:enableCompletionDetection', sessionId),
+    resetCompletionDetection: (sessionId: string) => ipcRenderer.invoke('claude:resetCompletionDetection', sessionId),
+    confirmCompletion: (sessionId: string) => ipcRenderer.invoke('claude:confirmCompletion', sessionId),
+    onCompletionDetected: (callback: (data: { sessionId: string }) => void) =>
+      createListener('claude:completionDetected', callback),
     removeListeners: () => removeAllListeners('claude:'),
   },
 

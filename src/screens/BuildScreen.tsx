@@ -169,9 +169,15 @@ export default function BuildScreen() {
   const isMountedRef = useRef(true);
   const pipelineStartedRef = useRef(false);
   const pipelineErrorRef = useRef(false);
-  const outputBufferRef = useRef('');
-  const lastAutoCompleteRef = useRef(0);
   const taskPhaseRef = useRef<TaskPhase>('idle');
+
+  // Toast-based completion detection state
+  const [completionDetected, setCompletionDetected] = useState(false);
+  const [completionCountdown, setCompletionCountdown] = useState(5);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Ref mirror of buildSessionId so interval/event callbacks always read the current value
+  const buildSessionIdRef = useRef<string | null>(buildSessionId);
 
   // Promise resolvers for pipeline synchronization
   const taskCompleteResolverRef = useRef<(() => void) | null>(null);
@@ -201,6 +207,11 @@ export default function BuildScreen() {
   useEffect(() => {
     taskPhaseRef.current = taskPhase;
   }, [taskPhase]);
+
+  // Keep buildSessionIdRef in sync so interval/event callbacks always see the current session
+  useEffect(() => {
+    buildSessionIdRef.current = buildSessionId;
+  }, [buildSessionId]);
 
   const completedTasks = tasks.filter((t) => t.completed).length;
   const progress = tasks.length > 0 ? (completedTasks / tasks.length) * 100 : 0;
@@ -266,8 +277,8 @@ export default function BuildScreen() {
         setReviewArtifact(null);
         setReviewOutput('');
         setPauseReason(null);
-        outputBufferRef.current = '';
-        lastAutoCompleteRef.current = 0;
+        setCompletionDetected(false);
+        setCompletionCountdown(5);
 
         // Discard any uncommitted changes from a previous failed attempt
         await window.api.github.resetWorkingTree(projectPath);
@@ -298,10 +309,22 @@ export default function BuildScreen() {
             return;
           }
           const context = prd || currentProject!.idea || '';
+          const supabaseEnv = currentProject!.supabaseRef && currentProject!.envVars
+            ? `
+
+## Supabase Database
+A Supabase project has been provisioned for this app. Use these environment variables to connect:
+- \`NEXT_PUBLIC_SUPABASE_URL\` = \`${currentProject!.envVars.NEXT_PUBLIC_SUPABASE_URL}\`
+- \`NEXT_PUBLIC_SUPABASE_ANON_KEY\` = \`${currentProject!.envVars.NEXT_PUBLIC_SUPABASE_ANON_KEY}\`
+- \`SUPABASE_SERVICE_ROLE_KEY\` = \`${currentProject!.envVars.SUPABASE_SERVICE_ROLE_KEY}\`
+
+Create a \`.env.local\` file with these values if one doesn't exist. Use \`@supabase/supabase-js\` for all database access.`
+            : '';
           const prompt = `I'm building "${currentProject!.name}".
 
 ## Context
 ${context}
+${supabaseEnv}
 
 ## Your Task
 Task ${idx + 1} of ${totalTasks}: ${task.title}
@@ -311,6 +334,14 @@ Do not work on anything else.`;
 
           console.log('[BuildScreen] Sending prompt to Claude, length:', prompt.length);
           window.api.claude.sendInput(sessionId, prompt + '\n');
+
+          // Enable completion detection 2s after prompt sent (5s total from session start)
+          // to avoid false positives from the prompt echo
+          setTimeout(() => {
+            if (!isMountedRef.current) return;
+            console.log('[BuildScreen] Enabling completion detection for session:', sessionId);
+            window.api.claude.enableCompletionDetection(sessionId);
+          }, 2000);
         }, 3000);
 
         // Wait for TASK COMPLETE
@@ -525,50 +556,96 @@ Do not work on anything else.`;
     }
   }, [currentProject, tasks, ensureGitRepo, runTaskPipeline, handleBuildComplete]);
 
-  // Auto-complete detection — resolves taskCompleteResolverRef instead of calling handleMarkTaskComplete
-  // Uses refs instead of state to avoid stale closures in callbacks
-  const handleAutoComplete = useCallback(() => {
-    // Use taskPhaseRef.current instead of taskPhase to avoid stale closure issues
-    if (!currentTaskId || !sessionActive || taskPhaseRef.current !== 'building') return;
+  // Handle completion detected from main process (after 4s idle)
+  const handleCompletionDetected = useCallback((data: { sessionId: string }) => {
+    if (!isMountedRef.current || taskPhaseRef.current !== 'building') return;
+    // Ignore stale events from a previous session
+    if (data.sessionId !== buildSessionIdRef.current) return;
+    console.log('[BuildScreen] Completion detected — showing toast');
+    setCompletionDetected(true);
+    setCompletionCountdown(5);
 
-    const now = Date.now();
-    if (now - lastAutoCompleteRef.current < 5000) return;
+    // Start visible countdown
+    countdownTimerRef.current = setInterval(() => {
+      setCompletionCountdown((prev) => {
+        if (prev <= 1) {
+          // Countdown expired — advance
+          if (countdownTimerRef.current) {
+            clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
+          setCompletionDetected(false);
 
-    const buffer = outputBufferRef.current.toLowerCase();
-    const completionPatterns = [
-      /task\s*complete/i,
-      /ready to proceed to task\s*\d+/i,
-      /ready to move on to task\s*\d+/i,
-    ];
+          // Confirm completion in main process
+          const sid = buildSessionIdRef.current;
+          if (sid) {
+            window.api.claude.confirmCompletion(sid);
+          }
 
-    for (const pattern of completionPatterns) {
-      if (pattern.test(buffer)) {
-        console.log('[BuildScreen] Auto-detected task completion:', pattern);
-        lastAutoCompleteRef.current = now;
-        outputBufferRef.current = '';
-
-        // Resolve the promise so runTaskPipeline continues
-        if (taskCompleteResolverRef.current) {
-          taskCompleteResolverRef.current();
-          taskCompleteResolverRef.current = null;
+          // Resolve the pipeline promise
+          if (taskCompleteResolverRef.current) {
+            taskCompleteResolverRef.current();
+            taskCompleteResolverRef.current = null;
+          }
+          return 0;
         }
-        return;
-      }
-    }
-  }, [currentTaskId, sessionActive]);
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
-  // Handle terminal output for auto-complete detection
-  const handleTerminalOutput = useCallback(
-    (content: string) => {
-      const cleanContent = content.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-      outputBufferRef.current = (outputBufferRef.current + cleanContent).slice(-2000);
-      handleAutoComplete();
-    },
-    [handleAutoComplete]
-  );
+  // Cancel auto-advance (dismiss toast, reset detection)
+  const handleCancelAutoAdvance = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setCompletionDetected(false);
+    setCompletionCountdown(5);
+
+    // Reset detection in main process so it can re-trigger
+    const sid = buildSessionIdRef.current;
+    if (sid) {
+      window.api.claude.resetCompletionDetection(sid);
+    }
+  }, []);
+
+  // Advance now (skip countdown)
+  const handleAdvanceNow = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setCompletionDetected(false);
+
+    // Confirm completion in main process
+    const sid = buildSessionIdRef.current;
+    if (sid) {
+      window.api.claude.confirmCompletion(sid);
+    }
+
+    // Resolve the pipeline promise immediately
+    if (taskCompleteResolverRef.current) {
+      taskCompleteResolverRef.current();
+      taskCompleteResolverRef.current = null;
+    }
+  }, []);
 
   // Manual "Mark Complete" — resolves the same promise
   const handleManualMarkComplete = useCallback(() => {
+    // Dismiss toast if showing
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setCompletionDetected(false);
+
+    // Disable detection in main process
+    const sid = buildSessionIdRef.current;
+    if (sid) {
+      window.api.claude.confirmCompletion(sid);
+    }
+
     if (taskCompleteResolverRef.current) {
       taskCompleteResolverRef.current();
       taskCompleteResolverRef.current = null;
@@ -593,12 +670,19 @@ Do not work on anything else.`;
     runAllTasks();
   }, [runAllTasks]);
 
-  // Set up exit listener — registered once, reads phase from ref to avoid stale closure
+  // Set up exit listener and completion detection listener
   useEffect(() => {
     const handleExit = (data: { sessionId: string; code: number }) => {
       if (!isMountedRef.current) return;
       console.log('[BuildScreen] Session exited with code:', data.code);
       setSessionActive(false);
+
+      // Dismiss toast if showing
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+      setCompletionDetected(false);
 
       // If the session exits during building, resolve taskComplete so pipeline can continue
       if (taskPhaseRef.current === 'building' && taskCompleteResolverRef.current) {
@@ -612,6 +696,7 @@ Do not work on anything else.`;
     };
 
     window.api.claude.onExit(handleExit);
+    window.api.claude.onCompletionDetected(handleCompletionDetected);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -649,7 +734,7 @@ Do not work on anything else.`;
     }
   }, [buildSessionId]);
 
-  // Remove listeners only on unmount
+  // Remove listeners and clean up timers on unmount
   useEffect(() => {
     return () => {
       if (buildSessionId) {
@@ -658,6 +743,10 @@ Do not work on anything else.`;
         } catch (err) {
           console.error('Error killing Claude session on unmount:', err);
         }
+      }
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
       }
       window.api.claude.removeListeners();
     };
@@ -718,19 +807,49 @@ Do not work on anything else.`;
 
   // ─── RIGHT PANEL RENDERING ────────────────────────────────────
   const renderRightPanel = () => {
-    // During building: show terminal
+    // During building: show terminal with completion toast overlay
     if (taskPhase === 'building') {
       return (
-        <Terminal
-          title={`Claude Code - ${currentProject?.name || 'Build'}`}
-          sessionId={buildSessionId}
-          onInput={(input) => {
-            if (buildSessionId) {
-              window.api.claude.sendInput(buildSessionId, input);
-            }
-          }}
-          onOutputReceived={handleTerminalOutput}
-        />
+        <div className="relative h-full">
+          <Terminal
+            title={`Claude Code - ${currentProject?.name || 'Build'}`}
+            sessionId={buildSessionId}
+            onInput={(input) => {
+              if (buildSessionId) {
+                window.api.claude.sendInput(buildSessionId, input);
+              }
+            }}
+          />
+          {/* Completion toast */}
+          {completionDetected && (
+            <div className="absolute bottom-4 left-4 right-4 bg-charcoal-800 border border-sage-500/50 rounded-lg p-4 shadow-lg z-10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <svg className="w-5 h-5 text-sage-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-sm text-cream-100">
+                    Task appears complete — Advancing in {completionCountdown}s...
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCancelAutoAdvance}
+                    className="px-3 py-1.5 text-sm text-charcoal-300 hover:text-cream-100 border border-charcoal-500 rounded-lg hover:border-charcoal-400 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAdvanceNow}
+                    className="px-3 py-1.5 text-sm bg-sage-500 text-charcoal-950 font-medium rounded-lg hover:bg-sage-600 transition-colors"
+                  >
+                    Advance Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       );
     }
 
@@ -1106,7 +1225,7 @@ Do not work on anything else.`;
         <div className="mt-4 flex justify-between items-center">
           <div className="text-sm text-charcoal-300">
             {taskPhase === 'building'
-              ? 'Auto-advancing when Claude says "TASK COMPLETE". You can also click "Mark Complete" manually.'
+              ? 'Will auto-advance when Claude signals "TASK COMPLETE" and goes idle. You can also click "Mark Complete" manually.'
               : taskPhase === 'reviewing'
               ? 'Reviewing code changes...'
               : taskPhase === 'fixing'

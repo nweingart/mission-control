@@ -11,11 +11,20 @@ interface Session {
   disposables: IDisposable[]; // Track listeners for cleanup
 }
 
+interface CompletionState {
+  enabled: boolean;
+  cumulativeBuffer: string;
+  idleTimer: NodeJS.Timeout | null;
+  signalDetected: boolean;
+  callback: (() => void) | null;
+}
+
 type OutputCallback = (data: { sessionId: string; type: 'stdout' | 'stderr'; content: string }) => void;
 type ExitCallback = (data: { sessionId: string; code: number }) => void;
 
 export class ClaudeCodeService {
   private sessions: Map<string, Session> = new Map();
+  private completionStates: Map<string, CompletionState> = new Map();
   private isProcessing: boolean = false;
   private activeSessionId: string | null = null;
 
@@ -189,6 +198,9 @@ export class ClaudeCodeService {
       if (!flushTimer) {
         flushTimer = setTimeout(flushOutput, FLUSH_INTERVAL);
       }
+
+      // Feed data to completion detection
+      this.handleCompletionOutput(sessionId, data);
     });
     console.log('[ClaudeCode.setupSession] onData handler registered with throttling');
     disposables.push(dataDisposable);
@@ -335,6 +347,9 @@ export class ClaudeCodeService {
         console.error('Error disposing listener:', err);
       }
     }
+
+    // Clean up completion detection
+    this.disableCompletionDetection(sessionId);
 
     this.sessions.delete(sessionId);
 
@@ -632,6 +647,150 @@ export class ClaudeCodeService {
     console.log('[ClaudeCode.cleanTerminalOutput] Cleaned preview:', result.substring(0, 200));
 
     return result;
+  }
+
+  /**
+   * Strip ANSI escape codes from terminal output for clean text matching
+   */
+  stripAnsiCodes(text: string): string {
+    return text
+      // CSI sequences (colors, cursor movement, etc.)
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+      // OSC sequences (title setting, etc.)
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+      // Other escape sequences (DCS, PM, APC, etc.)
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '')
+      // Remaining lone escape characters
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b/g, '')
+      // Carriage returns
+      .replace(/\r/g, '')
+      // Bracketed paste mode and other terminal mode markers
+      .replace(/\[\?2004[hl]/g, '')
+      .replace(/\[\?1004[hl]/g, '')
+      .replace(/\[\?25[hl]/g, '');
+  }
+
+  /**
+   * Enable completion detection for a session.
+   * After detecting "TASK COMPLETE" at a line boundary followed by 4s of idle,
+   * the callback will be invoked.
+   */
+  enableCompletionDetection(sessionId: string, callback: () => void): void {
+    // Clean up any existing state
+    this.resetCompletionDetection(sessionId);
+
+    this.completionStates.set(sessionId, {
+      enabled: true,
+      cumulativeBuffer: '',
+      idleTimer: null,
+      signalDetected: false,
+      callback,
+    });
+    console.log('[ClaudeCode] Completion detection enabled for session:', sessionId);
+  }
+
+  /**
+   * Reset completion detection (e.g., user cancelled the toast).
+   * Clears timers and state but keeps the callback so it can re-trigger.
+   */
+  resetCompletionDetection(sessionId: string): void {
+    const state = this.completionStates.get(sessionId);
+    if (!state) return;
+
+    if (state.idleTimer) {
+      clearTimeout(state.idleTimer);
+      state.idleTimer = null;
+    }
+    state.signalDetected = false;
+    state.cumulativeBuffer = '';
+    console.log('[ClaudeCode] Completion detection reset for session:', sessionId);
+  }
+
+  /**
+   * Disable and remove completion detection entirely (e.g., after advancing).
+   */
+  disableCompletionDetection(sessionId: string): void {
+    const state = this.completionStates.get(sessionId);
+    if (state?.idleTimer) {
+      clearTimeout(state.idleTimer);
+    }
+    this.completionStates.delete(sessionId);
+    console.log('[ClaudeCode] Completion detection disabled for session:', sessionId);
+  }
+
+  /**
+   * Check if "TASK COMPLETE" appears at a line boundary and not inside a fenced code block.
+   */
+  private checkCompletionSignal(sessionId: string): void {
+    const state = this.completionStates.get(sessionId);
+    if (!state || !state.enabled || state.signalDetected) return;
+
+    const buffer = state.cumulativeBuffer;
+    const pattern = /^\s*task\s*complete\s*$/im;
+    const match = pattern.exec(buffer);
+    if (!match) return;
+
+    // Reject if inside a fenced code block (odd number of ``` markers before the match)
+    const textBefore = buffer.slice(0, match.index);
+    const fenceCount = (textBefore.match(/```/g) || []).length;
+    if (fenceCount % 2 !== 0) {
+      // Inside a code block — ignore this match
+      return;
+    }
+
+    console.log('[ClaudeCode] Completion signal detected for session:', sessionId);
+    state.signalDetected = true;
+    this.startIdleTimer(sessionId);
+  }
+
+  /**
+   * Start (or restart) the 4-second idle timer after a completion signal is detected.
+   */
+  private startIdleTimer(sessionId: string): void {
+    const state = this.completionStates.get(sessionId);
+    if (!state) return;
+
+    // Clear any existing idle timer
+    if (state.idleTimer) {
+      clearTimeout(state.idleTimer);
+    }
+
+    state.idleTimer = setTimeout(() => {
+      // 4 seconds of silence after the signal — fire the callback
+      console.log('[ClaudeCode] Idle timer fired (4s silence) for session:', sessionId);
+      state.idleTimer = null;
+      if (state.callback) {
+        state.callback();
+      }
+    }, 4000);
+  }
+
+  /**
+   * Called when new PTY output arrives. Appends to cumulative buffer and checks for completion.
+   */
+  private handleCompletionOutput(sessionId: string, rawData: string): void {
+    const state = this.completionStates.get(sessionId);
+    if (!state || !state.enabled) return;
+
+    const cleaned = this.stripAnsiCodes(rawData);
+    state.cumulativeBuffer += cleaned;
+
+    // Keep buffer manageable — retain last 10k chars
+    if (state.cumulativeBuffer.length > 10000) {
+      state.cumulativeBuffer = state.cumulativeBuffer.slice(-10000);
+    }
+
+    if (state.signalDetected) {
+      // New output arrived after signal — reset the idle timer
+      this.startIdleTimer(sessionId);
+    } else {
+      // Check for the completion signal
+      this.checkCompletionSignal(sessionId);
+    }
   }
 
   private generateId(): string {
