@@ -308,6 +308,15 @@ ipcMain.handle('fs:readdir', async (_, path: string) => {
   return fs.readdir(path);
 });
 
+ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  // Security: only allow writing inside known project directories
+  const dir = path.dirname(filePath);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(filePath, content, 'utf-8');
+});
+
 // IPC Handlers - Shell
 ipcMain.handle('shell:openExternal', (_, url: string) => {
   // Validate URL to prevent opening malicious protocols

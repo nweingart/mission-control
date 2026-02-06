@@ -8,7 +8,7 @@ type DeployStep =
   | 'git-init'
   | 'git-commit'
   | 'github-push'
-  | 'vercel-connect'
+  | 'vercel-deploy'
   | 'complete'
   | 'pushing'
   | 'error';
@@ -19,6 +19,7 @@ export default function DeployScreen() {
     updateProject,
     goToHome,
     goToPreview,
+    cliStatus,
   } = useAppStore();
 
   // Early return if no project - prevents null access throughout component
@@ -40,13 +41,18 @@ export default function DeployScreen() {
 
   const isRedeploy = !!currentProject.githubRepo;
 
+  const isInterruptedDeploy = currentProject?.status === 'deploying' && !!currentProject?.githubRepo;
+
   const [deployStep, setDeployStep] = useState<DeployStep>(
-    currentProject?.status === 'complete' ? 'complete' : isRedeploy ? 'setup' : 'setup'
+    currentProject?.status === 'complete' ? 'complete' : isInterruptedDeploy ? 'error' : 'setup'
   );
+  const [interruptedDeploy, setInterruptedDeploy] = useState(isInterruptedDeploy);
   const [isDeploying, setIsDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
+  const [vercelOutput, setVercelOutput] = useState<string[]>([]);
+  const vercelLogRef = useRef<HTMLDivElement>(null);
 
   // Supabase config
   const [supabaseUrl, setSupabaseUrl] = useState(
@@ -77,11 +83,26 @@ export default function DeployScreen() {
   }, [currentProject?.envVars]);
 
   useEffect(() => {
+    if (vercelLogRef.current) {
+      vercelLogRef.current.scrollTop = vercelLogRef.current.scrollHeight;
+    }
+  }, [vercelOutput]);
+
+  useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       window.api.github.removeListeners();
+      window.api.vercel.removeListeners();
     };
+  }, []);
+
+  // Detect interrupted deploy on mount
+  useEffect(() => {
+    if (interruptedDeploy) {
+      setError('A previous deployment to Vercel was interrupted. Your code is already on GitHub — click "Retry Vercel Deploy" to finish.');
+      setGithubRepoUrl(currentProject?.githubRepo || '');
+    }
   }, []);
 
   useEffect(() => {
@@ -113,6 +134,23 @@ export default function DeployScreen() {
 
     setIsDeploying(true);
     setError(null);
+
+    // Pre-flight: verify CLIs are still authenticated
+    try {
+      const freshStatus = await window.api.cli.checkAll();
+      if (!freshStatus.github?.authenticated) {
+        setError('GitHub CLI is not authenticated. Please run "gh auth login" in your terminal and try again.');
+        setIsDeploying(false);
+        return;
+      }
+      if (!freshStatus.vercel?.authenticated) {
+        setError('Vercel CLI is not authenticated. Please run "vercel login" in your terminal and try again.');
+        setIsDeploying(false);
+        return;
+      }
+    } catch {
+      // If CLI check itself fails, proceed anyway — the actual commands will surface errors
+    }
 
     // Save env vars
     const envVars: Record<string, string> = {
@@ -210,21 +248,43 @@ export default function DeployScreen() {
       }
 
       setGithubRepoUrl(newRepoUrl);
-      await updateProject({ githubRepo: newRepoUrl });
+      await updateProject({ githubRepo: newRepoUrl, status: 'deploying' });
 
       setProgress(50);
 
-      // Step 4: Vercel Connect
-      setDeployStep('vercel-connect');
-      setProgress(70);
-      setStatusMessage('');
+      // Step 4: Vercel Deploy
+      setDeployStep('vercel-deploy');
+      setProgress(55);
+      setStatusMessage('Deploying to Vercel...');
+      setVercelOutput([]);
 
-      // Open Vercel import page — use local var since React state hasn't flushed
-      const vercelImportUrl = `https://vercel.com/new/import?s=${encodeURIComponent(newRepoUrl)}`;
-      window.api.shell.openExternal(vercelImportUrl);
+      window.api.vercel.onOutput((data) => {
+        if (!isMountedRef.current) return;
+        setVercelOutput((prev) => [...prev, data.content]);
+      });
 
+      const deployResult = await window.api.vercel.deploy(currentProject.projectPath, envVars);
+      if (!isMountedRef.current) return;
+
+      window.api.vercel.removeListeners();
+
+      const updates: Record<string, unknown> = { status: 'complete' };
+      if (deployResult.url) {
+        updates.vercelUrl = deployResult.url;
+      }
+      await updateProject(updates);
+
+      setDeployStep('complete');
+      setProgress(100);
       setIsDeploying(false);
+
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
     } catch (err) {
+      window.api.vercel.removeListeners();
       if (!isMountedRef.current) return;
       setError(err instanceof Error ? err.message : 'Deployment failed');
       setDeployStep('error');
@@ -232,25 +292,58 @@ export default function DeployScreen() {
     }
   };
 
-  const completeVercelConnect = async () => {
-    if (!currentProject) return;
+  // ──────────────────────────────────────────────
+  // RETRY VERCEL DEPLOY (after interrupted deploy)
+  // ──────────────────────────────────────────────
+  const retryVercelDeploy = async () => {
+    if (!currentProject || isDeploying) return;
 
-    await updateProject({ status: 'complete' });
+    setIsDeploying(true);
+    setError(null);
+    setInterruptedDeploy(false);
 
-    setDeployStep('complete');
-    setProgress(100);
+    const envVars: Record<string, string> = {
+      ...(currentProject.envVars || {}),
+    };
 
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-    });
-  };
+    try {
+      setDeployStep('vercel-deploy');
+      setProgress(55);
+      setStatusMessage('Deploying to Vercel...');
+      setVercelOutput([]);
 
-  const reopenVercelImport = () => {
-    const repoUrl = githubRepoUrl || currentProject?.githubRepo || '';
-    const importUrl = `https://vercel.com/new/import?s=${encodeURIComponent(repoUrl)}`;
-    window.api.shell.openExternal(importUrl);
+      window.api.vercel.onOutput((data) => {
+        if (!isMountedRef.current) return;
+        setVercelOutput((prev) => [...prev, data.content]);
+      });
+
+      const deployResult = await window.api.vercel.deploy(currentProject.projectPath, envVars);
+      if (!isMountedRef.current) return;
+
+      window.api.vercel.removeListeners();
+
+      const updates: Record<string, unknown> = { status: 'complete' };
+      if (deployResult.url) {
+        updates.vercelUrl = deployResult.url;
+      }
+      await updateProject(updates);
+
+      setDeployStep('complete');
+      setProgress(100);
+      setIsDeploying(false);
+
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+    } catch (err) {
+      window.api.vercel.removeListeners();
+      if (!isMountedRef.current) return;
+      setError(err instanceof Error ? err.message : 'Deployment failed');
+      setDeployStep('error');
+      setIsDeploying(false);
+    }
   };
 
   // ──────────────────────────────────────────────
@@ -323,7 +416,7 @@ export default function DeployScreen() {
   // RENDER
   // ──────────────────────────────────────────────
 
-  const isInProgress = ['git-init', 'git-commit', 'github-push', 'pushing'].includes(deployStep);
+  const isInProgress = ['git-init', 'git-commit', 'github-push', 'vercel-deploy', 'pushing'].includes(deployStep);
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
@@ -385,12 +478,12 @@ export default function DeployScreen() {
               <div className="bg-terracotta-500/10 border border-terracotta-500/30 rounded-lg p-4">
                 <h3 className="font-medium text-terracotta-400 mb-2">Deploy via GitHub</h3>
                 <p className="text-sm text-terracotta-400 mb-3">
-                  Your code will be pushed to GitHub, then you'll connect it to Vercel for automatic deployments. Every future push will auto-deploy.
+                  Your code will be pushed to GitHub and automatically deployed to Vercel. Every future push will auto-deploy.
                 </p>
                 <ol className="text-sm text-terracotta-400 space-y-1 list-decimal list-inside">
                   <li>Enter your Supabase credentials below</li>
                   <li>We'll create a GitHub repo and push your code</li>
-                  <li>You'll import the repo on Vercel's dashboard</li>
+                  <li>We'll automatically deploy to Vercel</li>
                   <li>Future changes: just push to GitHub!</li>
                 </ol>
               </div>
@@ -489,71 +582,31 @@ export default function DeployScreen() {
             </div>
           )}
 
-          {/* ──── VERCEL CONNECT STEP ──── */}
-          {deployStep === 'vercel-connect' && (
+          {/* ──── VERCEL DEPLOY STEP ──── */}
+          {deployStep === 'vercel-deploy' && (
             <div className="space-y-6">
               <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-6">
-                <h3 className="font-medium text-cream-100 mb-4">Connect Vercel to GitHub</h3>
-                <p className="text-charcoal-200 mb-4">
-                  We've opened Vercel in your browser. Follow these steps:
+                <h3 className="font-medium text-cream-100 mb-4">Deploying to Vercel</h3>
+                <p className="text-charcoal-200 mb-2 text-sm">
+                  Running <code className="bg-charcoal-800 px-1.5 py-0.5 rounded text-terracotta-400 text-xs">vercel deploy --prod</code>
                 </p>
 
-                <ol className="space-y-4 mb-6">
-                  <li className="flex items-start space-x-3">
-                    <span className="flex-shrink-0 w-6 h-6 bg-terracotta-500/15 text-terracotta-500 rounded-full flex items-center justify-center text-sm font-medium">1</span>
-                    <span className="text-charcoal-100">Select the "<strong>{currentProject?.slug}</strong>" repository</span>
-                  </li>
-                  <li className="flex items-start space-x-3">
-                    <span className="flex-shrink-0 w-6 h-6 bg-terracotta-500/15 text-terracotta-500 rounded-full flex items-center justify-center text-sm font-medium">2</span>
-                    <div className="flex-1">
-                      <span className="text-charcoal-100">Add these environment variables:</span>
-                      <div className="mt-2 space-y-2">
-                        <div className="flex items-center justify-between bg-charcoal-800 border border-charcoal-600 rounded px-3 py-2">
-                          <div className="min-w-0 flex-1">
-                            <span className="text-xs font-mono text-charcoal-200 block">NEXT_PUBLIC_SUPABASE_URL</span>
-                            <span className="text-xs text-charcoal-400 truncate block">{supabaseUrl}</span>
-                          </div>
-                          <button
-                            onClick={() => copyToClipboard(supabaseUrl)}
-                            className="ml-2 text-xs text-terracotta-500 hover:text-terracotta-600 font-medium flex-shrink-0"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between bg-charcoal-800 border border-charcoal-600 rounded px-3 py-2">
-                          <div className="min-w-0 flex-1">
-                            <span className="text-xs font-mono text-charcoal-200 block">NEXT_PUBLIC_SUPABASE_ANON_KEY</span>
-                            <span className="text-xs text-charcoal-400 truncate block">{supabaseAnonKey}</span>
-                          </div>
-                          <button
-                            onClick={() => copyToClipboard(supabaseAnonKey)}
-                            className="ml-2 text-xs text-terracotta-500 hover:text-terracotta-600 font-medium flex-shrink-0"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                  <li className="flex items-start space-x-3">
-                    <span className="flex-shrink-0 w-6 h-6 bg-terracotta-500/15 text-terracotta-500 rounded-full flex items-center justify-center text-sm font-medium">3</span>
-                    <span className="text-charcoal-100">Click "<strong>Deploy</strong>" in Vercel</span>
-                  </li>
-                </ol>
-
-                <button
-                  onClick={reopenVercelImport}
-                  className="text-sm text-terracotta-500 hover:text-terracotta-600 underline mb-4 block"
+                <div
+                  ref={vercelLogRef}
+                  className="bg-charcoal-900 border border-charcoal-600 rounded-lg p-3 h-48 overflow-y-auto font-mono text-xs text-charcoal-200 space-y-0.5"
                 >
-                  Re-open Vercel import page
-                </button>
+                  {vercelOutput.length === 0 ? (
+                    <p className="text-charcoal-400">Waiting for output...</p>
+                  ) : (
+                    vercelOutput.map((line, i) => (
+                      <p key={i} className="whitespace-pre-wrap break-all">{line}</p>
+                    ))
+                  )}
+                </div>
 
-                <button
-                  onClick={completeVercelConnect}
-                  className="w-full px-6 py-3 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors font-medium"
-                >
-                  I've connected Vercel &mdash; Complete
-                </button>
+                <p className="text-xs text-charcoal-400 mt-3">
+                  This usually takes 1-2 minutes.
+                </p>
               </div>
             </div>
           )}
@@ -570,13 +623,15 @@ export default function DeployScreen() {
                   />
                 </svg>
                 <div>
-                  <h3 className="font-medium text-rust-400">Deployment Failed</h3>
+                  <h3 className="font-medium text-rust-400">
+                    {interruptedDeploy ? 'Deployment Interrupted' : 'Deployment Failed'}
+                  </h3>
                   <p className="text-sm text-rust-400 mt-1">{error}</p>
                   <button
-                    onClick={retry}
+                    onClick={interruptedDeploy ? retryVercelDeploy : retry}
                     className="mt-3 text-sm text-rust-400 underline hover:text-rust-300"
                   >
-                    Try again
+                    {interruptedDeploy ? 'Retry Vercel Deploy' : 'Try again'}
                   </button>
                 </div>
               </div>
@@ -631,9 +686,19 @@ export default function DeployScreen() {
                   <h2 className="text-xl font-bold text-sage-400 mb-2">
                     Your app is live!
                   </h2>
-                  <p className="text-sage-500 mb-4">
-                    Your code is on GitHub and connected to Vercel for automatic deployments.
+                  <p className="text-sage-500 mb-2">
+                    Your code is on GitHub and deployed to Vercel.
                   </p>
+                  {currentProject?.vercelUrl && (
+                    <p className="text-sm font-mono text-sage-400 mb-4 break-all">
+                      {currentProject.vercelUrl}
+                    </p>
+                  )}
+                  {!currentProject?.vercelUrl && (
+                    <p className="text-sage-500 mb-4">
+                      Future pushes to GitHub will auto-deploy.
+                    </p>
+                  )}
                   <div className="flex items-center justify-center space-x-3">
                     {githubRepoUrl && (
                       <button
@@ -698,10 +763,11 @@ export default function DeployScreen() {
 
             {deployStep === 'error' && (
               <button
-                onClick={retry}
-                className="flex items-center space-x-2 px-6 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors"
+                onClick={interruptedDeploy ? retryVercelDeploy : retry}
+                disabled={isDeploying}
+                className="flex items-center space-x-2 px-6 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors"
               >
-                <span>Retry</span>
+                <span>{interruptedDeploy ? 'Retry Vercel Deploy' : 'Retry'}</span>
               </button>
             )}
           </div>

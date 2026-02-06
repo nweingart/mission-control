@@ -28,6 +28,7 @@ export default function PRDReviewScreen() {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      window.api.supabase.removeListeners();
     };
   }, []);
 
@@ -94,7 +95,7 @@ ${prdContent}`;
       setProvisioningPhase('provisioning');
       setProvisioningMessage('Creating your Supabase project...');
 
-      const removeListener = window.api.supabase.onOutput((data) => {
+      window.api.supabase.onOutput((data) => {
         if (!isMountedRef.current) return;
         if (data.content.trim()) {
           setProvisioningMessage(data.content.trim());
@@ -102,20 +103,43 @@ ${prdContent}`;
       });
 
       const result = await window.api.supabase.createProject(currentProject.name);
-      removeListener();
+      window.api.supabase.removeListeners();
 
       if (!isMountedRef.current) return;
 
+      // Validate that we got real API keys back
+      if (!result.anonKey) {
+        throw new Error('Supabase project created but API keys could not be retrieved. Check your Supabase dashboard for project credentials.');
+      }
+
       // Store Supabase ref + env vars on the project
+      const envVars = {
+        ...(currentProject.envVars || {}),
+        NEXT_PUBLIC_SUPABASE_URL: result.url,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: result.anonKey,
+        SUPABASE_SERVICE_ROLE_KEY: result.serviceKey,
+      };
       await updateProject({
         supabaseRef: result.ref,
-        envVars: {
-          ...(currentProject.envVars || {}),
-          NEXT_PUBLIC_SUPABASE_URL: result.url,
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: result.anonKey,
-          SUPABASE_SERVICE_ROLE_KEY: result.serviceKey,
-        },
+        envVars,
       });
+
+      // Write .env.local so local dev works after cloning
+      const envFileContent = Object.entries(envVars)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('\n') + '\n';
+      await window.api.fs.writeFile(
+        `${currentProject.projectPath}/.env.local`,
+        envFileContent
+      );
+
+      // Run any pending migrations (non-fatal — project may not have migrations yet)
+      try {
+        setProvisioningMessage('Running database migrations...');
+        await window.api.supabase.runMigrations(currentProject.projectPath, result.ref);
+      } catch (migrationErr) {
+        console.warn('[PRDReviewScreen] Migrations skipped:', migrationErr);
+      }
 
       // Phase 3: Done
       if (!isMountedRef.current) return;

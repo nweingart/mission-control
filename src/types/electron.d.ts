@@ -97,6 +97,7 @@ export interface ElectronAPI {
   // File System (limited operations)
   fs: {
     readdir: (path: string) => Promise<string[]>;
+    writeFile: (filePath: string, content: string) => Promise<void>;
   };
 
   // Shell

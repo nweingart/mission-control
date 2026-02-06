@@ -122,7 +122,11 @@ export class VercelService {
         clearTimeout(timeoutHandle);
         if (!isResolved) {
           isResolved = true;
-          reject(new Error(`Failed to start Vercel deploy: ${error.message}`));
+          if (error.message.includes('ENOENT')) {
+            reject(new Error('Vercel CLI not found. Please install it with "npm i -g vercel" and try again.'));
+          } else {
+            reject(new Error(`Failed to start Vercel deploy: ${error.message}`));
+          }
         }
       });
 
@@ -133,10 +137,6 @@ export class VercelService {
 
         if (code === 0) {
           // Parse the URL from stdout
-          // Vercel outputs the deployment URL - try multiple patterns
-          // 1. Standard .vercel.app URLs
-          // 2. Custom domains (any https URL in the output)
-          // 3. Newer Vercel URL formats
           let url = '';
 
           // Try .vercel.app first (most common)
@@ -145,12 +145,9 @@ export class VercelService {
             url = vercelAppMatch[0];
           } else {
             // Try any https URL that looks like a deployment URL
-            // Match URLs that are on their own line or followed by whitespace
             const httpsMatches = stdout.match(/https:\/\/[a-zA-Z0-9][-a-zA-Z0-9]*[a-zA-Z0-9]\.[^\s]+/g);
             if (httpsMatches && httpsMatches.length > 0) {
-              // Take the last URL (usually the production URL)
               url = httpsMatches[httpsMatches.length - 1];
-              // Remove any trailing punctuation
               url = url.replace(/[,;:!?]+$/, '');
             }
           }
@@ -161,7 +158,17 @@ export class VercelService {
 
           resolve({ url, projectId });
         } else {
-          reject(new Error(`Vercel deploy failed with code ${code}: ${stderr}`));
+          // Map known error patterns to actionable messages
+          const combined = stderr + stdout;
+          let message: string;
+          if (combined.includes('not logged in') || combined.includes('No credentials found') || combined.includes('Invalid token')) {
+            message = 'Vercel CLI is not authenticated. Please run "vercel login" in your terminal and try again.';
+          } else if (combined.includes('ENOTFOUND') || combined.includes('network') || combined.includes('ETIMEDOUT')) {
+            message = 'Network error during Vercel deployment. Please check your internet connection and try again.';
+          } else {
+            message = `Vercel deploy failed (exit code ${code}): ${stderr.slice(0, 500)}`;
+          }
+          reject(new Error(message));
         }
       });
     });

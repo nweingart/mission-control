@@ -178,9 +178,10 @@ contextBridge.exposeInMainWorld('api', {
     selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('dialog:selectDirectory', defaultPath),
   },
 
-  // File System (limited operations for E2E testing)
+  // File System (limited operations)
   fs: {
     readdir: (path: string) => ipcRenderer.invoke('fs:readdir', path),
+    writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
   },
 
   // Shell

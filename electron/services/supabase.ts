@@ -102,13 +102,7 @@ export class SupabaseService {
             const projectInfo = await this.getProjectInfo(slug);
             resolve(projectInfo);
           } catch (error) {
-            // If we can't get full details, return partial info
-            resolve({
-              ref: slug,
-              url: `https://${slug}.supabase.co`,
-              anonKey: '',
-              serviceKey: '',
-            });
+            reject(new Error(`Supabase project "${slug}" was created, but we couldn't retrieve its API keys. Check your Supabase dashboard at https://supabase.com/dashboard for the project credentials.`));
           }
         } else {
           reject(new Error(`Supabase project creation failed with code ${code}: ${stderr}`));
@@ -121,12 +115,7 @@ export class SupabaseService {
     // Sanitize the ref to prevent any potential injection
     const sanitizedRef = this.sanitizeSlug(ref);
     if (!sanitizedRef) {
-      return {
-        ref,
-        url: `https://${ref}.supabase.co`,
-        anonKey: '',
-        serviceKey: '',
-      };
+      throw new Error(`Invalid Supabase project reference: "${ref}"`);
     }
 
     try {
@@ -194,10 +183,10 @@ export class SupabaseService {
       // Fallback: if line-by-line didn't work, try to find any JWTs in order
       if (!anonKey || !serviceKey) {
         const allTokens = keysOutput.match(jwtPattern) || [];
-        if (allTokens.length >= 1 && !anonKey) {
+        if (allTokens.length >= 1 && !anonKey && allTokens[0]) {
           anonKey = allTokens[0];
         }
-        if (allTokens.length >= 2 && !serviceKey) {
+        if (allTokens.length >= 2 && !serviceKey && allTokens[1]) {
           serviceKey = allTokens[1];
         }
       }
@@ -208,13 +197,8 @@ export class SupabaseService {
         anonKey,
         serviceKey,
       };
-    } catch {
-      return {
-        ref,
-        url: `https://${ref}.supabase.co`,
-        anonKey: '',
-        serviceKey: '',
-      };
+    } catch (err) {
+      throw new Error(`Failed to retrieve API keys for project "${ref}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

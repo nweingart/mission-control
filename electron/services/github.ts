@@ -89,7 +89,12 @@ function runCommand(
       clearTimeout(timeoutHandle);
       if (!isResolved) {
         isResolved = true;
-        reject(new Error(`Failed to run ${command}: ${error.message}`));
+        if (error.message.includes('ENOENT')) {
+          const tool = command === 'gh' ? 'GitHub CLI (gh)' : command;
+          reject(new Error(`${tool} not found. Please install it and try again.`));
+        } else {
+          reject(new Error(`Failed to run ${command}: ${error.message}`));
+        }
       }
     });
 
@@ -109,6 +114,14 @@ node_modules/
 .next/
 out/
 
+# build output
+dist/
+build/
+
+# caches
+.turbo/
+.swc/
+
 # env files
 .env
 .env.*
@@ -120,9 +133,13 @@ out/
 # vercel
 .vercel/
 
+# test coverage
+coverage/
+
 # misc
 .DS_Store
 *.tsbuildinfo
+*.log
 next-env.d.ts
 `;
 
@@ -267,7 +284,15 @@ export class GitHubService {
     );
 
     if (code !== 0) {
-      throw new Error(`gh repo create failed: ${stderr}`);
+      if (stderr.includes('not logged') || stderr.includes('auth login')) {
+        throw new Error('GitHub CLI is not authenticated. Please run "gh auth login" in your terminal and try again.');
+      } else if (stderr.includes('Permission denied') || stderr.includes('publickey')) {
+        throw new Error('SSH key authentication failed. Please check your SSH keys or try "gh auth login" to switch to HTTPS.');
+      } else if (stderr.includes('Name already exists') || stderr.includes('already exists on this account')) {
+        throw new Error(`Name already exists: ${sanitizedName}`);
+      } else {
+        throw new Error(`GitHub repo creation failed: ${stderr.slice(0, 500)}`);
+      }
     }
 
     // Extract repo URL from output
@@ -302,7 +327,13 @@ export class GitHubService {
   async gitPush(projectPath: string, onOutput?: OutputCallback): Promise<void> {
     const { code, stderr } = await runCommand('git', ['push'], projectPath, onOutput);
     if (code !== 0) {
-      throw new Error(`git push failed: ${stderr}`);
+      if (stderr.includes('Permission denied') || stderr.includes('publickey')) {
+        throw new Error('SSH key authentication failed during push. Please check your SSH keys or run "gh auth login" to configure HTTPS.');
+      } else if (stderr.includes('Could not resolve host') || stderr.includes('unable to access')) {
+        throw new Error('Network error during git push. Please check your internet connection and try again.');
+      } else {
+        throw new Error(`git push failed: ${stderr.slice(0, 500)}`);
+      }
     }
   }
 
@@ -395,7 +426,10 @@ export class GitHubService {
     );
 
     if (code !== 0) {
-      throw new Error(`Failed to get GitHub username: ${stderr}`);
+      if (stderr.includes('not logged') || stderr.includes('auth login')) {
+        throw new Error('GitHub CLI is not authenticated. Please run "gh auth login" in your terminal and try again.');
+      }
+      throw new Error(`Failed to get GitHub username: ${stderr.slice(0, 500)}`);
     }
 
     return stdout.trim();
