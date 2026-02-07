@@ -1,4 +1,4 @@
-import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, PlanningChat, GitEvent } from './index';
+import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, PlanningChat, GitEvent, DeploymentRecord } from './index';
 
 export interface ElectronAPI {
   // Storage
@@ -22,6 +22,8 @@ export interface ElectronAPI {
     savePlanningChats: (slug: string, chats: PlanningChat[]) => Promise<void>;
     getGitEvents: (slug: string) => Promise<GitEvent[]>;
     saveGitEvents: (slug: string, events: GitEvent[]) => Promise<void>;
+    getDeployments: (slug: string) => Promise<DeploymentRecord[]>;
+    saveDeployments: (slug: string, deployments: DeploymentRecord[]) => Promise<void>;
   };
 
   // CLI Check

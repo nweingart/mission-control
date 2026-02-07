@@ -49,7 +49,8 @@ export type Screen =
   | 'deploying'
   | 'complete'
   | 'planning-chats'
-  | 'git-history';
+  | 'git-history'
+  | 'deployments';
 
 export interface AppState {
   screen: Screen;
@@ -118,13 +119,26 @@ export interface BacklogItem {
 
 export interface GitEvent {
   id: string;
-  type: 'branch_created' | 'committed' | 'review_completed' | 'auto_fixed' | 'merged' | 'pushed';
+  type: 'branch_created' | 'committed' | 'review_completed' | 'auto_fixed' | 'merged' | 'pushed' | 'deployed';
   taskId?: string;
   taskTitle?: string;
   branchName?: string;
   commitHash?: string;
   commitMessage?: string;
   reviewArtifact?: ReviewArtifact;
+  timestamp: string;
+}
+
+export interface DeploymentRecord {
+  id: string;
+  branch: string;
+  commitHash: string;
+  commitMessage?: string;
+  githubRepoUrl?: string;
+  vercelUrl?: string;
+  vercelProjectId?: string;
+  status: 'pushing' | 'deploying' | 'success' | 'failed';
+  error?: string;
   timestamp: string;
 }
 

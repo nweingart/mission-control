@@ -336,7 +336,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
 
       // Clear planning data and git events
       store.getState().setActivePlanningChat(null);
-      store.setState({ gitEvents: [], backlog: [], planningChats: [], planningChatMessages: [] });
+      store.setState({ gitEvents: [], backlog: [], planningChats: [], planningChatMessages: [], deployments: [] });
 
       store.getState().setScreen('home');
 

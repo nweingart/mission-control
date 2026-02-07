@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld('api', {
     savePlanningChats: (slug: string, chats: unknown) => ipcRenderer.invoke('storage:savePlanningChats', slug, chats),
     getGitEvents: (slug: string) => ipcRenderer.invoke('storage:getGitEvents', slug),
     saveGitEvents: (slug: string, events: unknown) => ipcRenderer.invoke('storage:saveGitEvents', slug, events),
+    getDeployments: (slug: string) => ipcRenderer.invoke('storage:getDeployments', slug),
+    saveDeployments: (slug: string, deployments: unknown) => ipcRenderer.invoke('storage:saveDeployments', slug, deployments),
   },
 
   // CLI Check

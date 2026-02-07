@@ -160,6 +160,9 @@ export default function DeployScreen() {
     };
     await updateProject({ envVars });
 
+    let deploymentId: string | undefined;
+    let currentBranch: string | undefined;
+
     try {
       // Step 1: Git Init
       setDeployStep('git-init');
@@ -196,7 +199,7 @@ export default function DeployScreen() {
       setProgress(25);
       setStatusMessage('Committing files...');
 
-      await window.api.github.gitAddAndCommit(
+      const commitResult = await window.api.github.gitAddAndCommit(
         currentProject.projectPath,
         'Initial commit'
       );
@@ -250,6 +253,18 @@ export default function DeployScreen() {
       setGithubRepoUrl(newRepoUrl);
       await updateProject({ githubRepo: newRepoUrl, status: 'deploying' });
 
+      deploymentId = `deploy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      currentBranch = await window.api.github.getCurrentBranch(currentProject.projectPath);
+      useAppStore.getState().addDeployment({
+        id: deploymentId,
+        branch: currentBranch,
+        commitHash: commitResult.commitHash,
+        commitMessage: 'Initial commit',
+        githubRepoUrl: `${newRepoUrl}/commit/${commitResult.commitHash}`,
+        status: 'deploying',
+        timestamp: new Date().toISOString(),
+      });
+
       setProgress(50);
 
       // Step 4: Vercel Deploy
@@ -274,6 +289,18 @@ export default function DeployScreen() {
       }
       await updateProject(updates);
 
+      useAppStore.getState().updateDeployment(deploymentId, {
+        status: 'success',
+        vercelUrl: deployResult.url,
+        vercelProjectId: deployResult.projectId,
+      });
+      useAppStore.getState().addGitEvent({
+        type: 'deployed',
+        branchName: currentBranch,
+        commitHash: commitResult.commitHash,
+        commitMessage: `Deployed to ${deployResult.url}`,
+      });
+
       setDeployStep('complete');
       setProgress(100);
       setIsDeploying(false);
@@ -289,6 +316,12 @@ export default function DeployScreen() {
       setError(err instanceof Error ? err.message : 'Deployment failed');
       setDeployStep('error');
       setIsDeploying(false);
+      if (typeof deploymentId !== 'undefined') {
+        useAppStore.getState().updateDeployment(deploymentId, {
+          status: 'failed',
+          error: err instanceof Error ? err.message : 'Deployment failed',
+        });
+      }
     }
   };
 
@@ -305,6 +338,17 @@ export default function DeployScreen() {
     const envVars: Record<string, string> = {
       ...(currentProject.envVars || {}),
     };
+
+    const currentBranch = await window.api.github.getCurrentBranch(currentProject.projectPath).catch(() => 'main');
+    const deploymentId = `deploy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    useAppStore.getState().addDeployment({
+      id: deploymentId,
+      branch: currentBranch,
+      commitHash: '',
+      githubRepoUrl: currentProject.githubRepo,
+      status: 'deploying',
+      timestamp: new Date().toISOString(),
+    });
 
     try {
       setDeployStep('vercel-deploy');
@@ -328,6 +372,17 @@ export default function DeployScreen() {
       }
       await updateProject(updates);
 
+      useAppStore.getState().updateDeployment(deploymentId, {
+        status: 'success',
+        vercelUrl: deployResult.url,
+        vercelProjectId: deployResult.projectId,
+      });
+      useAppStore.getState().addGitEvent({
+        type: 'deployed',
+        branchName: currentBranch,
+        commitMessage: `Deployed to ${deployResult.url}`,
+      });
+
       setDeployStep('complete');
       setProgress(100);
       setIsDeploying(false);
@@ -343,6 +398,10 @@ export default function DeployScreen() {
       setError(err instanceof Error ? err.message : 'Deployment failed');
       setDeployStep('error');
       setIsDeploying(false);
+      useAppStore.getState().updateDeployment(deploymentId, {
+        status: 'failed',
+        error: err instanceof Error ? err.message : 'Deployment failed',
+      });
     }
   };
 
@@ -357,6 +416,8 @@ export default function DeployScreen() {
     setDeployStep('pushing');
     setProgress(20);
     setPushMessage('');
+
+    let deploymentId: string | undefined;
 
     try {
       setStatusMessage('Committing changes...');
@@ -382,11 +443,31 @@ export default function DeployScreen() {
         return;
       }
 
+      const currentBranch = await window.api.github.getCurrentBranch(currentProject.projectPath);
+      deploymentId = `deploy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      useAppStore.getState().addDeployment({
+        id: deploymentId,
+        branch: currentBranch,
+        commitHash: commitResult.commitHash,
+        commitMessage: `Update ${dateStr}`,
+        githubRepoUrl: currentProject.githubRepo ? `${currentProject.githubRepo}/commit/${commitResult.commitHash}` : undefined,
+        status: 'pushing',
+        timestamp: new Date().toISOString(),
+      });
+
       setStatusMessage('Pushing to GitHub...');
       setProgress(70);
 
       await window.api.github.gitPush(currentProject.projectPath);
       if (!isMountedRef.current) return;
+
+      useAppStore.getState().updateDeployment(deploymentId, { status: 'success', vercelUrl: currentProject.vercelUrl });
+      useAppStore.getState().addGitEvent({
+        type: 'deployed',
+        branchName: currentBranch,
+        commitHash: commitResult.commitHash,
+        commitMessage: `Pushed update — Vercel auto-deploying`,
+      });
 
       setPushMessage('Changes pushed! Vercel will auto-deploy in a few moments.');
       setDeployStep('complete');
@@ -397,6 +478,12 @@ export default function DeployScreen() {
       setError(err instanceof Error ? err.message : 'Push failed');
       setDeployStep('error');
       setIsDeploying(false);
+      if (typeof deploymentId !== 'undefined') {
+        useAppStore.getState().updateDeployment(deploymentId, {
+          status: 'failed',
+          error: err instanceof Error ? err.message : 'Push failed',
+        });
+      }
     }
   };
 

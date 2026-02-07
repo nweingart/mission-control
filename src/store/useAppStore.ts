@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Screen, Project, CLIStatus, Task, ChatMessage, BacklogItem, PlanningChat, GitEvent } from '../types';
+import type { Screen, Project, CLIStatus, Task, ChatMessage, BacklogItem, PlanningChat, GitEvent, DeploymentRecord } from '../types';
 
 // Maximum number of terminal output lines to keep in memory
 const MAX_TERMINAL_LINES = 5000;
@@ -93,6 +93,14 @@ interface AppState {
   loadGitEvents: () => Promise<void>;
   goToGitHistory: () => void;
 
+  // Deployment records
+  deployments: DeploymentRecord[];
+  addDeployment: (record: DeploymentRecord) => void;
+  updateDeployment: (id: string, updates: Partial<DeploymentRecord>) => void;
+  saveDeployments: () => Promise<void>;
+  loadDeployments: () => Promise<void>;
+  goToDeployments: () => void;
+
   // Navigation helpers
   goToHome: () => void;
   startNewProject: () => void;
@@ -121,6 +129,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Git events initial state
   gitEvents: [],
+
+  // Deployment records initial state
+  deployments: [],
 
   // Planning V2 initial state
   backlog: [],
@@ -247,6 +258,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           await get().loadGitEvents();
         } catch (err) {
           console.error('Failed to load git events:', err);
+        }
+
+        try {
+          await get().loadDeployments();
+        } catch (err) {
+          console.error('Failed to load deployments:', err);
         }
 
         // Navigate to appropriate screen based on project status
@@ -615,6 +632,65 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ screen: 'git-history' });
   },
 
+  // Deployment records actions
+  addDeployment: (record) => {
+    const { currentProject } = get();
+    if (!currentProject) {
+      console.warn('addDeployment called without a current project');
+      return;
+    }
+    set((state) => ({ deployments: [...state.deployments, record] }));
+    const slug = currentProject.slug;
+    window.api.storage.saveDeployments(slug, get().deployments).catch((err) => {
+      console.error('Failed to save deployments:', err);
+    });
+  },
+
+  updateDeployment: (id, updates) => {
+    const { currentProject } = get();
+    if (!currentProject) return;
+    set((state) => ({
+      deployments: state.deployments.map((d) =>
+        d.id === id ? { ...d, ...updates } : d
+      ),
+    }));
+    const slug = currentProject.slug;
+    window.api.storage.saveDeployments(slug, get().deployments).catch((err) => {
+      console.error('Failed to save deployments:', err);
+    });
+  },
+
+  saveDeployments: async () => {
+    const { currentProject, deployments } = get();
+    if (!currentProject) {
+      console.warn('saveDeployments called without a current project');
+      return;
+    }
+    try {
+      await window.api.storage.saveDeployments(currentProject.slug, deployments);
+    } catch (err) {
+      console.error('Failed to save deployments:', err);
+    }
+  },
+
+  loadDeployments: async () => {
+    const { currentProject } = get();
+    if (currentProject) {
+      try {
+        const deployments = await window.api.storage.getDeployments(currentProject.slug);
+        set({ deployments });
+      } catch (err) {
+        console.error('Failed to load deployments:', err);
+        set({ deployments: [] });
+      }
+    }
+  },
+
+  goToDeployments: () => {
+    if (!get().currentProject) return;
+    set({ screen: 'deployments' });
+  },
+
   // Onboarding actions
   completeOnboarding: async () => {
     try {
@@ -679,6 +755,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       planningChats: [],
       activePlanningChatId: null,
       planningChatMessages: [],
+      deployments: [],
     });
   },
 
@@ -695,6 +772,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       planningChats: [],
       activePlanningChatId: null,
       planningChatMessages: [],
+      deployments: [],
     });
   },
 

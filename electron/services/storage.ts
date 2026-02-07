@@ -63,6 +63,19 @@ interface GitEvent {
   timestamp: string;
 }
 
+interface DeploymentRecord {
+  id: string;
+  branch: string;
+  commitHash: string;
+  commitMessage?: string;
+  githubRepoUrl?: string;
+  vercelUrl?: string;
+  vercelProjectId?: string;
+  status: string;
+  error?: string;
+  timestamp: string;
+}
+
 export class StorageService {
   private forgeDir: string;
   private projectsDir: string;
@@ -424,6 +437,20 @@ export class StorageService {
     const eventsPath = join(this.projectsDir, slug, 'git-events.json');
     this.createBackup(eventsPath);
     this.atomicWriteFile(eventsPath, JSON.stringify(events, null, 2));
+  }
+
+  // Deployment records methods
+  getDeployments(slug: string): DeploymentRecord[] {
+    const deploymentsPath = join(this.projectsDir, slug, 'deployments.json');
+    if (!existsSync(deploymentsPath)) return [];
+    const content = readFileSync(deploymentsPath, 'utf-8');
+    return this.safeJsonParse<DeploymentRecord[]>(content, deploymentsPath) ?? [];
+  }
+
+  saveDeployments(slug: string, deployments: DeploymentRecord[]): void {
+    const deploymentsPath = join(this.projectsDir, slug, 'deployments.json');
+    this.createBackup(deploymentsPath);
+    this.atomicWriteFile(deploymentsPath, JSON.stringify(deployments, null, 2));
   }
 
   // Helper methods

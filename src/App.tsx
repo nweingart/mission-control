@@ -19,6 +19,7 @@ import DeployScreen from './screens/DeployScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import PlanningChatsScreen from './screens/PlanningChatsScreen';
 import GitHistoryScreen from './screens/GitHistoryScreen';
+import DeploymentsScreen from './screens/DeploymentsScreen';
 import ProjectLayout from './components/ProjectLayout';
 
 function App() {
@@ -104,6 +105,8 @@ function App() {
         return <PlanningChatsScreen />;
       case 'git-history':
         return <GitHistoryScreen />;
+      case 'deployments':
+        return <DeploymentsScreen />;
       default:
         return <HomeScreen />;
     }

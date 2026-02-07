@@ -783,7 +783,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
 
     // Clear planning data and git events
     store.getState().setActivePlanningChat(null);
-    store.setState({ gitEvents: [], backlog: [], planningChats: [], planningChatMessages: [] });
+    store.setState({ gitEvents: [], backlog: [], planningChats: [], planningChatMessages: [], deployments: [] });
 
     store.getState().setScreen('home');
 

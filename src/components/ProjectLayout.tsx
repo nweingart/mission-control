@@ -23,14 +23,15 @@ const statusToScreen: Record<ProjectStatus, Screen> = {
 };
 
 export default function ProjectLayout({ children }: { children: ReactNode }) {
-  const { currentProject, screen, goToHome, setScreen, goToGitHistory } = useAppStore();
+  const { currentProject, screen, goToHome, setScreen, goToGitHistory, goToDeployments } = useAppStore();
 
   if (!currentProject) return <>{children}</>;
 
   const phaseLabel = statusToLabel[currentProject.status] || 'Project';
   const phaseScreen = statusToScreen[currentProject.status] || 'home';
-  const isPhaseActive = screen !== 'git-history';
+  const isPhaseActive = screen !== 'git-history' && screen !== 'deployments';
   const isGitHistoryActive = screen === 'git-history';
+  const isDeploymentsActive = screen === 'deployments';
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
@@ -83,6 +84,17 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           >
             Git History
             {isGitHistoryActive && (
+              <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-terracotta-500 rounded-full" />
+            )}
+          </button>
+          <button
+            onClick={goToDeployments}
+            className={`px-3 py-1.5 text-sm font-medium rounded transition-colors relative ${
+              isDeploymentsActive ? 'text-cream-100' : 'text-charcoal-400 hover:text-charcoal-200'
+            }`}
+          >
+            Deployments
+            {isDeploymentsActive && (
               <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-terracotta-500 rounded-full" />
             )}
           </button>
