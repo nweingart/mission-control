@@ -57,7 +57,8 @@ export type Screen =
   | 'planning-chats'
   | 'git-history'
   | 'deployments'
-  | 'gap-analysis';
+  | 'gap-analysis'
+  | 'settings';
 
 export interface AppState {
   screen: Screen;

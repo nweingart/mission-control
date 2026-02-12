@@ -24,6 +24,7 @@ import GitHistoryScreen from './screens/GitHistoryScreen';
 import DeploymentsScreen from './screens/DeploymentsScreen';
 import GapAnalysisScreen from './screens/GapAnalysisScreen';
 import ProjectHomeScreen from './screens/ProjectHomeScreen';
+import SettingsScreen from './screens/SettingsScreen';
 import ProjectLayout from './components/ProjectLayout';
 
 function App() {
@@ -57,10 +58,12 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Expose E2E test trigger for HomeScreen settings menu
+  // Expose test triggers for settings screen
   useEffect(() => {
+    (window as unknown as { openFlowTest?: () => void }).openFlowTest = () => setShowFlowTest(true);
     (window as unknown as { openE2ETest?: () => void }).openE2ETest = () => setShowE2ETest(true);
     return () => {
+      delete (window as unknown as { openFlowTest?: () => void }).openFlowTest;
       delete (window as unknown as { openE2ETest?: () => void }).openE2ETest;
     };
   }, []);
@@ -162,6 +165,8 @@ function App() {
         return <SetupReadyScreen />;
       case 'home':
         return <HomeScreen />;
+      case 'settings':
+        return <SettingsScreen />;
       case 'idea':
         return <IdeaScreen />;
       default:

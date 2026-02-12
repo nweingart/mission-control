@@ -123,6 +123,89 @@ body {
   flex-direction: column;
 }
 
+/* ============================================
+   Background — Dark Mode Starry Night
+   Applied via body::before (nebula) and body::after (stars)
+   Only visible when .dark class is on <html>
+   ============================================ */
+
+.dark body::before,
+.dark body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Nebula glow */
+.dark body::before {
+  background:
+    radial-gradient(ellipse 80% 50% at 25% 65%, rgba(82, 158, 214, 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 75% 25%, rgba(218, 158, 62, 0.06), transparent);
+}
+
+/* Stars */
+.dark body::after {
+  background:
+    /* Houston blue accent stars */
+    radial-gradient(circle 2px at 15% 20%, rgba(82, 158, 214, 0.9), transparent 3px),
+    radial-gradient(circle 1.5px at 67% 11%, rgba(82, 158, 214, 0.7), transparent 2.5px),
+    radial-gradient(circle 2px at 38% 84%, rgba(82, 158, 214, 0.6), transparent 3px),
+    /* Amber accent stars */
+    radial-gradient(circle 2px at 78% 65%, rgba(218, 158, 62, 0.8), transparent 3px),
+    radial-gradient(circle 1.5px at 24% 92%, rgba(218, 158, 62, 0.6), transparent 2.5px),
+    radial-gradient(circle 1.5px at 91% 28%, rgba(218, 158, 62, 0.5), transparent 2.5px),
+    /* Bright stars */
+    radial-gradient(circle 2px at 8% 12%, rgba(232, 228, 220, 0.8), transparent 3px),
+    radial-gradient(circle 2.5px at 42% 72%, rgba(232, 228, 220, 0.7), transparent 3.5px),
+    radial-gradient(circle 2px at 55% 18%, rgba(232, 228, 220, 0.75), transparent 3px),
+    radial-gradient(circle 2px at 85% 15%, rgba(232, 228, 220, 0.7), transparent 3px),
+    radial-gradient(circle 2.5px at 18% 48%, rgba(232, 228, 220, 0.65), transparent 3.5px),
+    radial-gradient(circle 2px at 73% 42%, rgba(232, 228, 220, 0.7), transparent 3px),
+    /* Medium stars */
+    radial-gradient(circle 1.5px at 22% 45%, rgba(232, 228, 220, 0.6), transparent 2.5px),
+    radial-gradient(circle 1.5px at 35% 8%, rgba(232, 228, 220, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 62% 88%, rgba(232, 228, 220, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 70% 35%, rgba(232, 228, 220, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 90% 52%, rgba(232, 228, 220, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 18% 78%, rgba(232, 228, 220, 0.6), transparent 2.5px),
+    radial-gradient(circle 1.5px at 75% 82%, rgba(232, 228, 220, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 30% 55%, rgba(232, 228, 220, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 95% 90%, rgba(232, 228, 220, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 5% 95%, rgba(232, 228, 220, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 50% 5%, rgba(232, 228, 220, 0.6), transparent 2.5px),
+    radial-gradient(circle 1.5px at 83% 73%, rgba(232, 228, 220, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 12% 33%, rgba(232, 228, 220, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 60% 58%, rgba(232, 228, 220, 0.5), transparent 2.5px),
+    /* Dim stars */
+    radial-gradient(circle 1px at 48% 38%, rgba(232, 228, 220, 0.4), transparent 2px),
+    radial-gradient(circle 1px at 3% 67%, rgba(232, 228, 220, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 27% 17%, rgba(232, 228, 220, 0.4), transparent 2px),
+    radial-gradient(circle 1px at 58% 76%, rgba(232, 228, 220, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 88% 41%, rgba(232, 228, 220, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 44% 22%, rgba(232, 228, 220, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 16% 62%, rgba(232, 228, 220, 0.4), transparent 2px),
+    radial-gradient(circle 1px at 97% 8%, rgba(232, 228, 220, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 33% 96%, rgba(232, 228, 220, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 79% 53%, rgba(232, 228, 220, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 52% 47%, rgba(232, 228, 220, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 7% 85%, rgba(232, 228, 220, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 65% 3%, rgba(232, 228, 220, 0.4), transparent 2px),
+    radial-gradient(circle 1px at 40% 63%, rgba(232, 228, 220, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 93% 77%, rgba(232, 228, 220, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 21% 4%, rgba(232, 228, 220, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 72% 91%, rgba(232, 228, 220, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 46% 51%, rgba(232, 228, 220, 0.3), transparent 2px);
+  animation: twinkle 4s ease-in-out infinite alternate;
+}
+
+@keyframes twinkle {
+  0% { opacity: 0.55; }
+  50% { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

@@ -1,24 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import ProjectCard from '../components/ProjectCard';
-import FlowTestRunner from '../components/FlowTestRunner';
 
 export default function HomeScreen() {
-  const { projects, startNewProject, loadProject, refreshProjects, setScreen, setCLIStatus, cliStatus, resetOnboarding } = useAppStore();
-  const [showFlowTest, setShowFlowTest] = useState(false);
+  const { projects, startNewProject, loadProject, refreshProjects, setScreen, setCLIStatus, cliStatus } = useAppStore();
   const [loadingSlug, setLoadingSlug] = useState<string | null>(null);
-  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
-  const settingsMenuRef = useRef<HTMLDivElement>(null);
 
-  const toggleDarkMode = () => {
-    const next = !isDark;
-    document.documentElement.classList.toggle('dark', next);
-    localStorage.setItem('theme', next ? 'dark' : 'light');
-    setIsDark(next);
-  };
-
-  // Just start new project immediately - no blocking checks
   const handleNewProject = () => {
     startNewProject();
   };
@@ -33,29 +20,8 @@ export default function HomeScreen() {
         console.error('Failed to check CLI status:', err);
       }
     };
-
     checkStatus();
   }, [setCLIStatus]);
-
-  // Close settings menu on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target as Node)) {
-        setShowSettingsMenu(false);
-      }
-    };
-    if (showSettingsMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showSettingsMenu]);
-
-  const handleResetOnboarding = () => {
-    setShowSettingsMenu(false);
-    if (window.confirm('Reset onboarding walkthrough? You will see the intro screens again.')) {
-      resetOnboarding();
-    }
-  };
 
   const handleLoadProject = async (slug: string) => {
     setLoadingSlug(slug);
@@ -70,7 +36,6 @@ export default function HomeScreen() {
     const project = projects.find(p => p.slug === slug);
     if (!project) return;
 
-    // Determine cleanup description for confirmation
     let cleanupMsg = 'This will delete all local files.';
     if (project.supabaseRef && project.supabaseSchema) {
       const sharesRef = projects.some(p => p.slug !== slug && p.supabaseRef === project.supabaseRef);
@@ -83,13 +48,11 @@ export default function HomeScreen() {
 
     if (!confirm(`Delete "${project.name}"?\n\n${cleanupMsg}`)) return;
 
-    // Mode B: shared DB — drop only this project's schema
     if (project.supabaseRef && project.supabaseSchema) {
       try {
         await window.api.supabase.dropSchema(project.supabaseRef, project.supabaseSchema);
       } catch (err) {
         console.error('Failed to drop schema:', err);
-        // Continue with local delete even if schema drop fails
       }
     }
 
@@ -177,35 +140,13 @@ export default function HomeScreen() {
           ))}
         </div>
 
-        {/* Dark mode toggle */}
-        <button
-          onClick={toggleDarkMode}
-          className="group relative no-drag mb-3"
-          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          <div className="w-10 h-10 border-2 border-border hover:border-ink-muted flex items-center justify-center text-ink-muted hover:text-ink-secondary sidebar-icon rounded-md">
-            {isDark ? (
-              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            ) : (
-              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-              </svg>
-            )}
-          </div>
-          <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-ink text-surface-light text-xs whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
-            {isDark ? 'Light mode' : 'Dark mode'}
-          </div>
-        </button>
-
         {/* Divider */}
         <div className="w-9 divider-warm mb-5" />
 
         {/* Settings */}
-        <div className="mb-6 relative" ref={settingsMenuRef}>
+        <div className="mb-6">
           <button
-            onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+            onClick={() => setScreen('settings')}
             className="group relative no-drag"
             title="Settings"
           >
@@ -215,77 +156,17 @@ export default function HomeScreen() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </div>
-            {/* Tooltip (only when menu is closed) */}
-            {!showSettingsMenu && (
-              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-ink text-surface-light text-xs whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
-                Settings
-              </div>
-            )}
-          </button>
-          {/* Settings dropdown */}
-          {showSettingsMenu && (
-            <div className="absolute left-full ml-3 bottom-0 w-48 card-panel z-50 py-1">
-              <button
-                onClick={() => {
-                  setShowSettingsMenu(false);
-                  setScreen('setup-deploy');
-                }}
-                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
-              >
-                Manage Tools
-              </button>
-              <button
-                onClick={() => {
-                  setShowSettingsMenu(false);
-                  setScreen('setup-workspace');
-                }}
-                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
-              >
-                Workspace Directory
-              </button>
-              <button
-                onClick={handleResetOnboarding}
-                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
-              >
-                Reset Onboarding
-              </button>
-              <div className="divider-warm my-1" />
-              <button
-                onClick={() => {
-                  setShowSettingsMenu(false);
-                  setShowFlowTest(true);
-                }}
-                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
-              >
-                Run Flow Test
-              </button>
-              <button
-                onClick={() => {
-                  setShowSettingsMenu(false);
-                  (window as unknown as { openE2ETest?: () => void }).openE2ETest?.();
-                }}
-                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
-              >
-                Run E2E Test
-              </button>
-              <button
-                onClick={() => {
-                  setShowSettingsMenu(false);
-                  (window as unknown as { openCICDTest?: () => void }).openCICDTest?.();
-                }}
-                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
-              >
-                Run CI/CD Test
-              </button>
+            <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-ink text-surface-light text-xs whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
+              Settings
             </div>
-          )}
+          </button>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="bg-surface-card border-b border-border px-4 py-3 drag-region">
+        <header className="border-b border-border px-4 py-3 drag-region">
           <div className="flex items-center justify-between">
             <h1 className="font-display text-lg tracking-wide font-bold text-secondary flex items-center gap-2">
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
@@ -343,7 +224,6 @@ export default function HomeScreen() {
                     onClick={() => handleLoadProject(project.slug)}
                     onDelete={() => handleDeleteProject(project.slug)}
                   />
-                  {/* Loading overlay */}
                   {loadingSlug === project.slug && (
                     <div className="absolute inset-0 bg-surface-card/80 flex items-center justify-center">
                       <div className="flex items-center space-x-2 text-accent">
@@ -358,7 +238,6 @@ export default function HomeScreen() {
           )}
         </main>
       </div>
-      {showFlowTest && <FlowTestRunner onClose={() => setShowFlowTest(false)} />}
     </div>
   );
 }
