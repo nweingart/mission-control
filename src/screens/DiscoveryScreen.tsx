@@ -68,7 +68,6 @@ export default function DiscoveryScreen() {
     currentProject,
     chatMessages,
     addChatMessage,
-    saveChatHistory,
     updateProject,
     goToHome,
     goToPRDReview,
@@ -169,9 +168,6 @@ export default function DiscoveryScreen() {
           role: 'assistant',
           content: response,
         });
-
-        await saveChatHistory();
-        console.log('[DiscoveryScreen] Chat history saved');
       } catch (err) {
         // Check if still mounted before updating state
         if (!isMountedRef.current) return;
@@ -231,9 +227,6 @@ export default function DiscoveryScreen() {
         content: response,
       });
 
-      // Check if still mounted before saving
-      if (!isMountedRef.current) return;
-      await saveChatHistory();
     } catch (err) {
       // Check if still mounted before updating state
       if (!isMountedRef.current) return;
@@ -269,12 +262,31 @@ export default function DiscoveryScreen() {
 
       if (!isMountedRef.current) return;
 
-      // Save PRD to file
-      await window.api.storage.savePRD(currentProject.slug, prdResponse);
+      // Extract the PRD markdown from Claude's response
+      let prdContent = prdResponse;
+      const headingIndex = prdResponse.indexOf('\n# ');
+      if (headingIndex !== -1) {
+        prdContent = prdResponse.substring(headingIndex + 1);
+      } else if (prdResponse.startsWith('# ')) {
+        prdContent = prdResponse;
+      } else {
+        // Claude may have written the PRD as a file via tool use instead of returning it inline.
+        // Check the project directory for PRD.md as a fallback.
+        console.warn('[DiscoveryScreen] PRD response has no markdown headings, checking project directory for PRD.md');
+        try {
+          const filePrd = await window.api.fs.readFile(`${projectPath}/PRD.md`);
+          if (filePrd && typeof filePrd === 'string' && filePrd.includes('# ')) {
+            console.log('[DiscoveryScreen] Found full PRD at project PRD.md');
+            prdContent = filePrd;
+          }
+        } catch {
+          // No file found, use the response as-is
+        }
+      }
 
-      // Update project status
-      await updateProject({ status: 'discovery' });
-      await saveChatHistory();
+      // Save PRD to file and advance project status
+      await window.api.storage.savePRD(currentProject.slug, prdContent.trim());
+      await updateProject({ status: 'prd_review' });
 
       // Navigate to PRD review screen
       goToPRDReview();
@@ -290,19 +302,16 @@ export default function DiscoveryScreen() {
   // Show loading overlay when generating PRD
   if (isGeneratingPRD) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-charcoal-800">
+      <div className="flex-1 flex flex-col items-center justify-center bg-surface-card">
         <div className="text-center">
           <div className="mb-6">
-            <svg className="animate-spin h-12 w-12 text-terracotta-500 mx-auto" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+            <div className="w-12 h-12 border-4 border-accent border-t-transparent animate-spin mx-auto" />
           </div>
-          <h2 className="text-2xl font-bold text-cream-100 mb-2">Generating Your PRD</h2>
-          <p className="text-charcoal-300 max-w-md">
+          <h2 className="text-base font-sans font-semibold text-ink mb-2">Generating Your PRD</h2>
+          <p className="text-ink-muted max-w-md">
             Creating a comprehensive Product Requirements Document based on our conversation...
           </p>
-          <p className="text-charcoal-400 text-sm mt-4">This usually takes 15-30 seconds</p>
+          <p className="text-ink-muted text-sm mt-4">This usually takes 15-30 seconds</p>
         </div>
       </div>
     );
@@ -311,29 +320,29 @@ export default function DiscoveryScreen() {
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Header */}
-      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4">
+      <header className="bg-surface-card border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
               onClick={goToHome}
-              className="text-charcoal-300 hover:text-cream-100 transition-colors no-drag"
+              className="text-ink-muted hover:text-ink transition-colors no-drag"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <div>
-              <h1 className="text-xl font-bold text-cream-100">{currentProject?.name}</h1>
-              <p className="text-charcoal-300 text-sm">Discovery Phase - Let's refine your idea</p>
+              <h1 className="text-xl font-sans font-bold text-ink">{currentProject?.name}</h1>
+              <p className="text-ink-muted text-sm">Discovery Phase - Let's refine your idea</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-sm text-charcoal-300">Step 1 of 4</span>
+            <span className="text-sm text-ink-muted">Step 1 of 4</span>
             <div className="flex space-x-1">
-              <div className="w-2 h-2 rounded-full bg-terracotta-500"></div>
-              <div className="w-2 h-2 rounded-full bg-charcoal-600"></div>
-              <div className="w-2 h-2 rounded-full bg-charcoal-600"></div>
-              <div className="w-2 h-2 rounded-full bg-charcoal-600"></div>
+              <div className="w-2 h-2 bg-accent"></div>
+              <div className="w-2 h-2 bg-border"></div>
+              <div className="w-2 h-2 bg-border"></div>
+              <div className="w-2 h-2 bg-border"></div>
             </div>
           </div>
         </div>
@@ -341,8 +350,8 @@ export default function DiscoveryScreen() {
 
       {/* Error banner */}
       {error && (
-        <div className="bg-rust-500/10 border-b border-rust-500/30 px-6 py-3">
-          <div className="flex items-center text-rust-400">
+        <div className="bg-error/10 border-b border-error/30 px-6 py-3">
+          <div className="flex items-center text-error">
             <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
             </svg>
@@ -366,12 +375,12 @@ export default function DiscoveryScreen() {
 
         {/* Generate PRD button - shown when Claude signals readiness */}
         {readyForPRD && !isLoading && (
-          <div className="border-t border-charcoal-500 p-6 bg-charcoal-800/50">
+          <div className="border-t border-border p-6 bg-surface-card/50">
             <div className="flex flex-col items-center space-y-3">
-              <p className="text-charcoal-300 text-sm">Claude has enough info to create your PRD</p>
+              <p className="text-ink-muted text-sm">Claude has enough info to create your PRD</p>
               <button
                 onClick={handleGeneratePRD}
-                className="px-8 py-3 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors font-semibold text-lg"
+                className="btn-solid-primary px-8 py-3 font-semibold text-lg"
               >
                 Generate PRD
               </button>

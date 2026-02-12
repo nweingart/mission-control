@@ -6,6 +6,7 @@ export interface Project {
   projectPath: string;
   vercelUrl?: string;
   supabaseRef?: string;
+  supabaseSchema?: string;
   githubRepo?: string;
   idea?: string;
   prd?: string;
@@ -15,6 +16,7 @@ export interface Project {
 export type ProjectStatus =
   | 'idea'
   | 'discovery'
+  | 'prd_review'
   | 'planning'
   | 'building'
   | 'previewing'
@@ -25,6 +27,9 @@ export interface Task {
   id: string;
   title: string;
   completed: boolean;
+  buildPhase?: 'branched' | 'built' | 'reviewed' | 'merged';
+  branchName?: string;
+  lastReviewArtifact?: ReviewArtifact;
 }
 
 export interface CLIStatus {
@@ -40,6 +45,7 @@ export type Screen =
   | 'setup-deploy'
   | 'setup-ready'
   | 'home'
+  | 'project-home'
   | 'idea'
   | 'discovery'
   | 'prd-review'
@@ -50,7 +56,8 @@ export type Screen =
   | 'complete'
   | 'planning-chats'
   | 'git-history'
-  | 'deployments';
+  | 'deployments'
+  | 'gap-analysis';
 
 export interface AppState {
   screen: Screen;
@@ -105,21 +112,38 @@ export type TaskPhase =
   | 'merging'
   | 'pushing'
   | 'complete'
-  | 'needs_input'
   | 'error';
+
+export type PlanningType = 'bug_fix' | 'feature_refactor' | 'new_feature';
 
 export interface BacklogItem {
   id: string;
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
+  type?: PlanningType;
   createdAt: string;
   chatId?: string; // links to originating planning chat
+  prd?: string;
+  prdStatus?: 'pending' | 'generating' | 'complete' | 'failed';
+  estimatedTasks?: number;
+  storyPoints?: number;
+  status?: 'todo' | 'in_progress' | 'done';
+  sprintId?: string;
+  notes?: string;
+}
+
+export interface Sprint {
+  id: string;
+  name: string;
+  order: number;
+  createdAt: string;
+  archived?: boolean;
 }
 
 export interface GitEvent {
   id: string;
-  type: 'branch_created' | 'committed' | 'review_completed' | 'auto_fixed' | 'merged' | 'pushed' | 'deployed';
+  type: 'branch_created' | 'committed' | 'review_completed' | 'auto_fixed' | 'merged' | 'pushed' | 'deployed' | 'gap_analysis_complete';
   taskId?: string;
   taskTitle?: string;
   branchName?: string;
@@ -137,8 +161,30 @@ export interface DeploymentRecord {
   githubRepoUrl?: string;
   vercelUrl?: string;
   vercelProjectId?: string;
-  status: 'pushing' | 'deploying' | 'success' | 'failed';
+  status: 'pushing' | 'deploying' | 'watching' | 'success' | 'failed';
+  workflowRunId?: number;
   error?: string;
+  timestamp: string;
+}
+
+export interface GapFinding {
+  category: string;
+  description: string;
+  prdSection?: string;
+  severity: 'missing' | 'incomplete' | 'deviation';
+  resolved: boolean;
+}
+
+export interface GapAnalysis {
+  id: string;
+  pass: 1 | 2;
+  grade: number;
+  validatedGrade: number;
+  findings: GapFinding[];
+  summary: string;
+  fixesApplied: boolean;
+  fixCommitHash?: string;
+  remainingItems: string[];
   timestamp: string;
 }
 

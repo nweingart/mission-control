@@ -132,8 +132,6 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
   }, [runningCommand, setCLIStatus]);
 
   // Poll auth status while the Claude auth command is running.
-  // The `claude` command opens an interactive REPL that never exits on its own,
-  // so we poll and auto-kill the session once auth is detected.
   useEffect(() => {
     if (runningCommand !== 'auth-claude') return;
 
@@ -142,12 +140,10 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
         const status = await window.api.cli.checkClaude();
         if (status.authenticated) {
           clearInterval(interval);
-          // Auth detected — kill the REPL session
           window.api.setup.killSession(sessionIdRef.current);
           setRunningCommand(null);
           setCommandResult('success');
 
-          // Full recheck to update all statuses
           const fullStatus = await window.api.cli.checkAll();
           setCLIStatus(fullStatus);
 
@@ -223,9 +219,9 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
     <div className="max-w-2xl w-full">
       {/* Header */}
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold text-cream-100 mb-1">Connect Your Tools</h2>
-        <p className="text-charcoal-300">
-          <span className="text-sage-400 font-medium">{readyCount}/4</span> connected
+        <h2 className="text-2xl font-sans font-bold text-ink mb-1">Connect Your Tools</h2>
+        <p className="text-ink-muted text-sm">
+          <span className="text-success font-medium">{readyCount}/4</span> connected
         </p>
       </div>
 
@@ -242,21 +238,21 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
           return (
             <div
               key={cli.key}
-              className={`bg-charcoal-700 rounded-lg border-2 p-4 transition-all duration-300 ${
-                isReady ? 'border-sage-500/40 bg-sage-500/10' : 'border-charcoal-600'
+              className={`bg-surface border-2 p-4 transition-all duration-300 ${
+                isReady ? 'border-success/40 bg-success/10' : 'border-border'
               }`}
             >
               <div className="flex items-start space-x-3">
-                <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${
-                  isReady ? 'bg-sage-500/15 text-sage-500' : 'bg-charcoal-600 text-charcoal-200'
+                <div className={`flex-shrink-0 w-10 h-10 flex items-center justify-center ${
+                  isReady ? 'bg-success/15 text-success' : 'bg-surface-card text-ink-secondary border border-border'
                 }`}>
                   {cli.icon}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-cream-100">{cli.name}</h3>
+                    <h3 className="text-sm font-sans font-medium text-ink">{cli.name}</h3>
                     {isReady && (
-                      <span className="inline-flex items-center text-sage-500 text-sm font-medium">
+                      <span className="inline-flex items-center text-success text-sm font-medium">
                         <svg className="w-5 h-5 mr-1" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
@@ -264,13 +260,13 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-charcoal-300 mt-0.5">{cli.description}</p>
+                  <p className="text-sm text-ink-muted mt-0.5">{cli.description}</p>
 
                   {/* Status badges */}
                   {!isReady && (
                     <div className="flex items-center space-x-3 mt-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        isInstalled ? 'bg-sage-500/15 text-sage-400' : 'bg-charcoal-700 text-charcoal-200'
+                      <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium ${
+                        isInstalled ? 'bg-success/15 text-success' : 'bg-surface text-ink-secondary'
                       }`}>
                         {isInstalled ? (
                           <>
@@ -283,8 +279,8 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
                           'Not installed'
                         )}
                       </span>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        isAuthenticated ? 'bg-sage-500/15 text-sage-400' : 'bg-charcoal-700 text-charcoal-200'
+                      <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium ${
+                        isAuthenticated ? 'bg-success/15 text-success' : 'bg-surface text-ink-secondary'
                       }`}>
                         {isAuthenticated ? (
                           <>
@@ -306,96 +302,87 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
               {!isReady && (
                 <div className="mt-3 ml-13 space-y-3">
                   {!isInstalled && (
-                    <div className="bg-charcoal-700 rounded-lg p-3">
+                    <div className="bg-surface p-3 border-2 border-border">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-medium text-charcoal-100">Install {cli.name}</p>
+                        <p className="text-sm font-medium text-ink">Install {cli.name}</p>
                         <button
                           onClick={() => runCommand(cli.installCommand, `install-${cli.key}`)}
                           disabled={runningCommand !== null}
-                          className="px-3 py-1.5 text-sm bg-terracotta-500 text-charcoal-950 rounded hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors"
+                          className="btn-solid-primary text-[13px] px-3 py-1.5"
                         >
                           {isInstallingThis ? (
                             <span className="flex items-center">
-                              <svg className="animate-spin h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                              </svg>
-                              Installing...
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin mr-1.5" />
+                              INSTALLING...
                             </span>
                           ) : (
-                            'Run Install'
+                            'RUN INSTALL'
                           )}
                         </button>
                       </div>
-                      <code className="block bg-charcoal-950 text-charcoal-100 text-sm p-2 rounded font-mono">
+                      <code className="block bg-surface-light text-ink text-sm p-2 font-mono border border-border">
                         {cli.installCommand}
                       </code>
                     </div>
                   )}
 
                   {isInstalled && !isAuthenticated && (
-                    <div className="bg-charcoal-700 rounded-lg p-3">
+                    <div className="bg-surface p-3 border-2 border-border">
                       {cli.key === 'claude' ? (
                         <>
                           <div className="flex items-center justify-between mb-2">
-                            <p className="text-sm font-medium text-charcoal-100">Authenticate Claude Code</p>
+                            <p className="text-sm font-medium text-ink">Authenticate Claude Code</p>
                             <button
                               onClick={() => runCommand('claude', `auth-${cli.key}`)}
                               disabled={runningCommand !== null}
-                              className="px-3 py-1.5 text-sm bg-terracotta-500 text-charcoal-950 rounded hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors"
+                              className="btn-solid-primary text-[13px] px-3 py-1.5"
                             >
                               {isAuthingThis ? (
                                 <span className="flex items-center">
-                                  <svg className="animate-spin h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                  </svg>
-                                  Authenticating...
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin mr-1.5" />
+                                  AUTHENTICATING...
                                 </span>
                               ) : (
-                                'Login to Claude'
+                                'LOGIN TO CLAUDE'
                               )}
                             </button>
                           </div>
-                          <p className="text-xs text-charcoal-300">
+                          <p className="text-xs text-ink-muted">
                             This will open your browser to sign in with your Anthropic account.
                           </p>
                         </>
                       ) : cli.key === 'github' ? (
                         <>
                           <div className="flex items-center justify-between mb-2">
-                            <p className="text-sm font-medium text-charcoal-100">Authenticate with GitHub</p>
+                            <p className="text-sm font-medium text-ink">Authenticate with GitHub</p>
                             <button
                               onClick={() => runCommand('gh auth login --web', `auth-${cli.key}`)}
                               disabled={runningCommand !== null}
-                              className="px-3 py-1.5 text-sm bg-terracotta-500 text-charcoal-950 rounded hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors"
+                              className="btn-solid-primary text-[13px] px-3 py-1.5"
                             >
                               {isAuthingThis ? (
                                 <span className="flex items-center">
-                                  <svg className="animate-spin h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                  </svg>
-                                  Authenticating...
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin mr-1.5" />
+                                  AUTHENTICATING...
                                 </span>
                               ) : (
-                                'Login with GitHub'
+                                'LOGIN WITH GITHUB'
                               )}
                             </button>
                           </div>
-                          <p className="text-xs text-charcoal-300">
+                          <p className="text-xs text-ink-muted">
                             This will open GitHub in your browser to authorize access.
                           </p>
                         </>
                       ) : cli.key === 'supabase' ? (
                         <>
                           <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm font-medium text-charcoal-100">Authenticate with Token</p>
+                            <p className="text-sm font-medium text-ink">Authenticate with Token</p>
                             <button
                               onClick={() => window.api.shell.openExternal('https://supabase.com/dashboard/account/tokens')}
-                              className="px-3 py-1.5 text-sm border border-terracotta-500 text-terracotta-500 rounded hover:bg-terracotta-500/10 transition-colors"
+                              className="btn-solid text-[13px] px-3 py-1.5"
                             >
-                              Get Token
+                              GET TOKEN
                             </button>
                           </div>
                           <div className="flex space-x-2">
@@ -404,7 +391,7 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
                               value={tokenValue}
                               onChange={(e) => setTokenValue(e.target.value)}
                               placeholder="Paste your Supabase access token"
-                              className="flex-1 px-3 py-2 text-sm border border-charcoal-500 rounded focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent bg-charcoal-700 text-cream-100 placeholder:text-charcoal-400"
+                              className="input-inset flex-1"
                             />
                             <button
                               onClick={() => {
@@ -414,19 +401,16 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
                                 }
                               }}
                               disabled={!tokenValue.trim() || runningCommand !== null}
-                              className="px-4 py-2 text-sm bg-terracotta-500 text-charcoal-950 rounded hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors"
+                              className="btn-solid-primary text-[13px] px-4 py-2"
                             >
                               {isAuthingThis ? (
-                                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                </svg>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin" />
                               ) : (
-                                'Login'
+                                'LOGIN'
                               )}
                             </button>
                           </div>
-                          <p className="text-xs text-charcoal-300 mt-2">
+                          <p className="text-xs text-ink-muted mt-2">
                             Click "Get Token" to create an access token, then paste it above.
                           </p>
                         </>
@@ -434,12 +418,12 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
                         // Vercel: Token-based auth
                         <>
                           <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm font-medium text-charcoal-100">Authenticate with Token</p>
+                            <p className="text-sm font-medium text-ink">Authenticate with Token</p>
                             <button
                               onClick={() => window.api.shell.openExternal('https://vercel.com/account/tokens')}
-                              className="px-3 py-1.5 text-sm border border-terracotta-500 text-terracotta-500 rounded hover:bg-terracotta-500/10 transition-colors"
+                              className="btn-solid text-[13px] px-3 py-1.5"
                             >
-                              Get Token
+                              GET TOKEN
                             </button>
                           </div>
                           <div className="flex space-x-2">
@@ -448,7 +432,7 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
                               value={vercelTokenValue}
                               onChange={(e) => setVercelTokenValue(e.target.value)}
                               placeholder="Paste your Vercel access token"
-                              className="flex-1 px-3 py-2 text-sm border border-charcoal-500 rounded focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent bg-charcoal-700 text-cream-100 placeholder:text-charcoal-400"
+                              className="input-inset flex-1"
                             />
                             <button
                               onClick={async () => {
@@ -473,19 +457,16 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
                                 }
                               }}
                               disabled={!vercelTokenValue.trim() || runningCommand !== null}
-                              className="px-4 py-2 text-sm bg-terracotta-500 text-charcoal-950 rounded hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors"
+                              className="btn-solid-primary text-[13px] px-4 py-2"
                             >
                               {isAuthingThis ? (
-                                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                </svg>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin" />
                               ) : (
-                                'Save Token'
+                                'SAVE TOKEN'
                               )}
                             </button>
                           </div>
-                          <p className="text-xs text-charcoal-300 mt-2">
+                          <p className="text-xs text-ink-muted mt-2">
                             Click "Get Token" to create an access token, then paste it above.
                           </p>
                         </>
@@ -504,9 +485,9 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
         <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
-              <h3 className="font-medium text-charcoal-100">Terminal</h3>
+              <h3 className="text-sm font-sans font-medium text-ink">Terminal</h3>
               {commandResult === 'success' && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-sage-500/15 text-sage-400">
+                <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-success/15 text-success">
                   <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
@@ -514,21 +495,18 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
                 </span>
               )}
               {commandResult === 'error' && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rust-500/15 text-rust-400">
+                <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-error/15 text-error">
                   Failed - check output
                 </span>
               )}
               {runningCommand && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-terracotta-500/15 text-terracotta-400">
-                  <svg className="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
+                <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-accent/15 text-accent">
+                  <div className="w-3 h-3 border-2 border-accent border-t-transparent animate-spin mr-1" />
                   Running...
                 </span>
               )}
             </div>
-            <button onClick={handleCloseTerminal} className="text-charcoal-400 hover:text-charcoal-200">
+            <button onClick={handleCloseTerminal} className="text-ink-muted hover:text-ink-secondary">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -549,39 +527,36 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
         <div className="flex items-center space-x-4">
           <button
             onClick={onBack}
-            className="flex items-center space-x-2 px-4 py-2 text-charcoal-300 hover:text-cream-100 transition-colors"
+            className="btn-solid flex items-center space-x-2"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            <span>Back</span>
+            <span>BACK</span>
           </button>
           <button
             onClick={handleRecheck}
             disabled={isChecking || runningCommand !== null}
-            className="flex items-center space-x-2 px-4 py-2 text-charcoal-300 hover:text-cream-100 disabled:text-charcoal-400 transition-colors"
+            className="btn-solid flex items-center space-x-2"
           >
             {isChecking ? (
               <>
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                <span>Checking...</span>
+                <div className="w-4 h-4 border-2 border-ink border-t-transparent animate-spin" />
+                <span>CHECKING...</span>
               </>
             ) : (
               <>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                <span>Recheck</span>
+                <span>RECHECK</span>
               </>
             )}
           </button>
 
           {/* Recheck feedback */}
           {lastCheckResult === 'success' && (
-            <span className="flex items-center text-sage-500 text-sm font-medium">
+            <span className="flex items-center text-success text-sm font-medium">
               <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
@@ -589,7 +564,7 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
             </span>
           )}
           {lastCheckResult === 'partial' && (
-            <span className="flex items-center text-terracotta-600 text-sm font-medium">
+            <span className="flex items-center text-spectrum-orange text-sm font-medium">
               <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
@@ -601,9 +576,9 @@ export default function OnboardingTools({ onNext, onBack }: OnboardingToolsProps
         <button
           onClick={onNext}
           disabled={!allReady}
-          className="flex items-center space-x-2 px-6 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors font-medium"
+          className="btn-solid-primary flex items-center space-x-2"
         >
-          <span>Continue</span>
+          <span>CONTINUE</span>
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>

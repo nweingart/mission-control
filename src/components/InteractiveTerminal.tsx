@@ -32,16 +32,55 @@ export default function InteractiveTerminal({
     if (!terminalRef.current || xtermRef.current) return;
 
     // Create terminal instance
+    const isDark = document.documentElement.classList.contains('dark');
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 14,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: {
-        background: '#1a1a2e',
-        foreground: '#eaeaea',
-        cursor: '#eaeaea',
-        cursorAccent: '#1a1a2e',
-        selectionBackground: '#44475a',
+      fontFamily: '"JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
+      theme: isDark ? {
+        background: '#1C1A18',
+        foreground: '#E8E4DC',
+        cursor: '#58B26C',
+        cursorAccent: '#1C1A18',
+        selectionBackground: '#3A3630',
+        black: '#1C1A18',
+        red: '#E45848',
+        green: '#58B26C',
+        yellow: '#DA9E3E',
+        blue: '#529ED6',
+        magenta: '#6CB2E4',
+        cyan: '#529ED6',
+        white: '#E8E4DC',
+        brightBlack: '#766E64',
+        brightRed: '#F07868',
+        brightGreen: '#72C886',
+        brightYellow: '#E8B258',
+        brightBlue: '#72B8E8',
+        brightMagenta: '#88C8F0',
+        brightCyan: '#72B8E8',
+        brightWhite: '#F4F0E8',
+      } : {
+        background: '#F5F0E4',
+        foreground: '#26211C',
+        cursor: '#449256',
+        cursorAccent: '#F5F0E4',
+        selectionBackground: '#D6DCEE',
+        black: '#26211C',
+        red: '#CC4434',
+        green: '#449256',
+        yellow: '#C0822A',
+        blue: '#3E8AC2',
+        magenta: '#2A6C9E',
+        cyan: '#3E8AC2',
+        white: '#FEFBF4',
+        brightBlack: '#8E8678',
+        brightRed: '#D4685A',
+        brightGreen: '#5AAE6C',
+        brightYellow: '#D09838',
+        brightBlue: '#5AA0CE',
+        brightMagenta: '#4A8AB8',
+        brightCyan: '#5AA0CE',
+        brightWhite: '#FEFBF4',
       },
       allowProposedApi: true,
     });
@@ -124,22 +163,22 @@ export default function InteractiveTerminal({
   }, [height]);
 
   return (
-    <div className="rounded-lg overflow-hidden border border-charcoal-600">
+    <div className="overflow-hidden border border-border">
       {/* Terminal header */}
-      <div className="bg-charcoal-950 px-4 py-2 flex items-center space-x-2">
+      <div className="bg-surface-light px-4 py-2 flex items-center space-x-2">
         <div className="flex space-x-1.5">
-          <div className="w-3 h-3 rounded-full bg-red-500"></div>
-          <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+          <div className="w-3 h-3 bg-spectrum-red"></div>
+          <div className="w-3 h-3 bg-spectrum-yellow"></div>
+          <div className="w-3 h-3 bg-spectrum-green"></div>
         </div>
-        <span className="text-charcoal-300 text-sm ml-2">{title}</span>
+        <span className="text-ink-muted text-[13px] font-display uppercase tracking-wider ml-2">{title}</span>
       </div>
 
       {/* Terminal content */}
       <div
         ref={terminalRef}
-        style={{ height, backgroundColor: '#1a1a2e' }}
-        className="p-2"
+        style={{ height }}
+        className="p-2 bg-surface-light"
       />
     </div>
   );

@@ -27,6 +27,7 @@ export class ClaudeCodeService {
   private completionStates: Map<string, CompletionState> = new Map();
   private isProcessing: boolean = false;
   private activeSessionId: string | null = null;
+  private activeChatChild: ReturnType<typeof import('child_process').spawn> | null = null;
 
   spawn(
     projectPath: string,
@@ -60,7 +61,7 @@ export class ClaudeCodeService {
       const fs = require('fs');
       const os = require('os');
       const path = require('path');
-      const tempFile = path.join(os.tmpdir(), `forge-prompt-${sessionId}.txt`);
+      const tempFile = path.join(os.tmpdir(), `kiln-prompt-${sessionId}.txt`);
       fs.writeFileSync(tempFile, prompt, 'utf-8');
 
       console.log('[ClaudeCode.spawn] Spawning bash --norc --noprofile (skip profile garbage)');
@@ -380,6 +381,7 @@ export class ClaudeCodeService {
     for (const [sessionId] of this.sessions) {
       this.kill(sessionId);
     }
+    this.cancelChat();
     // Reset state
     this.isProcessing = false;
     this.activeSessionId = null;
@@ -391,13 +393,13 @@ export class ClaudeCodeService {
    * @param projectPath - The working directory for Claude
    * @param prompt - The prompt to send
    * @param onOutput - Optional callback for streaming output
-   * @param timeoutMs - Timeout in milliseconds (default: 5 minutes)
+   * @param inactivityTimeoutMs - Kill process after this long with no output (default: 5 minutes)
    */
   async chat(
     projectPath: string,
     prompt: string,
     onOutput?: (content: string) => void,
-    timeoutMs: number = 5 * 60 * 1000 // 5 minutes default
+    inactivityTimeoutMs: number = 5 * 60 * 1000 // 5 minutes of silence before killing
   ): Promise<string> {
     console.log('[ClaudeCode.chat] Starting chat request');
     console.log('[ClaudeCode.chat] projectPath:', projectPath);
@@ -410,7 +412,7 @@ export class ClaudeCodeService {
 
     // Write prompt to a temp file to avoid shell escaping issues
     const tempDir = os.tmpdir();
-    const tempFile = path.join(tempDir, `forge-prompt-${Date.now()}.txt`);
+    const tempFile = path.join(tempDir, `kiln-prompt-${Date.now()}.txt`);
     fs.writeFileSync(tempFile, prompt, 'utf-8');
     console.log('[ClaudeCode.chat] Wrote prompt to temp file:', tempFile);
 
@@ -441,19 +443,24 @@ export class ClaudeCodeService {
         },
       });
 
+      this.activeChatChild = child;
       console.log('[ClaudeCode.chat] Spawned child process, pid:', child.pid);
 
-      // Set up timeout
-      timeoutHandle = setTimeout(() => {
-        console.log('[ClaudeCode.chat] TIMEOUT triggered');
-        if (!isResolved) {
-          isResolved = true;
-          child.kill();
-          // Clean up temp file
-          try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
-          reject(new Error(`Claude request timed out after ${timeoutMs / 1000} seconds`));
-        }
-      }, timeoutMs);
+      // Activity-based timeout: resets every time stdout/stderr produces output.
+      // Only kills the process if it goes silent for inactivityTimeoutMs.
+      const resetTimeout = () => {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        timeoutHandle = setTimeout(() => {
+          console.log(`[ClaudeCode.chat] INACTIVITY TIMEOUT — no output for ${inactivityTimeoutMs / 1000}s`);
+          if (!isResolved) {
+            isResolved = true;
+            child.kill();
+            try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
+            reject(new Error(`Claude process produced no output for ${inactivityTimeoutMs / 1000} seconds`));
+          }
+        }, inactivityTimeoutMs);
+      };
+      resetTimeout(); // start the first timer
 
       let stdout = '';
       let stderr = '';
@@ -462,6 +469,7 @@ export class ClaudeCodeService {
         const text = data.toString();
         console.log('[ClaudeCode.chat] stdout chunk:', text.length, 'chars');
         stdout += text;
+        resetTimeout();
         try {
           onOutput?.(text);
         } catch (err) {
@@ -473,9 +481,11 @@ export class ClaudeCodeService {
         const text = data.toString();
         console.log('[ClaudeCode.chat] stderr:', text);
         stderr += text;
+        resetTimeout();
       });
 
       child.on('close', (code: number) => {
+        this.activeChatChild = null;
         console.log('[ClaudeCode.chat] Process closed with code:', code);
         console.log('[ClaudeCode.chat] stdout length:', stdout.length);
 
@@ -505,6 +515,7 @@ export class ClaudeCodeService {
       });
 
       child.on('error', (err: Error) => {
+        this.activeChatChild = null;
         console.error('[ClaudeCode.chat] Process error:', err);
         // Clean up temp file
         try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
@@ -519,6 +530,22 @@ export class ClaudeCodeService {
         }
       });
     });
+  }
+
+  /**
+   * Kill the active chat child process (if any).
+   * Used when the user navigates away mid-build to prevent orphaned processes.
+   */
+  cancelChat(): void {
+    if (this.activeChatChild) {
+      console.log('[ClaudeCode.cancelChat] Killing active chat process');
+      try {
+        this.activeChatChild.kill();
+      } catch (err) {
+        console.error('[ClaudeCode.cancelChat] Error killing chat process:', err);
+      }
+      this.activeChatChild = null;
+    }
   }
 
   /**
@@ -571,7 +598,7 @@ export class ClaudeCodeService {
       /^exit\s*$/i,
       /^logout\s*$/i,
       /^ulogout\s*$/i,
-      /FORGE_CHAT_EOF/,
+      /KILN_CHAT_EOF/,
       // Shell errors
       /^date:\s+illegal/i,
       /^bash:\s+.*:\s+command not found/i,

@@ -16,14 +16,14 @@ function formatTimestamp(iso: string): string {
 
 function StatusBadge({ status }: { status: DeploymentRecord['status'] }) {
   const styles: Record<DeploymentRecord['status'], string> = {
-    success: 'bg-sage-500/15 text-sage-400',
-    failed: 'bg-rust-500/15 text-rust-400',
-    deploying: 'bg-terracotta-500/15 text-terracotta-400',
-    pushing: 'bg-blue-500/15 text-blue-400',
+    success: 'bg-success/15 text-success',
+    failed: 'bg-error/15 text-error',
+    deploying: 'bg-accent/15 text-accent',
+    pushing: 'bg-spectrum-blue/15 text-spectrum-blue',
   };
 
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${styles[status]}`}>
+    <span className={`px-2 py-0.5 text-xs font-medium uppercase ${styles[status]}`}>
       {status}
     </span>
   );
@@ -42,17 +42,21 @@ export default function DeploymentsScreen() {
 
   if (sorted.length === 0) {
     return (
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center p-8">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-charcoal-700 flex items-center justify-center">
-              <svg className="w-8 h-8 text-charcoal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex-1 overflow-y-auto space-y-4">
+        <div className="max-w-5xl mx-auto space-y-4">
+          <div className="mb-2">
+            <h2 className="text-xl font-bold text-ink">Deployments</h2>
+            <p className="text-xs text-ink-muted mt-0.5">No deployments yet</p>
+          </div>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 bg-surface flex items-center justify-center">
+              <svg className="w-8 h-8 text-ink-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                   d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
               </svg>
             </div>
-            <h3 className="text-lg font-medium text-cream-100 mb-2">No deployments yet</h3>
-            <p className="text-charcoal-300 text-sm max-w-sm">
+            <h3 className="text-base font-sans font-semibold text-ink mb-2">No deployments yet</h3>
+            <p className="text-ink-muted text-sm max-w-sm">
               Deployment history will appear here once your project is deployed to Vercel.
             </p>
           </div>
@@ -62,23 +66,25 @@ export default function DeploymentsScreen() {
   }
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col">
-      {/* Header */}
-      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold text-cream-100">Deployments</h1>
-          <span className="text-sm text-charcoal-300">
-            {sorted.length} deployment{sorted.length !== 1 ? 's' : ''}
-          </span>
+    <div className="flex-1 overflow-y-auto space-y-4">
+      <div className="max-w-5xl mx-auto space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h2 className="text-xl font-bold text-ink">Deployments</h2>
+            <p className="text-xs text-ink-muted mt-0.5">
+              {sorted.length} deployment{sorted.length !== 1 ? 's' : ''}
+            </p>
+          </div>
         </div>
-      </header>
 
-      {/* Deployment cards */}
-      <main className="flex-1 overflow-y-auto p-6 space-y-3">
-        {sorted.map((deployment) => (
-          <DeploymentCard key={deployment.id} deployment={deployment} />
-        ))}
-      </main>
+        {/* Deployment cards */}
+        <div className="space-y-3">
+          {sorted.map((deployment) => (
+            <DeploymentCard key={deployment.id} deployment={deployment} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -87,24 +93,24 @@ function DeploymentCard({ deployment }: { deployment: DeploymentRecord }) {
   const shortHash = deployment.commitHash ? deployment.commitHash.slice(0, 7) : '';
 
   return (
-    <div className="bg-charcoal-800 rounded-lg border border-charcoal-600 p-4">
+    <div className="card-panel p-4">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-charcoal-300">{formatTimestamp(deployment.timestamp)}</span>
+        <span className="text-sm text-ink-muted">{formatTimestamp(deployment.timestamp)}</span>
         <StatusBadge status={deployment.status} />
       </div>
 
       <div className="space-y-1.5">
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-charcoal-400">Branch:</span>
-          <span className="text-cream-100 font-mono text-xs">{deployment.branch}</span>
+          <span className="text-ink-muted">Branch:</span>
+          <span className="text-ink font-mono text-xs">{deployment.branch}</span>
         </div>
 
         {shortHash && (
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-charcoal-400">Commit:</span>
-            <span className="text-cream-100 font-mono text-xs">{shortHash}</span>
+            <span className="text-ink-muted">Commit:</span>
+            <span className="text-ink font-mono text-xs">{shortHash}</span>
             {deployment.commitMessage && (
-              <span className="text-charcoal-300 text-xs truncate">
+              <span className="text-ink-muted text-xs truncate">
                 &quot;{deployment.commitMessage}&quot;
               </span>
             )}
@@ -114,7 +120,7 @@ function DeploymentCard({ deployment }: { deployment: DeploymentRecord }) {
         {deployment.vercelUrl && (
           <button
             onClick={() => window.api.shell.openExternal(deployment.vercelUrl!)}
-            className="flex items-center gap-1.5 text-sm text-terracotta-400 hover:text-terracotta-300 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-accent hover:text-accent transition-colors"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -126,7 +132,7 @@ function DeploymentCard({ deployment }: { deployment: DeploymentRecord }) {
         {deployment.githubRepoUrl && (
           <button
             onClick={() => window.api.shell.openExternal(deployment.githubRepoUrl!)}
-            className="flex items-center gap-1.5 text-sm text-charcoal-300 hover:text-cream-100 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink transition-colors"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -136,7 +142,7 @@ function DeploymentCard({ deployment }: { deployment: DeploymentRecord }) {
         )}
 
         {deployment.status === 'failed' && deployment.error && (
-          <div className="mt-1 text-xs text-rust-400 bg-rust-500/10 border border-rust-500/20 rounded p-2">
+          <div className="mt-1 text-xs text-error bg-error/10 border border-error/20 p-2">
             {deployment.error}
           </div>
         )}

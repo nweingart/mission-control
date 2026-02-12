@@ -10,16 +10,16 @@ interface BacklogSidebarProps {
 
 const priorityColors = {
   high: {
-    badge: 'bg-rust-500/15 text-rust-400 border-rust-500/30',
-    dot: 'bg-rust-500',
+    badge: 'bg-error/15 text-error border-error/30',
+    dot: 'bg-error',
   },
   medium: {
-    badge: 'bg-terracotta-500/15 text-terracotta-400 border-terracotta-500/30',
-    dot: 'bg-terracotta-500',
+    badge: 'bg-spectrum-yellow/15 text-spectrum-yellow border-spectrum-yellow/30',
+    dot: 'bg-spectrum-yellow',
   },
   low: {
-    badge: 'bg-sage-500/15 text-sage-400 border-sage-500/30',
-    dot: 'bg-sage-500',
+    badge: 'bg-success/15 text-success border-success/30',
+    dot: 'bg-success',
   },
 };
 
@@ -47,18 +47,18 @@ function BacklogItemCard({
 
   if (editing) {
     return (
-      <div className="bg-charcoal-700 rounded-lg border border-charcoal-500 p-3 space-y-2">
+      <div className="card-panel p-3 space-y-2">
         <input
           type="text"
           value={editTitle}
           onChange={(e) => setEditTitle(e.target.value)}
-          className="w-full px-2 py-1 bg-charcoal-800 border border-charcoal-600 rounded text-cream-100 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-500"
+          className="input-inset w-full px-2 py-1 bg-surface-card border border-border text-ink text-sm focus:outline-none focus:ring-1 focus:ring-border-strong"
           placeholder="Feature title"
         />
         <textarea
           value={editDescription}
           onChange={(e) => setEditDescription(e.target.value)}
-          className="w-full px-2 py-1 bg-charcoal-800 border border-charcoal-600 rounded text-cream-100 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-500 resize-none"
+          className="input-inset w-full px-2 py-1 bg-surface-card border border-border text-ink text-sm focus:outline-none focus:ring-1 focus:ring-border-strong resize-none"
           rows={2}
           placeholder="Description"
         />
@@ -66,7 +66,7 @@ function BacklogItemCard({
           <select
             value={item.priority}
             onChange={(e) => onUpdate({ priority: e.target.value as BacklogItem['priority'] })}
-            className="px-2 py-1 bg-charcoal-800 border border-charcoal-600 rounded text-cream-100 text-xs focus:outline-none focus:ring-1 focus:ring-terracotta-500"
+            className="input-inset px-2 py-1 bg-surface-card border border-border text-ink text-xs focus:outline-none focus:ring-1 focus:ring-border-strong"
           >
             <option value="high">High</option>
             <option value="medium">Medium</option>
@@ -75,13 +75,13 @@ function BacklogItemCard({
           <div className="flex gap-2">
             <button
               onClick={() => setEditing(false)}
-              className="px-2 py-1 text-xs text-charcoal-300 hover:text-cream-100"
+              className="btn-solid px-2 py-1 text-xs text-ink-muted hover:text-ink"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
-              className="px-2 py-1 text-xs bg-terracotta-500 text-charcoal-950 rounded hover:bg-terracotta-600"
+              className="btn-solid-primary px-2 py-1 text-xs"
             >
               Save
             </button>
@@ -93,31 +93,31 @@ function BacklogItemCard({
 
   return (
     <div
-      className="bg-charcoal-700 rounded-lg border border-charcoal-600 hover:border-charcoal-500 transition-colors cursor-pointer"
+      className="card-panel hover:border-border transition-colors cursor-pointer"
       onClick={() => setExpanded(!expanded)}
     >
       <div className="p-3">
         <div className="flex items-start gap-2">
-          <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${colors.dot}`} />
+          <span className={`w-2 h-2 mt-1.5 flex-shrink-0 ${colors.dot}`} />
           <div className="flex-1 min-w-0">
-            <h4 className="text-sm font-medium text-cream-100 truncate">{item.title}</h4>
+            <h4 className="text-sm font-medium text-ink truncate">{item.title}</h4>
             {expanded && (
-              <p className="text-xs text-charcoal-300 mt-1">{item.description}</p>
+              <p className="text-xs text-ink-muted mt-1">{item.description}</p>
             )}
           </div>
-          <span className={`text-xs px-1.5 py-0.5 rounded border ${colors.badge}`}>
+          <span className={`font-display font-bold capitalize text-[14px] px-2 py-0.5 border rounded ${colors.badge}`}>
             {item.priority}
           </span>
         </div>
       </div>
       {expanded && !showDeleteConfirm && (
-        <div className="px-3 pb-3 flex gap-2 border-t border-charcoal-600 pt-2 mt-1">
+        <div className="px-3 pb-3 flex gap-2 border-t border-border pt-2 mt-1">
           <button
             onClick={(e) => {
               e.stopPropagation();
               setEditing(true);
             }}
-            className="text-xs text-charcoal-400 hover:text-cream-100"
+            className="text-xs text-ink-muted hover:text-ink"
           >
             Edit
           </button>
@@ -126,22 +126,22 @@ function BacklogItemCard({
               e.stopPropagation();
               setShowDeleteConfirm(true);
             }}
-            className="text-xs text-rust-400 hover:text-rust-300"
+            className="text-xs text-error hover:text-error"
           >
             Delete
           </button>
         </div>
       )}
       {showDeleteConfirm && (
-        <div className="px-3 pb-3 border-t border-charcoal-600 pt-2 mt-1">
-          <p className="text-xs text-charcoal-300 mb-2">Delete this item?</p>
+        <div className="px-3 pb-3 border-t border-border pt-2 mt-1">
+          <p className="text-xs text-ink-muted mb-2">Delete this item?</p>
           <div className="flex gap-2">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 setShowDeleteConfirm(false);
               }}
-              className="px-2 py-1 text-xs text-charcoal-400 hover:text-cream-100"
+              className="btn-solid px-2 py-1 text-xs text-ink-muted hover:text-ink"
             >
               Cancel
             </button>
@@ -150,7 +150,7 @@ function BacklogItemCard({
                 e.stopPropagation();
                 onRemove();
               }}
-              className="px-2 py-1 text-xs bg-rust-500 text-cream-100 rounded hover:bg-rust-600"
+              className="btn-solid-danger px-2 py-1 text-xs"
             >
               Delete
             </button>
@@ -184,19 +184,19 @@ function AddItemForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-charcoal-700 rounded-lg border border-charcoal-500 p-3 space-y-2">
+    <form onSubmit={handleSubmit} className="card-panel p-3 space-y-2">
       <input
         type="text"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        className="w-full px-2 py-1 bg-charcoal-800 border border-charcoal-600 rounded text-cream-100 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-500"
+        className="input-inset w-full px-2 py-1 bg-surface-card border border-border text-ink text-sm focus:outline-none focus:ring-1 focus:ring-border-strong"
         placeholder="Feature title"
         autoFocus
       />
       <textarea
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        className="w-full px-2 py-1 bg-charcoal-800 border border-charcoal-600 rounded text-cream-100 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-500 resize-none"
+        className="input-inset w-full px-2 py-1 bg-surface-card border border-border text-ink text-sm focus:outline-none focus:ring-1 focus:ring-border-strong resize-none"
         rows={2}
         placeholder="Description (optional)"
       />
@@ -204,7 +204,7 @@ function AddItemForm({
         <select
           value={priority}
           onChange={(e) => setPriority(e.target.value as BacklogItem['priority'])}
-          className="px-2 py-1 bg-charcoal-800 border border-charcoal-600 rounded text-cream-100 text-xs focus:outline-none focus:ring-1 focus:ring-terracotta-500"
+          className="input-inset px-2 py-1 bg-surface-card border border-border text-ink text-xs focus:outline-none focus:ring-1 focus:ring-border-strong"
         >
           <option value="high">High Priority</option>
           <option value="medium">Medium Priority</option>
@@ -214,14 +214,14 @@ function AddItemForm({
           <button
             type="button"
             onClick={onCancel}
-            className="px-2 py-1 text-xs text-charcoal-300 hover:text-cream-100"
+            className="btn-solid px-2 py-1 text-xs text-ink-muted hover:text-ink"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={!title.trim()}
-            className="px-2 py-1 text-xs bg-terracotta-500 text-charcoal-950 rounded hover:bg-terracotta-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-solid-primary px-2 py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Add
           </button>
@@ -245,19 +245,19 @@ export default function BacklogSidebar({
   const lowItems = items.filter((i) => i.priority === 'low');
 
   return (
-    <div className="h-full flex flex-col bg-charcoal-800 rounded-lg border border-charcoal-600 overflow-hidden">
+    <div className="h-full flex flex-col card-panel overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-charcoal-600 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
         <div>
-          <h3 className="font-semibold text-cream-100">Backlog</h3>
-          <p className="text-xs text-charcoal-400">{items.length} items</p>
+          <h3 className="text-lg font-sans font-semibold text-ink">Backlog</h3>
+          <p className="text-xs text-ink-muted">{items.length} items</p>
         </div>
       </div>
 
       {/* Items list */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {items.length === 0 && !showAddForm && (
-          <div className="text-center py-8 text-charcoal-400">
+          <div className="text-center py-8 text-ink-muted">
             <svg
               className="w-8 h-8 mx-auto mb-2 opacity-50"
               fill="none"
@@ -278,12 +278,12 @@ export default function BacklogSidebar({
 
         {highItems.length > 0 && (
           <div className="space-y-1">
-            <div className="flex items-center gap-2 px-1 py-1">
-              <span className="w-2 h-2 rounded-full bg-rust-500" />
-              <span className="text-xs font-medium text-rust-400 uppercase tracking-wide">
+            <div className="flex items-center gap-2 px-1 py-1.5">
+              <span className="w-2.5 h-2.5 bg-error rounded" />
+              <span className="font-display font-bold text-[14px] text-error">
                 High Priority
               </span>
-              <span className="text-xs text-charcoal-500">({highItems.length})</span>
+              <span className="text-xs text-ink-muted font-medium">({highItems.length})</span>
             </div>
             {highItems.map((item) => (
               <BacklogItemCard
@@ -298,12 +298,12 @@ export default function BacklogSidebar({
 
         {mediumItems.length > 0 && (
           <div className="space-y-1">
-            <div className="flex items-center gap-2 px-1 py-1">
-              <span className="w-2 h-2 rounded-full bg-terracotta-500" />
-              <span className="text-xs font-medium text-terracotta-400 uppercase tracking-wide">
+            <div className="flex items-center gap-2 px-1 py-1.5">
+              <span className="w-2.5 h-2.5 bg-spectrum-blue rounded" />
+              <span className="font-display font-bold text-[14px] text-spectrum-blue">
                 Medium Priority
               </span>
-              <span className="text-xs text-charcoal-500">({mediumItems.length})</span>
+              <span className="text-xs text-ink-muted font-medium">({mediumItems.length})</span>
             </div>
             {mediumItems.map((item) => (
               <BacklogItemCard
@@ -318,12 +318,12 @@ export default function BacklogSidebar({
 
         {lowItems.length > 0 && (
           <div className="space-y-1">
-            <div className="flex items-center gap-2 px-1 py-1">
-              <span className="w-2 h-2 rounded-full bg-sage-500" />
-              <span className="text-xs font-medium text-sage-400 uppercase tracking-wide">
+            <div className="flex items-center gap-2 px-1 py-1.5">
+              <span className="w-2.5 h-2.5 bg-success rounded" />
+              <span className="font-display font-bold text-[14px] text-success">
                 Low Priority
               </span>
-              <span className="text-xs text-charcoal-500">({lowItems.length})</span>
+              <span className="text-xs text-ink-muted font-medium">({lowItems.length})</span>
             </div>
             {lowItems.map((item) => (
               <BacklogItemCard
@@ -346,10 +346,10 @@ export default function BacklogSidebar({
 
       {/* Add button */}
       {!showAddForm && (
-        <div className="p-3 border-t border-charcoal-600">
+        <div className="p-3 border-t border-border">
           <button
             onClick={() => setShowAddForm(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-charcoal-300 hover:text-cream-100 hover:bg-charcoal-700 rounded-lg transition-colors"
+            className="btn-solid w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-ink-muted hover:text-ink transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

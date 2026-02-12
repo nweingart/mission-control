@@ -2,16 +2,113 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================
+   Theme Variables — Houston Mission Control
+   ============================================ */
+
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color: #F2EDE8;
-  background-color: #1B2A4A;
+  /* Surfaces — real contrast between layers */
+  --color-surface: 222 215 200;          /* warm khaki base — mission control walls */
+  --color-surface-light: 254 251 244;    /* bright instrument panels / cards */
+  --color-surface-hover: 238 233 222;    /* subtle lift */
+  --color-surface-sidebar: 212 205 190;  /* recessed console housing */
+  /* Text */
+  --color-ink: 38 33 28;                 /* near-black warm ink */
+  --color-ink-secondary: 92 84 72;
+  --color-ink-muted: 142 134 122;
+  --color-ink-inverse: 254 251 244;
+  /* Accent — HOUSTON BLUE (the hero) */
+  --color-accent: 62 138 194;
+  --color-accent-hover: 42 108 158;
+  /* Secondary */
+  --color-secondary: 62 138 194;
+  --color-secondary-hover: 42 108 158;
+  /* Border — visible definition */
+  --color-border: 192 184 168;
+  --color-border-subtle: 208 201 188;
+  --color-border-strong: 164 156 140;
+  /* Functional — vivid instrument colors */
+  --color-error: 204 68 52;
+  --color-success: 68 146 86;
+  --color-success-hover: 52 128 70;
+  --color-info: 62 138 194;
+  --color-warning: 192 130 42;
+  /* Spectrum — mapped to Houston palette */
+  --color-spectrum-red: 204 68 52;
+  --color-spectrum-orange: 192 130 42;
+  --color-spectrum-yellow: 192 130 42;
+  --color-spectrum-green: 68 146 86;
+  --color-spectrum-blue: 62 138 194;
+  --color-spectrum-purple: 42 108 158;
+  /* Houston accent palette — vivid instrument colors */
+  --color-houston-blue: 62 138 194;
+  --color-houston-blue-soft: 196 220 238;
+  --color-houston-blue-deep: 38 98 148;
+  --color-houston-red: 204 68 52;
+  --color-houston-red-soft: 238 210 206;
+  --color-houston-red-deep: 174 52 38;
+  --color-houston-amber: 192 130 42;
+  --color-houston-amber-soft: 236 220 190;
+  --color-houston-green: 68 146 86;
+  --color-houston-green-soft: 206 232 214;
+
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+  font-weight: 450;
+  color: rgb(var(--color-ink));
+  background-color: rgb(var(--color-surface));
+  font-size: 16px;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.dark {
+  /* Surfaces — deep warm charcoal, like mission control at night */
+  --color-surface: 28 26 24;
+  --color-surface-light: 38 36 33;
+  --color-surface-hover: 48 45 40;
+  --color-surface-sidebar: 22 20 18;
+  /* Text */
+  --color-ink: 232 228 220;
+  --color-ink-secondary: 172 166 156;
+  --color-ink-muted: 118 112 104;
+  --color-ink-inverse: 28 26 24;
+  /* Accent — Houston blue glows brighter on dark */
+  --color-accent: 82 158 214;
+  --color-accent-hover: 108 178 228;
+  /* Secondary */
+  --color-secondary: 82 158 214;
+  --color-secondary-hover: 108 178 228;
+  /* Border */
+  --color-border: 58 54 48;
+  --color-border-subtle: 44 42 38;
+  --color-border-strong: 78 72 64;
+  /* Functional — vivid on dark */
+  --color-error: 228 88 72;
+  --color-success: 88 178 108;
+  --color-success-hover: 72 158 92;
+  --color-info: 82 158 214;
+  --color-warning: 218 158 62;
+  /* Spectrum */
+  --color-spectrum-red: 228 88 72;
+  --color-spectrum-orange: 218 158 62;
+  --color-spectrum-yellow: 218 158 62;
+  --color-spectrum-green: 88 178 108;
+  --color-spectrum-blue: 82 158 214;
+  --color-spectrum-purple: 108 178 228;
+  /* Houston accent palette — bright instrument glow */
+  --color-houston-blue: 82 158 214;
+  --color-houston-blue-soft: 30 52 72;
+  --color-houston-blue-deep: 108 178 228;
+  --color-houston-red: 228 88 72;
+  --color-houston-red-soft: 58 28 24;
+  --color-houston-red-deep: 248 108 92;
+  --color-houston-amber: 218 158 62;
+  --color-houston-amber-soft: 52 42 24;
+  --color-houston-green: 88 178 108;
+  --color-houston-green-soft: 28 48 32;
 }
 
 body {
@@ -33,22 +130,21 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #141F38;
-  border-radius: 4px;
+  background: rgb(var(--color-surface));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3F5584;
+  background: rgb(var(--color-border));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #66779D;
+  background: rgb(var(--color-border-strong));
 }
 
 /* Terminal styles */
 .terminal-output {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-family: 'IBM Plex Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
   font-size: 13px;
   line-height: 1.4;
   white-space: pre-wrap;
@@ -67,4 +163,189 @@ body {
 /* Header padding for macOS traffic lights */
 .header-with-traffic-lights {
   padding-left: 80px;
+}
+
+/* ============================================
+   Component Classes — Mission Control Feel
+   ============================================ */
+
+@layer components {
+  /* ---- Buttons ---- */
+
+  .btn-solid {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    padding: 10px 20px;
+    cursor: pointer;
+    border: 1.5px solid rgb(var(--color-border));
+    border-radius: 10px;
+    background: rgb(var(--color-surface-light));
+    color: rgb(var(--color-ink));
+    transition: all 0.15s ease;
+  }
+  .btn-solid:hover {
+    background: rgb(var(--color-surface-hover));
+    border-color: rgb(var(--color-border-strong));
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .btn-solid:active {
+    transform: translateY(1px);
+  }
+  .btn-solid:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Primary — Houston Blue CTA with instrument glow */
+  .btn-solid-primary {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    padding: 10px 22px;
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    background: rgb(var(--color-houston-blue));
+    color: #FEFBF4;
+    box-shadow:
+      0 2px 16px rgba(62, 138, 194, 0.35),
+      0 0 40px rgba(62, 138, 194, 0.08);
+    transition: all 0.2s ease;
+  }
+  .btn-solid-primary:hover {
+    background: rgb(var(--color-houston-blue-deep));
+    box-shadow:
+      0 4px 24px rgba(62, 138, 194, 0.45),
+      0 0 60px rgba(62, 138, 194, 0.12);
+    transform: translateY(-1px);
+  }
+  .btn-solid-primary:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 8px rgba(62, 138, 194, 0.3);
+  }
+  .btn-solid-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Danger — alert red with glow */
+  .btn-solid-danger {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    padding: 10px 20px;
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    background: rgb(var(--color-houston-red));
+    color: #FEFBF4;
+    box-shadow: 0 2px 12px rgba(204, 68, 52, 0.25);
+    transition: all 0.2s ease;
+  }
+  .btn-solid-danger:hover {
+    background: rgb(var(--color-houston-red-deep));
+    box-shadow: 0 4px 20px rgba(204, 68, 52, 0.35);
+    transform: translateY(-1px);
+  }
+  .btn-solid-danger:active {
+    transform: translateY(1px);
+  }
+  .btn-solid-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Success — go-green with glow */
+  .btn-solid-success {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    padding: 10px 20px;
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    background: rgb(var(--color-houston-green));
+    color: #FEFBF4;
+    box-shadow: 0 2px 12px rgba(68, 146, 86, 0.25);
+    transition: all 0.2s ease;
+  }
+  .btn-solid-success:hover {
+    background: rgb(var(--color-success-hover));
+    box-shadow: 0 4px 20px rgba(68, 146, 86, 0.35);
+    transform: translateY(-1px);
+  }
+  .btn-solid-success:active {
+    transform: translateY(1px);
+  }
+  .btn-solid-success:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* ---- Card — instrument panel ---- */
+  .card-panel {
+    background: rgb(var(--color-surface-light));
+    border: 1.5px solid rgb(var(--color-border));
+    border-radius: 12px;
+    box-shadow:
+      0 2px 12px rgba(62, 138, 194, 0.05),
+      0 1px 4px rgba(0,0,0,0.04);
+    transition: all 0.2s ease;
+  }
+  .card-panel:hover {
+    border-color: rgb(var(--color-border-strong));
+    box-shadow:
+      0 4px 20px rgba(62, 138, 194, 0.1),
+      0 2px 8px rgba(0,0,0,0.06);
+    transform: translateY(-1px);
+  }
+
+  /* ---- Input — console input ---- */
+  .input-inset {
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    background: rgb(var(--color-surface-light));
+    border: 1.5px solid rgb(var(--color-border));
+    border-radius: 10px;
+    color: rgb(var(--color-ink));
+    outline: none;
+    transition: all 0.15s ease;
+  }
+  .input-inset:focus {
+    border-color: rgb(var(--color-houston-blue));
+    box-shadow:
+      0 0 0 3px rgba(62, 138, 194, 0.15),
+      0 0 20px rgba(62, 138, 194, 0.06);
+  }
+
+  /* ---- Warm divider ---- */
+  .divider-warm {
+    height: 2px;
+    width: 100%;
+    border: none;
+    background: rgb(var(--color-border));
+  }
+
+  /* ---- Sidebar — recessed console housing ---- */
+  .sidebar-warm {
+    background: rgb(var(--color-surface-sidebar));
+    border-right: 1.5px solid rgb(var(--color-border));
+  }
+
+  .sidebar-icon {
+    transition: all 0.15s ease;
+  }
+  .sidebar-icon:hover {
+    background: rgb(var(--color-houston-blue) / 0.08) !important;
+  }
 }

@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import QualityReportSidebar from '../components/QualityReportSidebar';
+import type { GapFinding, GapAnalysis } from '../types';
+import {
+  buildGapFixPrompt,
+  buildGapAnalysisPrompt,
+  buildGapMetaReviewPrompt,
+  extractJsonObject,
+} from '../utils/gap-helpers';
 
 type PreviewStatus = 'starting' | 'running' | 'stopped' | 'error';
 type SidebarTab = 'preview' | 'env' | 'files' | 'planning' | 'settings';
@@ -23,18 +31,21 @@ export default function PreviewScreen() {
     goToDeploying,
     flowTestMode,
     goToHome,
-    goToPlanningChats,
+    gapAnalyses,
+    gitEvents,
+    addGapAnalysis,
+    addGitEvent,
   } = useAppStore();
 
   // Early return if no project - prevents null access throughout component
   if (!currentProject) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-charcoal-800">
+      <div className="flex-1 flex items-center justify-center bg-surface-card">
         <div className="text-center">
-          <p className="text-charcoal-300 mb-4">No project selected</p>
+          <p className="text-ink-muted mb-4">No project selected</p>
           <button
             onClick={goToHome}
-            className="px-4 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600"
+            className="btn-solid-primary px-4 py-2"
           >
             Go to Home
           </button>
@@ -58,6 +69,8 @@ export default function PreviewScreen() {
     return DEFAULT_ENV_VARS;
   });
   const [envSaveStatus, setEnvSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [qualitySidebarCollapsed, setQualitySidebarCollapsed] = useState(false);
+  const [isFixingGaps, setIsFixingGaps] = useState(false);
 
   const outputRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
@@ -68,6 +81,13 @@ export default function PreviewScreen() {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Load gap analyses on mount (re-load if project changes)
+  useEffect(() => {
+    if (currentProject) {
+      useAppStore.getState().loadGapAnalyses();
+    }
+  }, [currentProject?.slug]);
 
   // Auto-scroll output
   useEffect(() => {
@@ -219,6 +239,98 @@ export default function PreviewScreen() {
     }
   }, [currentProject, envVars, updateProject]);
 
+  const handleFixGaps = useCallback(async (findings: GapFinding[], remainingItems: string[]) => {
+    if (!currentProject?.projectPath || !currentProject?.prd) return;
+    const projectPath = currentProject.projectPath;
+    const prd = currentProject.prd;
+
+    setIsFixingGaps(true);
+    try {
+      // Build fix prompt: include findings + remaining items as pseudo-findings
+      const remainingAsFindings = remainingItems.map((item) => ({
+        severity: 'incomplete' as const,
+        category: 'Remaining Item',
+        description: item,
+        resolved: false,
+      }));
+      const allFindings = [...findings, ...remainingAsFindings];
+      const fixPrompt = buildGapFixPrompt(allFindings);
+
+      // Ask Claude to fix
+      await window.api.claude.chat(projectPath, fixPrompt);
+
+      // Commit changes
+      let fixCommitHash: string | undefined;
+      try {
+        const commitResult = await window.api.github.gitAddAndCommit(projectPath, 'fix: address gap analysis findings');
+        fixCommitHash = commitResult.commitHash;
+        addGitEvent({
+          type: 'committed',
+          commitHash: commitResult.commitHash,
+          commitMessage: 'fix: address gap analysis findings',
+        });
+        addGitEvent({
+          type: 'auto_fixed',
+          commitHash: commitResult.commitHash,
+          commitMessage: 'fix: address gap analysis findings',
+        });
+      } catch {
+        // Commit may fail if no changes were made — not fatal
+      }
+
+      // Re-run gap analysis
+      const reResponse = await window.api.claude.chat(projectPath, buildGapAnalysisPrompt(prd));
+      const reJson = extractJsonObject(reResponse);
+      let reParsed: { grade: number; summary: string; findings: GapFinding[]; remainingItems: string[] };
+      if (reJson) {
+        try {
+          reParsed = JSON.parse(reJson);
+        } catch {
+          reParsed = { grade: 0, summary: '', findings: [], remainingItems: [] };
+        }
+      } else {
+        reParsed = { grade: 0, summary: '', findings: [], remainingItems: [] };
+      }
+
+      // Meta-review
+      const metaResponse = await window.api.claude.chat(projectPath, buildGapMetaReviewPrompt(prd, reJson || reResponse));
+      const metaJson = extractJsonObject(metaResponse);
+      let metaParsed: { validatedGrade: number; summary: string; adjustedFindings: GapFinding[]; remainingItems: string[] };
+      if (metaJson) {
+        try {
+          metaParsed = JSON.parse(metaJson);
+        } catch {
+          metaParsed = { validatedGrade: reParsed.grade, summary: reParsed.summary, adjustedFindings: reParsed.findings, remainingItems: reParsed.remainingItems };
+        }
+      } else {
+        metaParsed = { validatedGrade: reParsed.grade, summary: reParsed.summary, adjustedFindings: reParsed.findings, remainingItems: reParsed.remainingItems };
+      }
+
+      // Store new analysis
+      const newAnalysis: GapAnalysis = {
+        id: `gap-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        pass: 2,
+        grade: reParsed.grade,
+        validatedGrade: metaParsed.validatedGrade,
+        findings: metaParsed.adjustedFindings || [],
+        summary: metaParsed.summary,
+        fixesApplied: true,
+        fixCommitHash,
+        remainingItems: metaParsed.remainingItems || [],
+        timestamp: new Date().toISOString(),
+      };
+      addGapAnalysis(newAnalysis);
+      addGitEvent({
+        type: 'gap_analysis_complete',
+        commitMessage: `Gap analysis (fix): grade ${metaParsed.validatedGrade}/100`,
+      });
+    } catch (err) {
+      console.error('[PreviewScreen] Fix gaps error:', err);
+    } finally {
+      setIsFixingGaps(false);
+    }
+  }, [currentProject?.projectPath, currentProject?.prd, addGapAnalysis, addGitEvent]);
+
   const sidebarItems = [
     { id: 'preview' as SidebarTab, label: 'Preview', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -252,30 +364,30 @@ export default function PreviewScreen() {
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Header */}
-      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4 flex-shrink-0">
+      <header className="bg-surface-card border-b border-border px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
               onClick={goToBuilding}
-              className="text-charcoal-300 hover:text-cream-100 transition-colors no-drag"
+              className="text-ink-muted hover:text-ink transition-colors no-drag"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <div>
-              <h1 className="text-xl font-bold text-cream-100">{currentProject?.name}</h1>
-              <p className="text-charcoal-300 text-sm">Preview - See your app in action</p>
+              <h1 className="text-xl font-sans font-bold text-ink">{currentProject?.name}</h1>
+              <p className="text-sm font-mono text-ink-muted">Preview - See your app in action</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-sm text-charcoal-300">Step 4 of 5</span>
+            <span className="text-xs font-sans font-medium text-ink-muted">Step 4 of 5</span>
             <div className="flex space-x-1">
-              <div className="w-2 h-2 rounded-full bg-terracotta-500"></div>
-              <div className="w-2 h-2 rounded-full bg-terracotta-500"></div>
-              <div className="w-2 h-2 rounded-full bg-terracotta-500"></div>
-              <div className="w-2 h-2 rounded-full bg-terracotta-500"></div>
-              <div className="w-2 h-2 rounded-full bg-charcoal-600"></div>
+              <div className="w-2 h-2 bg-accent"></div>
+              <div className="w-2 h-2 bg-accent"></div>
+              <div className="w-2 h-2 bg-accent"></div>
+              <div className="w-2 h-2 bg-accent"></div>
+              <div className="w-2 h-2 bg-border"></div>
             </div>
           </div>
         </div>
@@ -284,16 +396,16 @@ export default function PreviewScreen() {
       {/* Main content with sidebar */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-56 bg-charcoal-900 border-r border-charcoal-600 flex flex-col flex-shrink-0">
+        <aside className="w-56 bg-surface border-r border-border flex flex-col flex-shrink-0">
           <nav className="flex-1 p-4 space-y-1">
             {sidebarItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                className={`w-full flex items-center space-x-3 px-3 py-2 text-left transition-colors ${
                   activeTab === item.id
-                    ? 'bg-terracotta-500/15 text-terracotta-500'
-                    : 'text-charcoal-300 hover:bg-charcoal-700'
+                    ? 'bg-accent/15 text-accent'
+                    : 'text-ink-muted hover:bg-surface'
                 }`}
               >
                 {item.icon}
@@ -303,10 +415,10 @@ export default function PreviewScreen() {
           </nav>
 
           {/* Quick Actions */}
-          <div className="p-4 border-t border-charcoal-600 space-y-2">
+          <div className="p-4 border-t border-border space-y-2">
             <button
               onClick={openInEditor}
-              className="w-full flex items-center space-x-2 px-3 py-2 text-charcoal-300 hover:bg-charcoal-700 rounded-lg transition-colors"
+              className="w-full flex items-center space-x-2 px-3 py-2 text-ink-muted hover:bg-surface transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -315,7 +427,7 @@ export default function PreviewScreen() {
             </button>
             <button
               onClick={stopAndContinue}
-              className="w-full flex items-center space-x-2 px-3 py-2 bg-sage-500 text-charcoal-950 rounded-lg hover:bg-sage-600 transition-colors"
+              className="btn-solid-success w-full flex items-center space-x-2 px-3 py-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -331,59 +443,59 @@ export default function PreviewScreen() {
           {activeTab === 'preview' && (
             <div className="space-y-4">
               {/* Status Card */}
-              <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-6">
+              <div className="card-panel p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     {/* Status indicator */}
                     {status === 'starting' && (
                       <>
-                        <div className="w-10 h-10 rounded-full bg-terracotta-500/15 flex items-center justify-center">
-                          <svg className="w-5 h-5 text-terracotta-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <div className="w-10 h-10 bg-accent/15 flex items-center justify-center">
+                          <svg className="w-5 h-5 text-accent animate-spin" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                           </svg>
                         </div>
                         <div>
-                          <h3 className="font-semibold text-cream-100">Starting dev server...</h3>
-                          <p className="text-sm text-charcoal-300">Running npm run dev</p>
+                          <h3 className="text-base font-sans font-semibold text-ink">Starting dev server...</h3>
+                          <p className="text-sm text-ink-muted">Running npm run dev</p>
                         </div>
                       </>
                     )}
 
                     {status === 'running' && (
                       <>
-                        <div className="w-10 h-10 rounded-full bg-sage-500/15 flex items-center justify-center">
-                          <div className="w-3 h-3 rounded-full bg-sage-500 animate-pulse"></div>
+                        <div className="w-10 h-10 bg-success/15 flex items-center justify-center">
+                          <div className="w-3 h-3 bg-success animate-pulse"></div>
                         </div>
                         <div>
-                          <h3 className="font-semibold text-cream-100">Server running</h3>
-                          <p className="text-sm text-sage-500">{serverUrl}</p>
+                          <h3 className="text-base font-sans font-semibold text-ink">Server running</h3>
+                          <p className="text-sm text-success">{serverUrl}</p>
                         </div>
                       </>
                     )}
 
                     {status === 'stopped' && (
                       <>
-                        <div className="w-10 h-10 rounded-full bg-charcoal-600 flex items-center justify-center">
-                          <div className="w-3 h-3 rounded-full bg-charcoal-400"></div>
+                        <div className="w-10 h-10 bg-border flex items-center justify-center">
+                          <div className="w-3 h-3 bg-ink-muted/30"></div>
                         </div>
                         <div>
-                          <h3 className="font-semibold text-cream-100">Server stopped</h3>
-                          <p className="text-sm text-charcoal-300">The dev server has stopped</p>
+                          <h3 className="text-base font-sans font-semibold text-ink">Server stopped</h3>
+                          <p className="text-sm text-ink-muted">The dev server has stopped</p>
                         </div>
                       </>
                     )}
 
                     {status === 'error' && (
                       <>
-                        <div className="w-10 h-10 rounded-full bg-rust-500/15 flex items-center justify-center">
-                          <svg className="w-5 h-5 text-rust-500" fill="currentColor" viewBox="0 0 20 20">
+                        <div className="w-10 h-10 bg-error/15 flex items-center justify-center">
+                          <svg className="w-5 h-5 text-error" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                           </svg>
                         </div>
                         <div>
-                          <h3 className="font-semibold text-rust-400">Error</h3>
-                          <p className="text-sm text-rust-400">{error}</p>
+                          <h3 className="text-base font-sans font-semibold text-error">Error</h3>
+                          <p className="text-sm text-error">{error}</p>
                         </div>
                       </>
                     )}
@@ -394,7 +506,7 @@ export default function PreviewScreen() {
                     {status === 'running' && (
                       <button
                         onClick={openInBrowser}
-                        className="flex items-center space-x-2 px-4 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors"
+                        className="btn-solid-primary flex items-center space-x-2 px-4 py-2"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -406,7 +518,7 @@ export default function PreviewScreen() {
                     {(status === 'stopped' || status === 'error') && (
                       <button
                         onClick={restartServer}
-                        className="flex items-center space-x-2 px-4 py-2 bg-charcoal-600 text-cream-100 rounded-lg hover:bg-charcoal-500 transition-colors"
+                        className="btn-solid flex items-center space-x-2 px-4 py-2"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -419,20 +531,20 @@ export default function PreviewScreen() {
               </div>
 
               {/* Terminal Output */}
-              <div className="bg-charcoal-950 rounded-lg border border-charcoal-600 overflow-hidden">
-                <div className="bg-charcoal-900 px-4 py-2 flex items-center justify-between border-b border-charcoal-600">
-                  <span className="text-charcoal-300 text-sm font-medium">Dev Server Output</span>
+              <div className="bg-surface-light border border-border overflow-hidden">
+                <div className="bg-surface px-4 py-2 flex items-center justify-between border-b border-border">
+                  <span className="text-sm font-mono text-ink-muted">Dev Server Output</span>
                   <div className="flex items-center space-x-2">
-                    <span className="text-xs text-charcoal-400">npm run dev</span>
-                    {status === 'running' && <div className="w-2 h-2 rounded-full bg-sage-500 animate-pulse"></div>}
+                    <span className="text-xs text-ink-muted">npm run dev</span>
+                    {status === 'running' && <div className="w-2 h-2 bg-success animate-pulse"></div>}
                   </div>
                 </div>
                 <div
                   ref={outputRef}
-                  className="h-96 overflow-y-auto p-4 font-mono text-sm text-charcoal-200 whitespace-pre-wrap"
+                  className="h-96 overflow-y-auto p-4 font-mono text-sm text-ink-secondary whitespace-pre-wrap"
                 >
                   {output.length === 0 ? (
-                    <span className="text-charcoal-400">Waiting for output...</span>
+                    <span className="text-ink-muted">Waiting for output...</span>
                   ) : (
                     output.map((line, i) => (
                       <div key={i}>{line}</div>
@@ -446,21 +558,21 @@ export default function PreviewScreen() {
           {/* Environment Tab */}
           {activeTab === 'env' && (
             <div className="space-y-4">
-              <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-6">
+              <div className="card-panel p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h2 className="text-lg font-semibold text-cream-100">Environment Variables</h2>
-                    <p className="text-charcoal-300 text-sm">
+                    <h2 className="text-base font-sans font-semibold text-ink">Environment Variables</h2>
+                    <p className="text-ink-muted text-sm">
                       Configure environment variables for your project. These will be used during deployment.
                     </p>
                   </div>
                   <button
                     onClick={saveEnvVars}
                     disabled={envSaveStatus === 'saving'}
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                    className={`flex items-center space-x-2 px-4 py-2 transition-colors ${
                       envSaveStatus === 'saved'
-                        ? 'bg-sage-500/15 text-sage-400'
-                        : 'bg-terracotta-500 text-charcoal-950 hover:bg-terracotta-600'
+                        ? 'btn-solid-success'
+                        : 'btn-solid-primary'
                     }`}
                   >
                     {envSaveStatus === 'saving' && (
@@ -487,19 +599,19 @@ export default function PreviewScreen() {
                         value={envVar.key}
                         onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
                         placeholder="VARIABLE_NAME"
-                        className="w-1/3 px-3 py-2 border border-charcoal-500 rounded-lg font-mono text-sm focus:ring-2 focus:ring-terracotta-500 focus:border-terracotta-500 bg-charcoal-800 text-cream-100"
+                        className="input-inset w-1/3 px-3 py-2 border border-border font-mono text-sm focus:ring-2 focus:ring-accent focus:border-accent bg-surface-card text-ink"
                       />
-                      <span className="text-charcoal-400">=</span>
+                      <span className="text-ink-muted">=</span>
                       <input
                         type="text"
                         value={envVar.value}
                         onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
                         placeholder="value"
-                        className="flex-1 px-3 py-2 border border-charcoal-500 rounded-lg font-mono text-sm focus:ring-2 focus:ring-terracotta-500 focus:border-terracotta-500 bg-charcoal-800 text-cream-100"
+                        className="input-inset flex-1 px-3 py-2 border border-border font-mono text-sm focus:ring-2 focus:ring-accent focus:border-accent bg-surface-card text-ink"
                       />
                       <button
                         onClick={() => removeEnvVar(index)}
-                        className="p-2 text-charcoal-400 hover:text-rust-500 transition-colors"
+                        className="p-2 text-ink-muted hover:text-error transition-colors"
                         title="Remove variable"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -513,7 +625,7 @@ export default function PreviewScreen() {
                 {/* Add new variable button */}
                 <button
                   onClick={addEnvVar}
-                  className="mt-4 flex items-center space-x-2 text-terracotta-500 hover:text-terracotta-600 transition-colors"
+                  className="mt-4 flex items-center space-x-2 text-accent hover:text-accent-hover transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -523,40 +635,40 @@ export default function PreviewScreen() {
 
                 {/* Supabase status */}
                 {currentProject?.supabaseRef ? (
-                  <div className="mt-6 p-4 bg-sage-500/10 border border-sage-500/30 rounded-lg">
+                  <div className="mt-6 p-4 bg-success/10 border border-success/30">
                     <div className="flex items-center space-x-3">
-                      <svg className="w-6 h-6 text-sage-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-6 h-6 text-success flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                       <div>
-                        <h4 className="font-medium text-sage-400">Supabase Connected</h4>
-                        <p className="text-sm text-sage-500 mt-0.5">
+                        <h4 className="font-medium text-success">Supabase Connected</h4>
+                        <p className="text-sm text-success mt-0.5">
                           Project auto-provisioned — credentials are pre-filled above.
                         </p>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-6 p-4 bg-sage-500/10 border border-sage-500/30 rounded-lg">
+                  <div className="mt-6 p-4 bg-success/10 border border-success/30">
                     <div className="flex items-start space-x-3">
-                      <svg className="w-6 h-6 text-sage-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-6 h-6 text-success flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       <div>
-                        <h4 className="font-medium text-sage-400">Need a Supabase project?</h4>
-                        <p className="text-sm text-sage-400 mt-1">
+                        <h4 className="font-medium text-success">Need a Supabase project?</h4>
+                        <p className="text-sm text-success mt-1">
                           Create a free Supabase project to get your database URL and anon key.
                         </p>
                         <button
                           onClick={() => window.api.shell.openExternal('https://supabase.com/dashboard')}
-                          className="mt-2 inline-flex items-center space-x-1 text-sm font-medium text-sage-400 hover:text-sage-300 underline"
+                          className="mt-2 inline-flex items-center space-x-1 text-sm font-medium text-success hover:text-success underline"
                         >
                           <span>Go to Supabase Dashboard</span>
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                           </svg>
                         </button>
-                        <p className="text-xs text-sage-500 mt-2">
+                        <p className="text-xs text-success mt-2">
                           After creating a project, find your credentials in Project Settings → API
                         </p>
                       </div>
@@ -565,9 +677,9 @@ export default function PreviewScreen() {
                 )}
 
                 {/* Help text */}
-                <div className="mt-4 p-4 bg-terracotta-500/10 border border-terracotta-500/30 rounded-lg">
-                  <p className="text-sm text-terracotta-400">
-                    <strong>Tip:</strong> Variables starting with <code className="font-mono bg-terracotta-500/15 px-1 rounded">NEXT_PUBLIC_</code> are
+                <div className="mt-4 p-4 bg-accent/10 border border-accent/30">
+                  <p className="text-sm text-accent">
+                    <strong>Tip:</strong> Variables starting with <code className="font-mono bg-accent/15 px-1">NEXT_PUBLIC_</code> are
                     exposed to the browser. Keep sensitive keys (like service role keys) without this prefix.
                   </p>
                 </div>
@@ -578,19 +690,19 @@ export default function PreviewScreen() {
           {/* Files Tab */}
           {activeTab === 'files' && (
             <div className="space-y-4">
-              <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-6">
-                <h2 className="text-lg font-semibold text-cream-100 mb-4">Project Files</h2>
-                <p className="text-charcoal-300 text-sm mb-4">
+              <div className="card-panel p-6">
+                <h2 className="text-base font-sans font-semibold text-ink mb-4">Project Files</h2>
+                <p className="text-ink-muted text-sm mb-4">
                   Your project is located at:
                 </p>
 
-                <div className="p-3 bg-charcoal-800 rounded-lg font-mono text-sm text-cream-100 mb-4">
+                <div className="p-3 bg-surface-card font-mono text-sm text-ink mb-4">
                   {currentProject?.projectPath}
                 </div>
 
                 <button
                   onClick={openInEditor}
-                  className="flex items-center space-x-2 px-4 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors"
+                  className="btn-solid-primary flex items-center space-x-2 px-4 py-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -604,39 +716,39 @@ export default function PreviewScreen() {
           {/* Planning Tab */}
           {activeTab === 'planning' && (
             <div className="space-y-4">
-              <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-6">
-                <h2 className="text-lg font-semibold text-cream-100 mb-2">V2 Planning</h2>
-                <p className="text-charcoal-300 text-sm mb-4">
+              <div className="card-panel p-6">
+                <h2 className="text-base font-sans font-semibold text-ink mb-2">Plan with Houston</h2>
+                <p className="text-ink-muted text-sm mb-4">
                   Plan future features and improvements for your project.
                 </p>
                 <button
-                  onClick={goToPlanningChats}
-                  className="flex items-center space-x-2 px-4 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors"
+                  onClick={() => (window as unknown as { openHouston?: () => void }).openHouston?.()}
+                  className="btn-solid-primary flex items-center space-x-2 px-4 py-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
-                  <span>Open Planning Chats</span>
+                  <span>Open Houston</span>
                 </button>
               </div>
 
-              <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-6">
-                <h3 className="text-md font-semibold text-cream-100 mb-2">What is V2 Planning?</h3>
-                <ul className="text-charcoal-300 text-sm space-y-2">
+              <div className="card-panel p-6">
+                <h3 className="text-base font-sans font-semibold text-ink mb-2">What is V2 Planning?</h3>
+                <ul className="text-ink-muted text-sm space-y-2">
                   <li className="flex items-start gap-2">
-                    <svg className="w-4 h-4 mt-0.5 text-terracotta-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 mt-0.5 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                     <span>Brainstorm V2 features with Claude</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <svg className="w-4 h-4 mt-0.5 text-terracotta-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 mt-0.5 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                     <span>Build a backlog of future improvements</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <svg className="w-4 h-4 mt-0.5 text-terracotta-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 mt-0.5 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                     <span>Keep planning chats for reference</span>
@@ -649,37 +761,37 @@ export default function PreviewScreen() {
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="space-y-4">
-              <div className="bg-charcoal-700 rounded-lg border border-charcoal-600 p-6">
-                <h2 className="text-lg font-semibold text-cream-100 mb-4">Project Settings</h2>
+              <div className="card-panel p-6">
+                <h2 className="text-base font-sans font-semibold text-ink mb-4">Project Settings</h2>
 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-cream-100 mb-1">Project Name</label>
+                    <label className="block text-sm font-sans font-medium text-ink mb-1">Project Name</label>
                     <input
                       type="text"
                       value={currentProject?.name || ''}
                       disabled
-                      className="w-full px-3 py-2 border border-charcoal-500 rounded-lg bg-charcoal-800 text-charcoal-300"
+                      className="input-inset w-full px-3 py-2 border border-border bg-surface-card text-ink-muted"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-cream-100 mb-1">Project Slug</label>
+                    <label className="block text-sm font-sans font-medium text-ink mb-1">Project Slug</label>
                     <input
                       type="text"
                       value={currentProject?.slug || ''}
                       disabled
-                      className="w-full px-3 py-2 border border-charcoal-500 rounded-lg bg-charcoal-800 text-charcoal-300"
+                      className="input-inset w-full px-3 py-2 border border-border bg-surface-card text-ink-muted"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-cream-100 mb-1">Status</label>
+                    <label className="block text-sm font-sans font-medium text-ink mb-1">Status</label>
                     <input
                       type="text"
                       value={currentProject?.status || ''}
                       disabled
-                      className="w-full px-3 py-2 border border-charcoal-500 rounded-lg bg-charcoal-800 text-charcoal-300"
+                      className="input-inset w-full px-3 py-2 border border-border bg-surface-card text-ink-muted"
                     />
                   </div>
                 </div>
@@ -687,6 +799,16 @@ export default function PreviewScreen() {
             </div>
           )}
         </main>
+
+        {/* Quality Report Sidebar (only renders if gap analyses exist) */}
+        <QualityReportSidebar
+          gapAnalyses={gapAnalyses}
+          gitEvents={gitEvents}
+          collapsed={qualitySidebarCollapsed}
+          onToggle={() => setQualitySidebarCollapsed(!qualitySidebarCollapsed)}
+          onFixFindings={handleFixGaps}
+          isFixing={isFixingGaps}
+        />
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { existsSync, writeFileSync, readFileSync } from 'fs';
+import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
 type OutputCallback = (data: { type: 'stdout' | 'stderr'; content: string }) => void;
@@ -187,7 +187,10 @@ export class GitHubService {
   async gitInit(projectPath: string, onOutput?: OutputCallback): Promise<void> {
     const { code, stderr } = await runCommand('git', ['init'], projectPath, onOutput);
     if (code !== 0) {
-      throw new Error(`git init failed: ${stderr}`);
+      if (stderr.includes('Permission denied') || stderr.includes('permission denied')) {
+        throw new Error('Permission denied: cannot initialize git repository. Check folder permissions.');
+      }
+      throw new Error(`git init failed: ${stderr.slice(0, 300)}`);
     }
   }
 
@@ -208,7 +211,7 @@ export class GitHubService {
       }
 
       if (entriesToAdd.length > 0) {
-        const appendContent = '\n# Added by Forge\n' + entriesToAdd.join('\n') + '\n';
+        const appendContent = '\n# Added by Kiln\n' + entriesToAdd.join('\n') + '\n';
         writeFileSync(gitignorePath, existing + appendContent, 'utf-8');
       }
     }
@@ -236,7 +239,10 @@ export class GitHubService {
     // Stage all changes
     const addResult = await runCommand('git', ['add', '.'], projectPath, onOutput);
     if (addResult.code !== 0) {
-      throw new Error(`git add failed: ${addResult.stderr}`);
+      if (addResult.stderr.includes('.lock')) {
+        throw new Error('Git lock file exists — another git process may be running. Wait a moment and retry.');
+      }
+      throw new Error(`git add failed: ${addResult.stderr.slice(0, 300)}`);
     }
 
     // Check if there's anything to commit
@@ -257,7 +263,10 @@ export class GitHubService {
     // Commit
     const commitResult = await runCommand('git', ['commit', '-m', message], projectPath, onOutput);
     if (commitResult.code !== 0) {
-      throw new Error(`git commit failed: ${commitResult.stderr}`);
+      if (commitResult.stderr.includes('.lock')) {
+        throw new Error('Git lock file exists — another git process may be running. Wait a moment and retry.');
+      }
+      throw new Error(`git commit failed: ${commitResult.stderr.slice(0, 300)}`);
     }
 
     // Get commit hash
@@ -338,9 +347,23 @@ export class GitHubService {
   }
 
   async resetWorkingTree(projectPath: string): Promise<void> {
+    // Remove any stale lock file before reset
+    const lockPath = join(projectPath, '.git', 'index.lock');
+    try {
+      if (existsSync(lockPath)) {
+        const { unlinkSync } = require('fs');
+        unlinkSync(lockPath);
+      }
+    } catch {
+      // Non-fatal — lock may be held by a running process
+    }
+
+    // Abort any in-progress merge
+    await runCommand('git', ['merge', '--abort'], projectPath).catch(() => {});
+
     // Discard all uncommitted changes (tracked and untracked)
-    await runCommand('git', ['checkout', '--', '.'], projectPath);
-    await runCommand('git', ['clean', '-fd'], projectPath);
+    await runCommand('git', ['checkout', '--', '.'], projectPath).catch(() => {});
+    await runCommand('git', ['clean', '-fd'], projectPath).catch(() => {});
   }
 
   async getCurrentBranch(projectPath: string): Promise<string> {
@@ -348,7 +371,14 @@ export class GitHubService {
       'git', ['rev-parse', '--abbrev-ref', 'HEAD'], projectPath
     );
     if (code !== 0) {
-      throw new Error(`git rev-parse failed: ${stderr}`);
+      if (stderr.includes('not a git repository')) {
+        throw new Error('Not a git repository. The project directory may have been moved or deleted.');
+      }
+      if (stderr.includes('unknown revision') || stderr.includes('bad default revision')) {
+        // No commits yet — return default branch name
+        return 'main';
+      }
+      throw new Error(`Could not determine current branch: ${stderr.slice(0, 300)}`);
     }
     return stdout.trim();
   }
@@ -358,7 +388,16 @@ export class GitHubService {
       'git', ['checkout', '-b', name], projectPath
     );
     if (code !== 0) {
-      throw new Error(`git checkout -b failed: ${stderr}`);
+      if (stderr.includes('already exists')) {
+        throw new Error(`Branch "${name}" already exists. A previous build attempt may not have cleaned up.`);
+      }
+      if (stderr.includes('not a git repository')) {
+        throw new Error('Not a git repository. The project directory may have been moved or deleted.');
+      }
+      if (stderr.includes('Your local changes') || stderr.includes('would be overwritten')) {
+        throw new Error('Uncommitted changes would be overwritten. Commit or discard them first.');
+      }
+      throw new Error(`Failed to create branch "${name}": ${stderr.slice(0, 300)}`);
     }
   }
 
@@ -367,7 +406,16 @@ export class GitHubService {
       'git', ['checkout', name], projectPath
     );
     if (code !== 0) {
-      throw new Error(`git checkout failed: ${stderr}`);
+      if (stderr.includes('did not match') || stderr.includes('pathspec')) {
+        throw new Error(`Branch "${name}" does not exist.`);
+      }
+      if (stderr.includes('Your local changes') || stderr.includes('would be overwritten')) {
+        throw new Error('Uncommitted changes would be overwritten by checkout. Commit or discard them first.');
+      }
+      if (stderr.includes('.lock')) {
+        throw new Error('Git lock file exists — another git process may be running. Wait a moment and retry.');
+      }
+      throw new Error(`Failed to checkout branch "${name}": ${stderr.slice(0, 300)}`);
     }
   }
 
@@ -376,7 +424,15 @@ export class GitHubService {
       'git', ['merge', name, '--no-ff', '-m', `Merge ${name}`], projectPath, onOutput
     );
     if (code !== 0) {
-      throw new Error(`git merge failed: ${stderr}`);
+      if (stderr.includes('CONFLICT') || stderr.includes('merge conflict') || stderr.includes('Merge conflict')) {
+        // Abort the failed merge so git state is clean
+        await runCommand('git', ['merge', '--abort'], projectPath).catch(() => {});
+        throw new Error(`Merge conflict on branch "${name}". The changes conflict with main. Skipping this task may help.`);
+      }
+      if (stderr.includes('not something we can merge')) {
+        throw new Error(`Branch "${name}" cannot be merged — it may not exist or has no commits.`);
+      }
+      throw new Error(`Failed to merge branch "${name}": ${stderr.slice(0, 300)}`);
     }
   }
 
@@ -385,15 +441,29 @@ export class GitHubService {
       'git', ['branch', '-m', newName], projectPath
     );
     if (code !== 0) {
-      throw new Error(`git branch -m failed: ${stderr}`);
+      if (stderr.includes('already exists')) {
+        throw new Error(`Branch "${newName}" already exists. Cannot rename current branch.`);
+      }
+      throw new Error(`Failed to rename branch to "${newName}": ${stderr.slice(0, 300)}`);
     }
   }
 
   async deleteBranch(projectPath: string, name: string): Promise<void> {
     try {
-      await runCommand('git', ['branch', '-d', name], projectPath);
+      await runCommand('git', ['branch', '-D', name], projectPath);
     } catch {
       // Non-fatal — branch may already be deleted
+    }
+  }
+
+  async branchExists(projectPath: string, branchName: string): Promise<boolean> {
+    try {
+      const { code } = await runCommand(
+        'git', ['rev-parse', '--verify', `refs/heads/${branchName}`], projectPath
+      );
+      return code === 0;
+    } catch {
+      return false;
     }
   }
 
@@ -418,6 +488,50 @@ export class GitHubService {
     return stdout.trim();
   }
 
+  async getCommitDiff(projectPath: string, commitHash: string): Promise<string> {
+    const { stdout, code, stderr } = await runCommand(
+      'git', ['show', '--stat', '--patch', commitHash], projectPath
+    );
+    if (code !== 0) {
+      throw new Error(`git show failed: ${stderr}`);
+    }
+    return stdout;
+  }
+
+  async getTaskDiff(projectPath: string, commitHashes: string[]): Promise<string> {
+    if (commitHashes.length === 0) return '';
+
+    if (commitHashes.length === 1) {
+      const { stdout, code, stderr } = await runCommand(
+        'git', ['show', '--patch', commitHashes[0]], projectPath
+      );
+      if (code !== 0) {
+        throw new Error(`git show failed: ${stderr}`);
+      }
+      return stdout;
+    }
+
+    // Multiple hashes: diff from first^ to last
+    const first = commitHashes[0];
+    const last = commitHashes[commitHashes.length - 1];
+
+    // Try first^..last (parent of first commit to last commit)
+    const { stdout, code, stderr } = await runCommand(
+      'git', ['diff', `${first}^..${last}`], projectPath
+    );
+
+    if (code === 0) return stdout;
+
+    // Fallback: first commit may be the root commit (no parent)
+    const fallback = await runCommand(
+      'git', ['diff', '--root', last], projectPath
+    );
+    if (fallback.code !== 0) {
+      throw new Error(`git diff failed: ${stderr || fallback.stderr}`);
+    }
+    return fallback.stdout;
+  }
+
   async getGitHubUsername(): Promise<string> {
     const { stdout, code, stderr } = await runCommand(
       'gh',
@@ -433,5 +547,35 @@ export class GitHubService {
     }
 
     return stdout.trim();
+  }
+
+  async setSecret(repoFullName: string, name: string, value: string): Promise<void> {
+    const homePath = process.env.HOME || require('os').homedir();
+    const { code, stderr } = await runCommand(
+      'gh',
+      ['secret', 'set', name, '--repo', repoFullName, '--body', value],
+      homePath
+    );
+    if (code !== 0) {
+      throw new Error(`Failed to set GitHub secret ${name}: ${stderr.slice(0, 500)}`);
+    }
+  }
+
+  async getWorkflowRuns(projectPath: string, limit = 5): Promise<string> {
+    const { stdout, code, stderr } = await runCommand(
+      'gh',
+      ['run', 'list', '--json', 'databaseId,status,conclusion,headSha,createdAt,event', '--limit', String(limit)],
+      projectPath
+    );
+    if (code !== 0) {
+      throw new Error(`Failed to get workflow runs: ${stderr.slice(0, 500)}`);
+    }
+    return stdout;
+  }
+
+  writeWorkflowFile(projectPath: string, content: string): void {
+    const workflowDir = join(projectPath, '.github', 'workflows');
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(join(workflowDir, 'deploy.yml'), content, 'utf-8');
   }
 }

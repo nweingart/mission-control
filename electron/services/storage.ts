@@ -3,98 +3,27 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 
-interface Config {
-  developmentPath: string;
-  theme?: 'light' | 'dark';
-  hasCompletedOnboarding?: boolean;
-}
-
-interface Project {
-  slug: string;
-  name: string;
-  status: string;
-  createdAt: string;
-  projectPath: string;
-  vercelUrl?: string;
-  supabaseRef?: string;
-  githubRepo?: string;
-  idea?: string;
-}
-
-interface Task {
-  id: string;
-  title: string;
-  completed: boolean;
-}
-
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
-
-interface BacklogItem {
-  id: string;
-  title: string;
-  description: string;
-  priority: 'high' | 'medium' | 'low';
-  createdAt: string;
-  chatId?: string;
-}
-
-interface PlanningChat {
-  id: string;
-  title: string;
-  messages: ChatMessage[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface GitEvent {
-  id: string;
-  type: string;
-  taskId?: string;
-  taskTitle?: string;
-  branchName?: string;
-  commitHash?: string;
-  commitMessage?: string;
-  reviewArtifact?: unknown;
-  timestamp: string;
-}
-
-interface DeploymentRecord {
-  id: string;
-  branch: string;
-  commitHash: string;
-  commitMessage?: string;
-  githubRepoUrl?: string;
-  vercelUrl?: string;
-  vercelProjectId?: string;
-  status: string;
-  error?: string;
-  timestamp: string;
-}
+import type { Config, Project, Task, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapFinding, GapAnalysis } from '../../src/types/index';
 
 export class StorageService {
-  private forgeDir: string;
+  private kilnDir: string;
   private projectsDir: string;
   private configPath: string;
   private defaultDevelopmentPath: string;
 
   constructor() {
     const homeDir = app.getPath('home');
-    this.forgeDir = join(homeDir, '.forge');
-    this.projectsDir = join(this.forgeDir, 'projects');
-    this.configPath = join(this.forgeDir, 'config.json');
-    this.defaultDevelopmentPath = join(homeDir, 'development', 'forge');
+    this.kilnDir = join(homeDir, '.kiln');
+    this.projectsDir = join(this.kilnDir, 'projects');
+    this.configPath = join(this.kilnDir, 'config.json');
+    this.defaultDevelopmentPath = join(homeDir, 'development', 'kiln');
 
     this.ensureDirectories();
   }
 
   private ensureDirectories(): void {
-    if (!existsSync(this.forgeDir)) {
-      mkdirSync(this.forgeDir, { recursive: true });
+    if (!existsSync(this.kilnDir)) {
+      mkdirSync(this.kilnDir, { recursive: true });
     }
     if (!existsSync(this.projectsDir)) {
       mkdirSync(this.projectsDir, { recursive: true });
@@ -276,15 +205,15 @@ export class StorageService {
       idea,
     };
 
-    // Create project directory in Forge storage
-    const forgeProjectDir = join(this.projectsDir, slug);
-    mkdirSync(forgeProjectDir, { recursive: true });
+    // Create project directory in Kiln storage
+    const kilnProjectDir = join(this.projectsDir, slug);
+    mkdirSync(kilnProjectDir, { recursive: true });
 
     // Create project directory in development folder
     mkdirSync(projectPath, { recursive: true });
 
     // Save meta.json atomically
-    const metaPath = join(forgeProjectDir, 'meta.json');
+    const metaPath = join(kilnProjectDir, 'meta.json');
     this.atomicWriteFile(metaPath, JSON.stringify(project, null, 2));
 
     // Initialize empty tasks.json
@@ -323,7 +252,7 @@ export class StorageService {
       }
     }
 
-    // Delete Forge metadata directory
+    // Delete Kiln metadata directory
     const projectDir = join(this.projectsDir, slug);
     if (existsSync(projectDir)) {
       rmSync(projectDir, { recursive: true, force: true });
@@ -402,6 +331,24 @@ export class StorageService {
     this.atomicWriteFile(backlogPath, JSON.stringify(items, null, 2));
   }
 
+  // Sprints methods
+  getSprints(slug: string): Sprint[] {
+    const sprintsPath = join(this.projectsDir, slug, 'sprints.json');
+    if (!existsSync(sprintsPath)) {
+      return [];
+    }
+
+    const content = readFileSync(sprintsPath, 'utf-8');
+    const sprints = this.safeJsonParse<Sprint[]>(content, sprintsPath);
+    return sprints ?? [];
+  }
+
+  saveSprints(slug: string, sprints: Sprint[]): void {
+    const sprintsPath = join(this.projectsDir, slug, 'sprints.json');
+    this.createBackup(sprintsPath);
+    this.atomicWriteFile(sprintsPath, JSON.stringify(sprints, null, 2));
+  }
+
   // Planning chats methods
   getPlanningChats(slug: string): PlanningChat[] {
     const chatsPath = join(this.projectsDir, slug, 'planning-chats.json');
@@ -451,6 +398,20 @@ export class StorageService {
     const deploymentsPath = join(this.projectsDir, slug, 'deployments.json');
     this.createBackup(deploymentsPath);
     this.atomicWriteFile(deploymentsPath, JSON.stringify(deployments, null, 2));
+  }
+
+  // Gap analysis methods
+  getGapAnalysis(slug: string): GapAnalysis[] {
+    const path = join(this.projectsDir, slug, 'gap-analysis.json');
+    if (!existsSync(path)) return [];
+    const content = readFileSync(path, 'utf-8');
+    return this.safeJsonParse<GapAnalysis[]>(content, path) ?? [];
+  }
+
+  saveGapAnalysis(slug: string, analyses: GapAnalysis[]): void {
+    const path = join(this.projectsDir, slug, 'gap-analysis.json');
+    this.createBackup(path);
+    this.atomicWriteFile(path, JSON.stringify(analyses, null, 2));
   }
 
   // Helper methods

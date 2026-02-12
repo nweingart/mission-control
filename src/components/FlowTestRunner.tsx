@@ -129,6 +129,16 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
       },
     },
     {
+      name: 'Project Home',
+      screen: 'project-home',
+      run: async () => {
+        console.log('[FlowTest:ProjectHome] Setting screen to project-home...');
+        store.getState().setScreen('project-home');
+        await delay(STEP_DELAY);
+        console.log('[FlowTest:ProjectHome] Done.');
+      },
+    },
+    {
       name: 'Discovery Chat',
       screen: 'discovery',
       run: async () => {
@@ -210,8 +220,8 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
         console.log('[FlowTest:V2Planning] Added backlog items:', TEST_BACKLOG_ITEMS.length);
 
         // Verify the data is in the store
-        const { backlog, planningChatMessages } = store.getState();
-        console.log(`[FlowTest:V2Planning] Store state: ${backlog.length} backlog items, ${planningChatMessages.length} planning messages`);
+        const { backlog, getActivePlanningMessages } = store.getState();
+        console.log(`[FlowTest:V2Planning] Store state: ${backlog.length} backlog items, ${getActivePlanningMessages().length} planning messages`);
 
         // Stay on building screen (the Plan V2 tab is part of BuildScreen)
         await delay(STEP_DELAY);
@@ -336,7 +346,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
 
       // Clear planning data and git events
       store.getState().setActivePlanningChat(null);
-      store.setState({ gitEvents: [], backlog: [], planningChats: [], planningChatMessages: [], deployments: [] });
+      store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false });
 
       store.getState().setScreen('home');
 
@@ -366,7 +376,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
     const skipped = stepStatuses.filter(s => s === 'skipped').length;
     const total = steps.length;
 
-    let report = `FORGE FLOW TEST REPORT\n`;
+    let report = `KILN FLOW TEST REPORT\n`;
     report += `========================\n`;
     report += `Date: ${timestamp}\n`;
     report += `Result: ${failed === 0 ? 'ALL PASSED' : `${failed} FAILED`}\n`;
@@ -412,14 +422,14 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
     const allPassed = failedCount === 0;
     return (
       <div className="fixed top-4 right-4 z-[100] w-96">
-        <div className="bg-charcoal-900 border border-charcoal-600 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
+        <div className="bg-surface border border-border overflow-hidden">
           {/* Report Header */}
-          <div className="px-4 py-3 border-b border-charcoal-600">
+          <div className="px-4 py-3 border-b border-border">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-cream-100 text-sm">Flow Test Report</h3>
+              <h3 className="text-base font-sans font-semibold text-ink">Flow Test Report</h3>
               <button
                 onClick={onClose}
-                className="text-charcoal-400 hover:text-charcoal-200"
+                className="text-ink-muted hover:text-ink-secondary"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -429,26 +439,26 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Summary Banner */}
-          <div className={`mx-4 mt-3 px-4 py-3 rounded-lg border ${
+          <div className={`mx-4 mt-3 px-4 py-3 border ${
             allPassed
-              ? 'bg-sage-500/10 border-sage-500/30'
-              : 'bg-rust-500/10 border-rust-500/30'
+              ? 'bg-success/10 border-success/30'
+              : 'bg-error/10 border-error/30'
           }`}>
             <div className="flex items-center space-x-3">
               {allPassed ? (
-                <svg className="w-8 h-8 text-sage-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-8 h-8 text-success flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
               ) : (
-                <svg className="w-8 h-8 text-rust-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-8 h-8 text-error flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                 </svg>
               )}
               <div>
-                <p className={`text-sm font-bold ${allPassed ? 'text-sage-400' : 'text-rust-400'}`}>
+                <p className={`text-sm font-bold ${allPassed ? 'text-success' : 'text-error'}`}>
                   {allPassed ? 'All Steps Passed' : `${failedCount} Step${failedCount > 1 ? 's' : ''} Failed`}
                 </p>
-                <p className="text-xs text-charcoal-400 mt-0.5">
+                <p className="text-xs text-ink-muted mt-0.5">
                   {passedCount} passed{failedCount > 0 ? `, ${failedCount} failed` : ''}{skippedCount > 0 ? `, ${skippedCount} skipped` : ''} &middot; {totalDuration ? `${(totalDuration / 1000).toFixed(1)}s` : ''}
                 </p>
               </div>
@@ -460,24 +470,24 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
             {steps.map((step, i) => {
               const status = stepStatuses[i] || 'pending';
               return (
-                <div key={i} className={`rounded-lg px-3 py-2 ${
-                  status === 'failed' ? 'bg-rust-500/5' : ''
+                <div key={i} className={`px-3 py-2 ${
+                  status === 'failed' ? 'bg-error/5' : ''
                 }`}>
                   <div className="flex items-center space-x-2.5 text-sm">
                     {/* Icon */}
                     <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
                       {status === 'passed' && (
-                        <svg className="w-4 h-4 text-sage-500" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                         </svg>
                       )}
                       {status === 'failed' && (
-                        <svg className="w-4 h-4 text-rust-500" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-4 h-4 text-error" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                         </svg>
                       )}
                       {status === 'skipped' && (
-                        <svg className="w-4 h-4 text-charcoal-500" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-4 h-4 text-ink-muted" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 000 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
                         </svg>
                       )}
@@ -486,18 +496,18 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
                     {/* Name + screen */}
                     <div className="flex-1 min-w-0">
                       <span className={
-                        status === 'passed' ? 'text-charcoal-200' :
-                        status === 'failed' ? 'text-rust-400 font-medium' :
-                        'text-charcoal-500'
+                        status === 'passed' ? 'text-ink-secondary' :
+                        status === 'failed' ? 'text-error font-medium' :
+                        'text-ink-muted'
                       }>
                         {step.name}
                       </span>
-                      <span className="text-[10px] text-charcoal-500 ml-1.5 font-mono">{step.screen}</span>
+                      <span className="text-[13px] text-ink-muted ml-1.5 font-mono">{step.screen}</span>
                     </div>
 
                     {/* Duration */}
                     {stepDurations[i] > 0 && (
-                      <span className="text-[10px] text-charcoal-500 font-mono flex-shrink-0">
+                      <span className="text-[13px] text-ink-muted font-mono flex-shrink-0">
                         {(stepDurations[i] / 1000).toFixed(1)}s
                       </span>
                     )}
@@ -505,7 +515,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
 
                   {/* Error detail */}
                   {stepErrors[i] && (
-                    <div className="mt-1.5 ml-7 px-2 py-1.5 bg-rust-500/10 rounded text-[11px] text-rust-400 font-mono break-all">
+                    <div className="mt-1.5 ml-7 px-2 py-1.5 bg-error/10 text-[14px] text-error font-mono break-all">
                       {stepErrors[i]}
                     </div>
                   )}
@@ -515,14 +525,14 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Flow path */}
-          <div className="px-4 py-2 border-t border-charcoal-700">
-            <p className="text-[10px] text-charcoal-500 font-mono leading-relaxed">
+          <div className="px-4 py-2 border-t border-border-subtle">
+            <p className="text-[13px] text-ink-muted font-mono leading-relaxed">
               {steps.map((s, i) => {
                 const status = stepStatuses[i];
-                const color = status === 'passed' ? 'text-sage-500' : status === 'failed' ? 'text-rust-500' : 'text-charcoal-600';
+                const color = status === 'passed' ? 'text-success' : status === 'failed' ? 'text-error' : 'text-ink-muted';
                 return (
                   <span key={i}>
-                    {i > 0 && <span className="text-charcoal-600"> → </span>}
+                    {i > 0 && <span className="text-ink-muted"> → </span>}
                     <span className={color}>{s.screen}</span>
                   </span>
                 );
@@ -531,17 +541,17 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Actions */}
-          <div className="px-4 py-3 border-t border-charcoal-600 flex space-x-2">
+          <div className="px-4 py-3 border-t border-border flex space-x-2">
             <button
               onClick={copyReport}
-              className="flex-1 px-3 py-1.5 text-xs bg-charcoal-700 text-charcoal-200 rounded-lg hover:bg-charcoal-600 transition-colors flex items-center justify-center space-x-1.5"
+              className="btn-solid flex-1 px-3 py-1.5 text-xs flex items-center justify-center space-x-1.5"
             >
               {copied ? (
                 <>
-                  <svg className="w-3.5 h-3.5 text-sage-400" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-3.5 h-3.5 text-success" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  <span className="text-sage-400">Copied!</span>
+                  <span className="text-success">Copied!</span>
                 </>
               ) : (
                 <>
@@ -554,13 +564,13 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
             </button>
             <button
               onClick={runTest}
-              className="flex-1 px-3 py-1.5 text-xs bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors font-medium"
+              className="btn-solid-primary flex-1 px-3 py-1.5 text-xs font-medium"
             >
               Run Again
             </button>
             <button
               onClick={onClose}
-              className="px-3 py-1.5 text-xs bg-charcoal-700 text-charcoal-200 rounded-lg hover:bg-charcoal-600 transition-colors"
+              className="btn-solid px-3 py-1.5 text-xs"
             >
               Close
             </button>
@@ -573,17 +583,17 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
   // Running / idle view
   return (
     <div className="fixed top-4 right-4 z-[100] w-80">
-      <div className="bg-charcoal-900 border border-charcoal-600 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
+      <div className="bg-surface border border-border overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-charcoal-600">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 rounded-full bg-terracotta-500 animate-pulse" />
-            <h3 className="font-semibold text-cream-100 text-sm">Flow Test</h3>
+            <div className="w-2 h-2 bg-spectrum-blue animate-pulse" />
+            <h3 className="text-base font-sans font-semibold text-ink">Flow Test</h3>
           </div>
           <button
             onClick={onClose}
             disabled={isRunning}
-            className="text-charcoal-400 hover:text-charcoal-200 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="text-ink-muted hover:text-ink-secondary disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -593,13 +603,10 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
 
         {/* Current step callout */}
         {isRunning && currentStep >= 0 && currentStep < steps.length && (
-          <div className="mx-4 mt-3 px-3 py-2 bg-terracotta-500/15 border border-terracotta-500/30 rounded-lg flex items-center space-x-2">
-            <svg className="animate-spin h-4 w-4 text-terracotta-500 flex-shrink-0" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <span className="text-sm text-terracotta-400 font-semibold">{steps[currentStep].name}</span>
-            <span className="text-[10px] text-terracotta-500/60 font-mono ml-auto">{steps[currentStep].screen}</span>
+          <div className="mx-4 mt-3 px-3 py-2 bg-spectrum-blue/15 border border-spectrum-blue/30 flex items-center space-x-2">
+            <div className="w-4 h-4 border-4 border-spectrum-blue border-t-transparent animate-spin flex-shrink-0" />
+            <span className="text-sm text-spectrum-blue font-semibold">{steps[currentStep].name}</span>
+            <span className="text-[13px] text-spectrum-blue/60 font-mono ml-auto">{steps[currentStep].screen}</span>
           </div>
         )}
 
@@ -615,39 +622,39 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
                 {/* Status icon */}
                 <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
                   {status === 'running' && (
-                    <div className="w-2.5 h-2.5 rounded-full bg-terracotta-500 animate-pulse" />
+                    <div className="w-2.5 h-2.5 bg-spectrum-blue animate-pulse" />
                   )}
                   {status === 'passed' && (
-                    <svg className="w-5 h-5 text-sage-500" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-5 h-5 text-success" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   )}
                   {status === 'failed' && (
-                    <svg className="w-5 h-5 text-rust-500" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-5 h-5 text-error" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                     </svg>
                   )}
                   {status === 'skipped' && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-charcoal-500" />
+                    <div className="w-1.5 h-1.5 bg-ink-muted/20" />
                   )}
                   {status === 'pending' && (
-                    <div className="w-2 h-2 rounded-full bg-charcoal-600" />
+                    <div className="w-2 h-2 bg-border" />
                   )}
                 </div>
 
                 {/* Label */}
                 <span className={
-                  status === 'running' ? 'text-cream-100 font-semibold' :
-                  status === 'passed' ? 'text-charcoal-400 line-through' :
-                  status === 'failed' ? 'text-rust-400 font-medium' :
-                  'text-charcoal-400'
+                  status === 'running' ? 'text-ink font-semibold' :
+                  status === 'passed' ? 'text-ink-muted line-through' :
+                  status === 'failed' ? 'text-error font-medium' :
+                  'text-ink-muted'
                 }>
                   {step.name}
                 </span>
 
                 {/* Duration */}
                 {(status === 'passed' || status === 'failed') && stepDurations[i] > 0 && (
-                  <span className="text-[10px] text-charcoal-500 ml-auto font-mono">
+                  <span className="text-[13px] text-ink-muted ml-auto font-mono">
                     {(stepDurations[i] / 1000).toFixed(1)}s
                   </span>
                 )}
@@ -658,24 +665,21 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
 
         {/* Error */}
         {error && (
-          <div className="px-4 py-2 border-t border-charcoal-600">
-            <p className="text-xs text-rust-400">{error}</p>
+          <div className="px-4 py-2 border-t border-border">
+            <p className="text-xs text-error">{error}</p>
           </div>
         )}
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-charcoal-600">
+        <div className="px-4 py-3 border-t border-border">
           <button
             onClick={runTest}
             disabled={isRunning}
-            className="w-full px-4 py-2 text-sm bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors font-medium"
+            className="btn-solid-primary w-full px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isRunning ? (
               <span className="flex items-center justify-center space-x-2">
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+                <div className="w-4 h-4 border-4 border-spectrum-blue border-t-transparent animate-spin" />
                 <span>Running...</span>
               </span>
             ) : (

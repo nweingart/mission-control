@@ -2,20 +2,37 @@
  * Shared utilities for V2 Planning feature
  */
 
+import type { PlanningType } from '../types';
+
 // Multiple patterns to detect backlog suggestions from Claude (flexible matching)
-const BACKLOG_PATTERNS = [
+const BACKLOG_PATTERNS: Array<{ pattern: RegExp; hasType: boolean }> = [
+  // [BACKLOG_ADD] format with optional Type field
+  {
+    pattern: /\[BACKLOG_ADD\]\s*\n+(?:[-•]?\s*)?Title:\s*(.+?)(?:\n+(?:[-•]?\s*)?Description:\s*(.+?))?(?:\n+(?:[-•]?\s*)?Priority:\s*(high|medium|low))?(?:\n+(?:[-•]?\s*)?Type:\s*(bug_fix|feature_refactor|new_feature))?(?:\n|$)/gi,
+    hasType: true,
+  },
   // Standard format: **Add to backlog?** followed by Title/Description/Priority
-  /\*\*Add to backlog\?\*\*\s*\n+(?:[-•]?\s*)?Title:\s*(.+?)(?:\n+(?:[-•]?\s*)?Description:\s*(.+?))?(?:\n+(?:[-•]?\s*)?Priority:\s*(high|medium|low))?(?:\n|$)/gi,
+  {
+    pattern: /\*\*Add to backlog\?\*\*\s*\n+(?:[-•]?\s*)?Title:\s*(.+?)(?:\n+(?:[-•]?\s*)?Description:\s*(.+?))?(?:\n+(?:[-•]?\s*)?Priority:\s*(high|medium|low))?(?:\n|$)/gi,
+    hasType: false,
+  },
   // Markdown header format: ### Add to backlog
-  /###?\s*Add to backlog\??\s*\n+(?:[-•*]?\s*)?(?:\*\*)?Title(?:\*\*)?:\s*(.+?)(?:\n+(?:[-•*]?\s*)?(?:\*\*)?Description(?:\*\*)?:\s*(.+?))?(?:\n+(?:[-•*]?\s*)?(?:\*\*)?Priority(?:\*\*)?:\s*(high|medium|low))?(?:\n|$)/gi,
+  {
+    pattern: /###?\s*Add to backlog\??\s*\n+(?:[-•*]?\s*)?(?:\*\*)?Title(?:\*\*)?:\s*(.+?)(?:\n+(?:[-•*]?\s*)?(?:\*\*)?Description(?:\*\*)?:\s*(.+?))?(?:\n+(?:[-•*]?\s*)?(?:\*\*)?Priority(?:\*\*)?:\s*(high|medium|low))?(?:\n|$)/gi,
+    hasType: false,
+  },
   // Bullet format with backlog mention
-  /(?:add(?:ing)?\s+to\s+backlog|backlog\s+item|suggested?\s+feature)[:.]?\s*\n+(?:[-•*]?\s*)?(?:\*\*)?Title(?:\*\*)?:\s*(.+?)(?:\n+(?:[-•*]?\s*)?(?:\*\*)?Description(?:\*\*)?:\s*(.+?))?(?:\n+(?:[-•*]?\s*)?(?:\*\*)?Priority(?:\*\*)?:\s*(high|medium|low))?(?:\n|$)/gi,
+  {
+    pattern: /(?:add(?:ing)?\s+to\s+backlog|backlog\s+item|suggested?\s+feature)[:.]?\s*\n+(?:[-•*]?\s*)?(?:\*\*)?Title(?:\*\*)?:\s*(.+?)(?:\n+(?:[-•*]?\s*)?(?:\*\*)?Description(?:\*\*)?:\s*(.+?))?(?:\n+(?:[-•*]?\s*)?(?:\*\*)?Priority(?:\*\*)?:\s*(high|medium|low))?(?:\n|$)/gi,
+    hasType: false,
+  },
 ];
 
 export interface BacklogSuggestion {
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
+  type?: PlanningType;
 }
 
 /**
@@ -26,7 +43,7 @@ export function extractBacklogSuggestions(content: string): BacklogSuggestion[] 
   const suggestions: BacklogSuggestion[] = [];
   const seenTitles = new Set<string>();
 
-  for (const pattern of BACKLOG_PATTERNS) {
+  for (const { pattern, hasType } of BACKLOG_PATTERNS) {
     // Reset regex
     pattern.lastIndex = 0;
     let match;
@@ -36,11 +53,15 @@ export function extractBacklogSuggestions(content: string): BacklogSuggestion[] 
       if (!title || seenTitles.has(title.toLowerCase())) continue;
 
       seenTitles.add(title.toLowerCase());
-      suggestions.push({
+      const suggestion: BacklogSuggestion = {
         title,
         description: match[2]?.trim() || '',
         priority: (match[3]?.toLowerCase() as 'high' | 'medium' | 'low') || 'medium',
-      });
+      };
+      if (hasType && match[4]) {
+        suggestion.type = match[4] as PlanningType;
+      }
+      suggestions.push(suggestion);
     }
   }
 

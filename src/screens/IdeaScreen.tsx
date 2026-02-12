@@ -43,19 +43,19 @@ export default function IdeaScreen() {
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Header */}
-      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4 drag-region header-with-traffic-lights">
+      <header className="bg-surface-card border-b border-border px-6 py-4 drag-region header-with-traffic-lights">
         <div className="flex items-center space-x-4">
           <button
             onClick={goToHome}
-            className="text-charcoal-300 hover:text-cream-100 transition-colors no-drag"
+            className="text-ink-muted hover:text-ink transition-colors no-drag"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-cream-100">What do you want to build?</h1>
-            <p className="text-charcoal-300 text-sm">Describe your idea in as much detail as you'd like</p>
+            <h1 className="text-xl font-sans font-bold text-ink">What do you want to build?</h1>
+            <p className="text-ink-muted text-sm">Describe your idea in as much detail as you'd like</p>
           </div>
         </div>
       </header>
@@ -65,7 +65,7 @@ export default function IdeaScreen() {
         <form onSubmit={handleSubmit} className="w-full max-w-2xl space-y-6">
           {/* Idea textarea */}
           <div>
-            <label htmlFor="idea" className="block text-sm font-medium text-cream-100 mb-2">
+            <label htmlFor="idea" className="block text-sm font-sans font-medium text-ink mb-2">
               Your Idea
             </label>
             <textarea
@@ -74,10 +74,10 @@ export default function IdeaScreen() {
               onChange={(e) => setIdea(e.target.value)}
               placeholder="I want to build a todo app that helps teams track their daily tasks with real-time collaboration..."
               rows={6}
-              className="w-full px-4 py-3 border border-charcoal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent resize-none bg-charcoal-700 text-cream-100 placeholder:text-charcoal-400"
+              className="input-inset w-full px-4 py-3 border border-border focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent resize-none bg-surface text-ink placeholder:text-ink-muted"
               autoFocus
             />
-            <p className="text-sm text-charcoal-400 mt-1">
+            <p className="text-sm text-ink-muted mt-1">
               Be as detailed as you want - Claude will ask clarifying questions
             </p>
           </div>
@@ -85,14 +85,14 @@ export default function IdeaScreen() {
           {/* Project name */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label htmlFor="name" className="block text-sm font-medium text-cream-100">
+              <label htmlFor="name" className="block text-sm font-sans font-medium text-ink">
                 Project Name
               </label>
               {idea.trim() && !projectName && (
                 <button
                   type="button"
                   onClick={generateProjectName}
-                  className="text-sm text-terracotta-500 hover:text-terracotta-600"
+                  className="text-sm text-accent hover:text-accent-hover"
                 >
                   Generate from idea
                 </button>
@@ -104,15 +104,15 @@ export default function IdeaScreen() {
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               placeholder="MyAwesomeApp"
-              className="w-full px-4 py-3 border border-charcoal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent bg-charcoal-700 text-cream-100 placeholder:text-charcoal-400"
+              className="input-inset w-full px-4 py-3 border border-border focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent bg-surface text-ink placeholder:text-ink-muted"
             />
           </div>
 
           {/* Error display */}
           {error && (
-            <div className="bg-rust-500/10 border border-rust-500/30 rounded-lg p-4">
+            <div className="bg-error/10 border border-error/30 p-4">
               <div className="flex items-start">
-                <svg className="w-5 h-5 text-rust-500 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-error mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path
                     fillRule="evenodd"
                     d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
@@ -120,8 +120,8 @@ export default function IdeaScreen() {
                   />
                 </svg>
                 <div>
-                  <h3 className="font-medium text-rust-400">Error Creating Project</h3>
-                  <p className="text-sm text-rust-400 mt-1">{error}</p>
+                  <h3 className="font-medium text-error">Error Creating Project</h3>
+                  <p className="text-sm text-error mt-1">{error}</p>
                 </div>
               </div>
             </div>
@@ -131,25 +131,11 @@ export default function IdeaScreen() {
           <button
             type="submit"
             disabled={!idea.trim() || !projectName.trim() || isCreating}
-            className="w-full py-3 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+            className="btn-solid-primary w-full py-3 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isCreating ? (
               <>
-                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
+                <div className="w-5 h-5 border-4 border-white border-t-transparent animate-spin" />
                 <span>Creating project...</span>
               </>
             ) : (
@@ -168,8 +154,8 @@ export default function IdeaScreen() {
           </button>
 
           {/* Examples */}
-          <div className="pt-6 border-t border-charcoal-600">
-            <p className="text-sm font-medium text-cream-100 mb-3">Need inspiration? Try one of these:</p>
+          <div className="pt-6 border-t border-border">
+            <p className="text-sm font-sans font-medium text-ink mb-3">Need inspiration? Try one of these:</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {[
                 'A habit tracker with streaks and reminders',
@@ -187,7 +173,7 @@ export default function IdeaScreen() {
                     ).join('');
                     setProjectName(name);
                   }}
-                  className="text-left px-3 py-2 text-sm text-charcoal-200 bg-charcoal-700 rounded-lg hover:bg-charcoal-600 transition-colors"
+                  className="text-left px-3 py-2 text-sm text-ink-secondary bg-surface hover:bg-surface-card transition-colors"
                 >
                   {example}
                 </button>

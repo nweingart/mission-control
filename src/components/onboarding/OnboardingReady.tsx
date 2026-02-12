@@ -43,25 +43,25 @@ export default function OnboardingReady({ onComplete, hasProjects }: OnboardingR
   return (
     <div className="max-w-lg text-center flex flex-col items-center">
       {/* Checkmark */}
-      <div className="w-20 h-20 rounded-full bg-sage-500/20 flex items-center justify-center mb-6">
-        <svg className="w-10 h-10 text-sage-500" fill="currentColor" viewBox="0 0 20 20">
+      <div className="w-20 h-20 bg-success/20 flex items-center justify-center mb-6">
+        <svg className="w-10 h-10 text-success" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
         </svg>
       </div>
 
       {/* Heading */}
-      <h2 className="text-2xl font-bold text-cream-100 mb-4">You're All Set!</h2>
+      <h2 className="text-2xl font-sans font-bold text-ink mb-4">You're All Set!</h2>
 
       {/* Tool icons row */}
       <div className="flex items-center justify-center space-x-4 mb-6">
         {TOOL_ICONS.map((tool) => (
           <div
             key={tool.name}
-            className="relative w-10 h-10 rounded-lg bg-sage-500/15 text-sage-400 flex items-center justify-center"
+            className="relative w-10 h-10 bg-success/15 text-success flex items-center justify-center border-2 border-success/30"
             title={tool.name}
           >
             {tool.icon}
-            <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-sage-500 flex items-center justify-center">
+            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-success flex items-center justify-center">
               <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
               </svg>
@@ -71,16 +71,16 @@ export default function OnboardingReady({ onComplete, hasProjects }: OnboardingR
       </div>
 
       {/* Summary */}
-      <p className="text-charcoal-200 mb-10 leading-relaxed whitespace-nowrap">
-        Describe an idea, and Forge will help you design, build, and deploy it.
+      <p className="text-ink-secondary mb-10 leading-relaxed whitespace-nowrap text-sm">
+        Describe an idea, and Kiln will help you design, build, and deploy it.
       </p>
 
       {/* CTA */}
       <button
         onClick={onComplete}
-        className="px-8 py-3 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors font-semibold text-lg"
+        className="btn-solid-primary text-sm px-8 py-3"
       >
-        {hasProjects ? 'Go to Projects' : 'Start Your First Project'}
+        {hasProjects ? 'GO TO PROJECTS' : 'START YOUR FIRST PROJECT'}
       </button>
     </div>
   );

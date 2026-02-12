@@ -1,4 +1,7 @@
 import { spawn } from 'child_process';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 
 type OutputCallback = (data: { type: 'stdout' | 'stderr'; content: string }) => void;
 
@@ -172,5 +175,86 @@ export class VercelService {
         }
       });
     });
+  }
+
+  getProjectConfig(projectPath: string): { orgId: string; projectId: string } {
+    const configPath = join(projectPath, '.vercel', 'project.json');
+    if (!existsSync(configPath)) {
+      throw new Error('Vercel project config not found. Run "vercel deploy" first.');
+    }
+    const raw = readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(raw);
+    if (!config.orgId || !config.projectId) {
+      throw new Error('Invalid Vercel project config: missing orgId or projectId');
+    }
+    return { orgId: config.orgId, projectId: config.projectId };
+  }
+
+  getToken(): string {
+    const authPath = join(homedir(), '.vercel', 'auth.json');
+    if (!existsSync(authPath)) {
+      throw new Error('Vercel auth not found. Please run "vercel login" in your terminal.');
+    }
+    const raw = readFileSync(authPath, 'utf-8');
+    const auth = JSON.parse(raw);
+    if (!auth.token) {
+      throw new Error('No token found in Vercel auth config. Please run "vercel login".');
+    }
+    return auth.token;
+  }
+
+  async addEnvVars(projectPath: string, envVars: Record<string, string>): Promise<void> {
+    const home = process.env.HOME || homedir();
+    const extraPaths = [
+      `${home}/.local/bin`,
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+    ];
+    const currentPath = process.env.PATH || '';
+    const fullPath = [...extraPaths, ...currentPath.split(':')].join(':');
+
+    const env = {
+      ...process.env,
+      HOME: home,
+      PATH: fullPath,
+    };
+
+    for (const [key, value] of Object.entries(envVars)) {
+      const sanitized = sanitizeEnvVar(key, value);
+      if (!sanitized) continue;
+
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn('vercel', ['env', 'add', sanitized.key, 'production', '--force'], {
+          cwd: projectPath,
+          env,
+          shell: false,
+        });
+
+        const timeout = setTimeout(() => {
+          try { child.kill('SIGTERM'); } catch { /* ignore */ }
+          reject(new Error(`Timed out setting env var ${sanitized.key}`));
+        }, 30000);
+
+        child.stdin.write(sanitized.value);
+        child.stdin.end();
+
+        let stderr = '';
+        child.stderr.on('data', (data) => { stderr += data.toString(); });
+
+        child.on('error', (err) => {
+          clearTimeout(timeout);
+          reject(new Error(`Failed to set env var ${sanitized.key}: ${err.message}`));
+        });
+
+        child.on('close', (code) => {
+          clearTimeout(timeout);
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Failed to set env var ${sanitized.key} (exit ${code}): ${stderr.slice(0, 200)}`));
+          }
+        });
+      });
+    }
   }
 }

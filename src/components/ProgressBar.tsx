@@ -22,32 +22,38 @@ export default function ProgressBar({
   };
 
   const colorClasses = {
-    blue: 'bg-terracotta-500',
-    green: 'bg-sage-500',
-    yellow: 'bg-terracotta-500',
-    red: 'bg-rust-500',
+    blue: 'bg-accent',
+    green: 'bg-success',
+    yellow: 'bg-accent',
+    red: 'bg-error',
   };
+
+  const filledSegments = Math.round(clampedProgress / 10);
 
   return (
     <div className="w-full">
       {(label || showPercentage) && (
-        <div className="flex justify-between text-sm text-charcoal-200 mb-1">
+        <div className="flex justify-between text-sm font-sans font-medium text-ink-secondary mb-1">
           {label && <span>{label}</span>}
           {showPercentage && <span>{Math.round(clampedProgress)}%</span>}
         </div>
       )}
       <div
-        className={`w-full bg-charcoal-600 rounded-full ${sizeClasses[size]} overflow-hidden`}
+        className={`w-full flex gap-1 ${sizeClasses[size]}`}
         role="progressbar"
         aria-valuenow={Math.round(clampedProgress)}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={label || 'Progress'}
       >
-        <div
-          className={`${colorClasses[color]} ${sizeClasses[size]} rounded-full transition-all duration-300 ease-out`}
-          style={{ width: `${clampedProgress}%` }}
-        />
+        {Array.from({ length: 10 }, (_, i) => (
+          <div
+            key={i}
+            className={`flex-1 ${sizeClasses[size]} transition-all duration-300 ease-out ${
+              i < filledSegments ? colorClasses[color] : 'bg-border'
+            }`}
+          />
+        ))}
       </div>
     </div>
   );

@@ -34,11 +34,11 @@ export default class ErrorBoundary extends Component<Props, State> {
   render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-charcoal-800 flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-charcoal-700 rounded-lg shadow-lg border border-charcoal-600 p-6 text-center">
-            <div className="w-16 h-16 bg-rust-500/15 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="min-h-screen bg-surface-card flex items-center justify-center p-6">
+          <div className="card-panel max-w-md w-full p-6 text-center">
+            <div className="w-16 h-16 bg-error/15 flex items-center justify-center mx-auto mb-4">
               <svg
-                className="w-8 h-8 text-rust-500"
+                className="w-8 h-8 text-error"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -51,16 +51,16 @@ export default class ErrorBoundary extends Component<Props, State> {
                 />
               </svg>
             </div>
-            <h2 className="text-xl font-bold text-cream-100 mb-2">Something went wrong</h2>
-            <p className="text-charcoal-200 mb-4">
+            <h2 className="text-lg font-sans font-semibold text-ink mb-2">Something Went Wrong</h2>
+            <p className="text-ink-secondary mb-4">
               An unexpected error occurred. You can try to recover or reload the app.
             </p>
             {this.state.error && import.meta.env.DEV && (
               <details className="mb-4 text-left">
-                <summary className="text-sm text-charcoal-300 cursor-pointer hover:text-cream-100">
+                <summary className="text-sm text-ink-muted cursor-pointer hover:text-ink">
                   Error details (dev only)
                 </summary>
-                <pre className="mt-2 p-3 bg-charcoal-950 rounded text-xs text-rust-400 overflow-auto max-h-32">
+                <pre className="mt-2 p-3 bg-surface-light text-xs text-error overflow-auto max-h-32">
                   {this.state.error.message}
                   {'\n\n'}
                   {this.state.error.stack}
@@ -70,13 +70,13 @@ export default class ErrorBoundary extends Component<Props, State> {
             <div className="flex space-x-3 justify-center">
               <button
                 onClick={this.handleReset}
-                className="px-4 py-2 text-charcoal-300 hover:text-cream-100 transition-colors"
+                className="btn-solid px-4 py-2"
               >
                 Try Again
               </button>
               <button
                 onClick={this.handleReload}
-                className="px-4 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors"
+                className="btn-solid-primary px-4 py-2"
               >
                 Reload App
               </button>

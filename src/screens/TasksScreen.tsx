@@ -24,7 +24,6 @@ export default function TasksScreen() {
     updateTask,
     removeTask,
     reorderTasks,
-    saveTasks,
     updateProject,
     goToHome,
     goToDiscovery,
@@ -117,7 +116,6 @@ Do not include any other text, just the JSON array.`;
             }));
 
             setTasks(generatedTasks);
-            await saveTasks();
             if (isMountedRef.current) {
               setIsGenerating(false);
             }
@@ -141,7 +139,6 @@ Do not include any other text, just the JSON array.`;
 
       setTasks(generatedTasks);
       setUsedDefaultTasks(true);
-      await saveTasks();
     } catch (err) {
       // Check if still mounted
       if (!isMountedRef.current) return;
@@ -158,13 +155,12 @@ Do not include any other text, just the JSON array.`;
 
       setTasks(generatedTasks);
       setUsedDefaultTasks(true);
-      await saveTasks();
     } finally {
       if (isMountedRef.current) {
         setIsGenerating(false);
       }
     }
-  }, [currentProject, setTasks, saveTasks]);
+  }, [currentProject, setTasks]);
 
   useEffect(() => {
     // Generate tasks if none exist (only attempt once)
@@ -178,28 +174,23 @@ Do not include any other text, just the JSON array.`;
     const task = tasks.find((t) => t.id === id);
     if (task) {
       updateTask(id, { completed: !task.completed });
-      saveTasks();
     }
   };
 
   const handleTaskRemove = (id: string) => {
     removeTask(id);
-    saveTasks();
   };
 
   const handleTaskAdd = (title: string) => {
     addTask(title);
-    saveTasks();
   };
 
   const handleTasksReorder = (newTasks: typeof tasks) => {
     reorderTasks(newTasks);
-    saveTasks();
   };
 
   const handleTaskEdit = (id: string, title: string) => {
     updateTask(id, { title });
-    saveTasks();
   };
 
   const handleStartBuilding = async () => {
@@ -226,29 +217,29 @@ Do not include any other text, just the JSON array.`;
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Header */}
-      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4">
+      <header className="bg-surface-card border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
               onClick={goToDiscovery}
-              className="text-charcoal-300 hover:text-cream-100 transition-colors no-drag"
+              className="text-ink-muted hover:text-ink transition-colors no-drag"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <div>
-              <h1 className="text-xl font-bold text-cream-100">{currentProject?.name}</h1>
-              <p className="text-charcoal-300 text-sm">Planning Phase - Review and edit tasks</p>
+              <h1 className="text-xl font-sans font-bold text-ink">{currentProject?.name}</h1>
+              <p className="text-ink-muted text-sm">Planning Phase - Review and edit tasks</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-sm text-charcoal-300">Step 2 of 4</span>
+            <span className="text-sm text-ink-muted">Step 2 of 4</span>
             <div className="flex space-x-1">
-              <div className="w-2 h-2 rounded-full bg-terracotta-500"></div>
-              <div className="w-2 h-2 rounded-full bg-terracotta-500"></div>
-              <div className="w-2 h-2 rounded-full bg-charcoal-600"></div>
-              <div className="w-2 h-2 rounded-full bg-charcoal-600"></div>
+              <div className="w-2 h-2 bg-accent"></div>
+              <div className="w-2 h-2 bg-accent"></div>
+              <div className="w-2 h-2 bg-border"></div>
+              <div className="w-2 h-2 bg-border"></div>
             </div>
           </div>
         </div>
@@ -259,17 +250,17 @@ Do not include any other text, just the JSON array.`;
         <div className="max-w-2xl mx-auto">
           {isGenerating ? (
             <div className="flex flex-col items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-terracotta-500 mb-4"></div>
-              <p className="text-charcoal-200">Generating task breakdown...</p>
-              <p className="text-sm text-charcoal-400 mt-1">Analyzing your PRD to create actionable tasks</p>
+              <div className="w-12 h-12 border-4 border-accent border-t-transparent animate-spin mb-4"></div>
+              <p className="text-ink-secondary">Generating task breakdown...</p>
+              <p className="text-sm text-ink-muted mt-1">Analyzing your PRD to create actionable tasks</p>
             </div>
           ) : (
             <>
               {/* Warning when using default tasks */}
               {(generateError || usedDefaultTasks) && (
-                <div className="bg-terracotta-500/10 border border-terracotta-500/30 rounded-lg p-4 mb-6">
+                <div className="bg-accent/10 border border-accent/30 p-4 mb-6">
                   <div className="flex">
-                    <svg className="w-5 h-5 text-terracotta-500 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-5 h-5 text-accent mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
                       <path
                         fillRule="evenodd"
                         d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
@@ -277,8 +268,8 @@ Do not include any other text, just the JSON array.`;
                       />
                     </svg>
                     <div>
-                      <h3 className="font-medium text-terracotta-400">Using default tasks</h3>
-                      <p className="text-sm text-terracotta-500 mt-1">
+                      <h3 className="font-medium text-accent">Using default tasks</h3>
+                      <p className="text-sm text-accent mt-1">
                         {generateError
                           ? `Couldn't generate custom tasks (${generateError}). Using default task list instead.`
                           : 'Using generic default tasks. Please review and customize these for your project.'
@@ -290,9 +281,9 @@ Do not include any other text, just the JSON array.`;
               )}
 
               {/* Info box */}
-              <div className="bg-terracotta-500/10 border border-terracotta-500/30 rounded-lg p-4 mb-6">
+              <div className="bg-accent/10 border border-accent/30 p-4 mb-6">
                 <div className="flex">
-                  <svg className="w-5 h-5 text-terracotta-500 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-5 h-5 text-accent mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path
                       fillRule="evenodd"
                       d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
@@ -300,8 +291,8 @@ Do not include any other text, just the JSON array.`;
                     />
                   </svg>
                   <div>
-                    <h3 className="font-medium text-terracotta-400">Review your task list</h3>
-                    <p className="text-sm text-terracotta-500 mt-1">
+                    <h3 className="font-medium text-accent">Review your task list</h3>
+                    <p className="text-sm text-accent mt-1">
                       You can reorder, edit, add, or remove tasks. Claude will work through these one by one
                       during the build phase.
                     </p>
@@ -325,7 +316,7 @@ Do not include any other text, just the JSON array.`;
               <div className="mt-8 flex justify-between items-center">
                 <button
                   onClick={handleRegenerateTasks}
-                  className="flex items-center space-x-2 px-4 py-2 text-charcoal-300 hover:text-cream-100 transition-colors"
+                  className="flex items-center space-x-2 px-4 py-2 text-ink-muted hover:text-ink transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
@@ -341,7 +332,7 @@ Do not include any other text, just the JSON array.`;
                 <button
                   onClick={handleStartBuilding}
                   disabled={tasks.length === 0}
-                  className="flex items-center space-x-2 px-6 py-3 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors"
+                  className="btn-solid-primary flex items-center space-x-2 px-6 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span>Start Building</span>
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -356,7 +347,7 @@ Do not include any other text, just the JSON array.`;
               </div>
 
               {/* Tip */}
-              <div className="mt-6 text-center text-sm text-charcoal-400">
+              <div className="mt-6 text-center text-sm text-ink-muted">
                 Tip: Double-click a task to edit it. Drag to reorder.
               </div>
             </>

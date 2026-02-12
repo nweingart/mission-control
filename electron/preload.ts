@@ -66,12 +66,16 @@ contextBridge.exposeInMainWorld('api', {
     saveChatHistory: (slug: string, messages: unknown) => ipcRenderer.invoke('storage:saveChatHistory', slug, messages),
     getBacklog: (slug: string) => ipcRenderer.invoke('storage:getBacklog', slug),
     saveBacklog: (slug: string, items: unknown) => ipcRenderer.invoke('storage:saveBacklog', slug, items),
+    getSprints: (slug: string) => ipcRenderer.invoke('storage:getSprints', slug),
+    saveSprints: (slug: string, sprints: unknown) => ipcRenderer.invoke('storage:saveSprints', slug, sprints),
     getPlanningChats: (slug: string) => ipcRenderer.invoke('storage:getPlanningChats', slug),
     savePlanningChats: (slug: string, chats: unknown) => ipcRenderer.invoke('storage:savePlanningChats', slug, chats),
     getGitEvents: (slug: string) => ipcRenderer.invoke('storage:getGitEvents', slug),
     saveGitEvents: (slug: string, events: unknown) => ipcRenderer.invoke('storage:saveGitEvents', slug, events),
     getDeployments: (slug: string) => ipcRenderer.invoke('storage:getDeployments', slug),
     saveDeployments: (slug: string, deployments: unknown) => ipcRenderer.invoke('storage:saveDeployments', slug, deployments),
+    getGapAnalysis: (slug: string) => ipcRenderer.invoke('storage:getGapAnalysis', slug),
+    saveGapAnalysis: (slug: string, analyses: unknown) => ipcRenderer.invoke('storage:saveGapAnalysis', slug, analyses),
   },
 
   // CLI Check
@@ -112,6 +116,7 @@ contextBridge.exposeInMainWorld('api', {
     sendInput: (sessionId: string, input: string) => ipcRenderer.invoke('claude:sendInput', sessionId, input),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('claude:resize', sessionId, cols, rows),
     kill: (sessionId: string) => ipcRenderer.invoke('claude:kill', sessionId),
+    cancelChat: () => ipcRenderer.invoke('claude:cancelChat'),
     enableCompletionDetection: (sessionId: string) => ipcRenderer.invoke('claude:enableCompletionDetection', sessionId),
     resetCompletionDetection: (sessionId: string) => ipcRenderer.invoke('claude:resetCompletionDetection', sessionId),
     confirmCompletion: (sessionId: string) => ipcRenderer.invoke('claude:confirmCompletion', sessionId),
@@ -124,6 +129,12 @@ contextBridge.exposeInMainWorld('api', {
   vercel: {
     deploy: (projectPath: string, envVars?: Record<string, string>) =>
       ipcRenderer.invoke('vercel:deploy', projectPath, envVars),
+    getProjectConfig: (projectPath: string) =>
+      ipcRenderer.invoke('vercel:getProjectConfig', projectPath),
+    getToken: () =>
+      ipcRenderer.invoke('vercel:getToken'),
+    addEnvVars: (projectPath: string, envVars: Record<string, string>) =>
+      ipcRenderer.invoke('vercel:addEnvVars', projectPath, envVars),
     onOutput: (callback: OutputCallback) => createListener('vercel:output', callback),
     removeListeners: () => removeAllListeners('vercel:'),
   },
@@ -160,19 +171,42 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('github:renameBranch', projectPath, newName),
     deleteBranch: (projectPath: string, branchName: string) =>
       ipcRenderer.invoke('github:deleteBranch', projectPath, branchName),
+    branchExists: (projectPath: string, branchName: string) =>
+      ipcRenderer.invoke('github:branchExists', projectPath, branchName),
     getDiff: (projectPath: string, base?: string) =>
       ipcRenderer.invoke('github:getDiff', projectPath, base),
     getDiffStat: (projectPath: string, base: string) =>
       ipcRenderer.invoke('github:getDiffStat', projectPath, base),
+    getCommitDiff: (projectPath: string, commitHash: string) =>
+      ipcRenderer.invoke('github:getCommitDiff', projectPath, commitHash),
+    getTaskDiff: (projectPath: string, commitHashes: string[]) =>
+      ipcRenderer.invoke('github:getTaskDiff', projectPath, commitHashes),
+    setSecret: (repoFullName: string, name: string, value: string) =>
+      ipcRenderer.invoke('github:setSecret', repoFullName, name, value),
+    getWorkflowRuns: (projectPath: string, limit?: number) =>
+      ipcRenderer.invoke('github:getWorkflowRuns', projectPath, limit),
+    writeWorkflowFile: (projectPath: string, content: string) =>
+      ipcRenderer.invoke('github:writeWorkflowFile', projectPath, content),
     onOutput: (callback: OutputCallback) => createListener('github:output', callback),
     removeListeners: () => removeAllListeners('github:'),
   },
 
   // Supabase
   supabase: {
-    createProject: (name: string) => ipcRenderer.invoke('supabase:createProject', name),
+    getOrganizations: () => ipcRenderer.invoke('supabase:getOrganizations'),
+    getProjects: () => ipcRenderer.invoke('supabase:getProjects'),
+    getProjectKeys: (ref: string) => ipcRenderer.invoke('supabase:getProjectKeys', ref),
+    createProject: (name: string, orgId: string) => ipcRenderer.invoke('supabase:createProject', name, orgId),
     runMigrations: (projectPath: string, supabaseRef: string) =>
       ipcRenderer.invoke('supabase:runMigrations', projectPath, supabaseRef),
+    fetchOpenApiSpec: (supabaseUrl: string, serviceKey: string) =>
+      ipcRenderer.invoke('supabase:fetchOpenApiSpec', supabaseUrl, serviceKey),
+    getSchemaTableInfo: (ref: string, schema?: string) =>
+      ipcRenderer.invoke('supabase:getSchemaTableInfo', ref, schema),
+    dropSchema: (ref: string, schema: string) =>
+      ipcRenderer.invoke('supabase:dropSchema', ref, schema),
+    deleteSupabaseProject: (ref: string) =>
+      ipcRenderer.invoke('supabase:deleteSupabaseProject', ref),
     onOutput: (callback: OutputCallback) => createListener('supabase:output', callback),
     removeListeners: () => removeAllListeners('supabase:'),
   },
@@ -185,6 +219,7 @@ contextBridge.exposeInMainWorld('api', {
   // File System (limited operations)
   fs: {
     readdir: (path: string) => ipcRenderer.invoke('fs:readdir', path),
+    readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
     writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
   },
 

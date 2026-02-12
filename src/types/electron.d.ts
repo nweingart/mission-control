@@ -1,4 +1,4 @@
-import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, PlanningChat, GitEvent, DeploymentRecord } from './index';
+import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapAnalysis } from './index';
 
 export interface ElectronAPI {
   // Storage
@@ -18,12 +18,16 @@ export interface ElectronAPI {
     saveChatHistory: (slug: string, messages: ChatMessage[]) => Promise<void>;
     getBacklog: (slug: string) => Promise<BacklogItem[]>;
     saveBacklog: (slug: string, items: BacklogItem[]) => Promise<void>;
+    getSprints: (slug: string) => Promise<Sprint[]>;
+    saveSprints: (slug: string, sprints: Sprint[]) => Promise<void>;
     getPlanningChats: (slug: string) => Promise<PlanningChat[]>;
     savePlanningChats: (slug: string, chats: PlanningChat[]) => Promise<void>;
     getGitEvents: (slug: string) => Promise<GitEvent[]>;
     saveGitEvents: (slug: string, events: GitEvent[]) => Promise<void>;
     getDeployments: (slug: string) => Promise<DeploymentRecord[]>;
     saveDeployments: (slug: string, deployments: DeploymentRecord[]) => Promise<void>;
+    getGapAnalysis: (slug: string) => Promise<GapAnalysis[]>;
+    saveGapAnalysis: (slug: string, analyses: GapAnalysis[]) => Promise<void>;
   };
 
   // CLI Check
@@ -48,6 +52,7 @@ export interface ElectronAPI {
     sendInput: (sessionId: string, input: string) => Promise<void>;
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>;
     kill: (sessionId: string) => Promise<void>;
+    cancelChat: () => Promise<void>;
     enableCompletionDetection: (sessionId: string) => Promise<void>;
     resetCompletionDetection: (sessionId: string) => Promise<void>;
     confirmCompletion: (sessionId: string) => Promise<void>;
@@ -58,6 +63,9 @@ export interface ElectronAPI {
   // Vercel
   vercel: {
     deploy: (projectPath: string, envVars?: Record<string, string>) => Promise<{ url: string; projectId: string }>;
+    getProjectConfig: (projectPath: string) => Promise<{ orgId: string; projectId: string }>;
+    getToken: () => Promise<string>;
+    addEnvVars: (projectPath: string, envVars: Record<string, string>) => Promise<void>;
     onOutput: (callback: (data: { type: 'stdout' | 'stderr'; content: string }) => void) => void;
     removeListeners: () => void;
   };
@@ -79,16 +87,32 @@ export interface ElectronAPI {
     mergeBranch: (projectPath: string, branchName: string) => Promise<void>;
     renameBranch: (projectPath: string, newName: string) => Promise<void>;
     deleteBranch: (projectPath: string, branchName: string) => Promise<void>;
+    branchExists: (projectPath: string, branchName: string) => Promise<boolean>;
     getDiff: (projectPath: string, base?: string) => Promise<string>;
     getDiffStat: (projectPath: string, base: string) => Promise<string>;
+    getCommitDiff: (projectPath: string, commitHash: string) => Promise<string>;
+    getTaskDiff: (projectPath: string, commitHashes: string[]) => Promise<string>;
+    setSecret: (repoFullName: string, name: string, value: string) => Promise<void>;
+    getWorkflowRuns: (projectPath: string, limit?: number) => Promise<Array<{
+      databaseId: number; status: string; conclusion: string | null;
+      headSha: string; createdAt: string; event: string;
+    }>>;
+    writeWorkflowFile: (projectPath: string, content: string) => Promise<void>;
     onOutput: (callback: (data: { type: 'stdout' | 'stderr'; content: string }) => void) => void;
     removeListeners: () => void;
   };
 
   // Supabase
   supabase: {
-    createProject: (name: string) => Promise<{ ref: string; url: string; anonKey: string; serviceKey: string }>;
+    getOrganizations: () => Promise<Array<{ id: string; name: string }>>;
+    getProjects: () => Promise<Array<{ ref: string; name: string; orgId: string; region: string }>>;
+    getProjectKeys: (ref: string) => Promise<{ ref: string; url: string; anonKey: string; serviceKey: string }>;
+    createProject: (name: string, orgId: string) => Promise<{ ref: string; url: string; anonKey: string; serviceKey: string }>;
     runMigrations: (projectPath: string, supabaseRef: string) => Promise<void>;
+    fetchOpenApiSpec: (supabaseUrl: string, serviceKey: string) => Promise<any>;
+    getSchemaTableInfo: (ref: string, schema?: string) => Promise<any[]>;
+    dropSchema: (ref: string, schema: string) => Promise<void>;
+    deleteSupabaseProject: (ref: string) => Promise<void>;
     onOutput: (callback: (data: { type: 'stdout' | 'stderr'; content: string }) => void) => void;
     removeListeners: () => void;
   };
@@ -101,6 +125,7 @@ export interface ElectronAPI {
   // File System (limited operations)
   fs: {
     readdir: (path: string) => Promise<string[]>;
+    readFile: (filePath: string) => Promise<string>;
     writeFile: (filePath: string, content: string) => Promise<void>;
   };
 
@@ -141,3 +166,13 @@ declare global {
 }
 
 export {};
+
+declare module '*.png' {
+  const src: string;
+  export default src;
+}
+
+declare module '*.webp' {
+  const src: string;
+  export default src;
+}

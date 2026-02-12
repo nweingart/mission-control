@@ -1,8 +1,14 @@
 import { create } from 'zustand';
-import type { Screen, Project, CLIStatus, Task, ChatMessage, BacklogItem, PlanningChat, GitEvent, DeploymentRecord } from '../types';
+import type { Screen, Project, CLIStatus, Task, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapAnalysis, TaskPhase } from '../types';
 
 // Maximum number of terminal output lines to keep in memory
 const MAX_TERMINAL_LINES = 5000;
+
+// Maximum collection sizes to prevent unbounded memory growth
+const MAX_CHAT_MESSAGES = 500;
+const MAX_GIT_EVENTS = 1000;
+const MAX_DEPLOYMENTS = 100;
+const MAX_GAP_ANALYSES = 50;
 
 interface AppState {
   // State
@@ -12,6 +18,7 @@ interface AppState {
   cliStatus: CLIStatus | null;
   isLoading: boolean;
   error: string | null;
+  saveError: string | null;
   tasks: Task[];
   chatMessages: ChatMessage[];
   terminalOutput: string[];
@@ -25,7 +32,16 @@ interface AppState {
   backlog: BacklogItem[];
   planningChats: PlanningChat[];
   activePlanningChatId: string | null;
-  planningChatMessages: ChatMessage[];
+
+  // Build status (written by useBuildPipeline, read by ProjectHomeScreen)
+  buildTaskPhase: TaskPhase;
+  buildCurrentTaskId: string | null;
+  buildSessionActive: boolean;
+
+  // Project home sidebar tab
+  projectHomeTab: 'plan' | 'docs' | 'ship' | 'data' | 'settings';
+  planSubTab: 'planning' | 'backlog' | 'roadmap';
+  shipSubTab: 'commits' | 'deploys';
 
   // Actions
   initialize: () => Promise<void>;
@@ -34,6 +50,7 @@ interface AppState {
   setProjects: (projects: Project[]) => void;
   setCLIStatus: (status: CLIStatus) => void;
   setError: (error: string | null) => void;
+  setSaveError: (error: string | null) => void;
   setLoading: (loading: boolean) => void;
 
   // Project actions
@@ -74,10 +91,22 @@ interface AppState {
   addBacklogItem: (item: Omit<BacklogItem, 'id' | 'createdAt'>) => void;
   updateBacklogItem: (id: string, updates: Partial<BacklogItem>) => void;
   removeBacklogItem: (id: string) => void;
+  reorderBacklog: (items: BacklogItem[]) => void;
   saveBacklog: () => Promise<void>;
   loadBacklog: () => Promise<void>;
 
+  // Sprint actions
+  sprints: Sprint[];
+  addSprint: (name: string) => void;
+  renameSprint: (id: string, name: string) => void;
+  removeSprint: (id: string) => void;
+  archiveSprint: (id: string) => void;
+  saveSprints: () => Promise<void>;
+  loadSprints: () => Promise<void>;
+  initializeSprintsIfNeeded: () => void;
+
   // Planning chat actions
+  getActivePlanningMessages: () => ChatMessage[];
   createPlanningChat: (title?: string) => string;
   setActivePlanningChat: (chatId: string | null) => void;
   addPlanningMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
@@ -101,6 +130,25 @@ interface AppState {
   loadDeployments: () => Promise<void>;
   goToDeployments: () => void;
 
+  // Gap analysis records
+  gapAnalyses: GapAnalysis[];
+  addGapAnalysis: (analysis: GapAnalysis) => void;
+  saveGapAnalyses: () => Promise<void>;
+  loadGapAnalyses: () => Promise<void>;
+  goToGapAnalysis: () => void;
+
+  // Build status actions
+  setBuildTaskPhase: (phase: TaskPhase) => void;
+  setBuildCurrentTaskId: (id: string | null) => void;
+  setBuildSessionActive: (active: boolean) => void;
+
+  // Project home actions
+  setProjectHomeTab: (tab: 'plan' | 'docs' | 'ship' | 'data' | 'settings') => void;
+  setPlanSubTab: (tab: 'planning' | 'backlog' | 'roadmap') => void;
+  setShipSubTab: (tab: 'commits' | 'deploys') => void;
+  goToProjectHome: () => void;
+  generateBacklogPRD: (itemId: string) => Promise<void>;
+
   // Navigation helpers
   goToHome: () => void;
   startNewProject: () => void;
@@ -121,6 +169,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   cliStatus: null,
   isLoading: true,
   error: null,
+  saveError: null,
   tasks: [],
   chatMessages: [],
   terminalOutput: [],
@@ -133,11 +182,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Deployment records initial state
   deployments: [],
 
+  // Gap analysis initial state
+  gapAnalyses: [],
+
   // Planning V2 initial state
   backlog: [],
   planningChats: [],
   activePlanningChatId: null,
-  planningChatMessages: [],
+
+  // Sprints initial state
+  sprints: [],
+
+  // Build status initial state
+  buildTaskPhase: 'idle',
+  buildCurrentTaskId: null,
+  buildSessionActive: false,
+
+  // Project home initial state
+  projectHomeTab: 'plan',
+  planSubTab: 'planning',
+  shipSubTab: 'commits',
 
   setFlowTestMode: (mode) => set({ flowTestMode: mode }),
 
@@ -196,6 +260,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setProjects: (projects) => set({ projects }),
   setCLIStatus: (status) => set({ cliStatus: status }),
   setError: (error) => set({ error }),
+  setSaveError: (error) => set({ saveError: error }),
   setLoading: (loading) => set({ isLoading: loading }),
 
   // Project actions
@@ -266,32 +331,39 @@ export const useAppStore = create<AppState>((set, get) => ({
           console.error('Failed to load deployments:', err);
         }
 
-        // Navigate to appropriate screen based on project status
-        switch (project.status) {
-          case 'idea':
-            set({ screen: 'idea' });
-            break;
-          case 'discovery':
-            set({ screen: 'discovery' });
-            break;
-          case 'planning':
-            set({ screen: 'planning' });
-            break;
-          case 'building':
-            set({ screen: 'building' });
-            break;
-          case 'previewing':
-            set({ screen: 'previewing' });
-            break;
-          case 'deploying':
-            set({ screen: 'deploying' });
-            break;
-          case 'complete':
-            set({ screen: 'complete' });
-            break;
-          default:
-            set({ screen: 'home' });
+        try {
+          await get().loadGapAnalyses();
+        } catch (err) {
+          console.error('Failed to load gap analyses:', err);
         }
+
+        try {
+          await get().loadBacklog();
+        } catch (err) {
+          console.error('Failed to load backlog:', err);
+        }
+
+        try {
+          await get().loadSprints();
+        } catch (err) {
+          console.error('Failed to load sprints:', err);
+        }
+
+        // Auto-create default sprints if none exist
+        try {
+          get().initializeSprintsIfNeeded();
+        } catch (err) {
+          console.error('Failed to initialize sprints:', err);
+        }
+
+        try {
+          await get().loadPlanningChats();
+        } catch (err) {
+          console.error('Failed to load planning chats:', err);
+        }
+
+        // Navigate to project home dashboard
+        set({ screen: 'project-home', projectHomeTab: 'plan' });
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load project';
@@ -312,32 +384,71 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Task actions
-  setTasks: (tasks) => set({ tasks }),
+  setTasks: (tasks) => {
+    const { currentProject } = get();
+    set({ tasks });
+    if (currentProject) {
+      window.api.storage.saveTasks(currentProject.slug, tasks).catch((err) => {
+        console.error('Failed to save tasks:', err);
+        set({ saveError: 'Failed to save tasks. Your changes may not persist.' });
+      });
+    }
+  },
 
   addTask: (title) => {
+    const { currentProject } = get();
     const newTask: Task = {
       id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title,
       completed: false,
     };
     set((state) => ({ tasks: [...state.tasks, newTask] }));
+    if (currentProject) {
+      window.api.storage.saveTasks(currentProject.slug, get().tasks).catch((err) => {
+        console.error('Failed to save tasks:', err);
+        set({ saveError: 'Failed to save tasks. Your changes may not persist.' });
+      });
+    }
   },
 
   updateTask: (id, updates) => {
+    const { currentProject } = get();
     set((state) => ({
       tasks: state.tasks.map((task) =>
         task.id === id ? { ...task, ...updates } : task
       ),
     }));
+    if (currentProject) {
+      window.api.storage.saveTasks(currentProject.slug, get().tasks).catch((err) => {
+        console.error('Failed to save tasks:', err);
+        set({ saveError: 'Failed to save tasks. Your changes may not persist.' });
+      });
+    }
   },
 
   removeTask: (id) => {
+    const { currentProject } = get();
     set((state) => ({
       tasks: state.tasks.filter((task) => task.id !== id),
     }));
+    if (currentProject) {
+      window.api.storage.saveTasks(currentProject.slug, get().tasks).catch((err) => {
+        console.error('Failed to save tasks:', err);
+        set({ saveError: 'Failed to save tasks. Your changes may not persist.' });
+      });
+    }
   },
 
-  reorderTasks: (tasks) => set({ tasks }),
+  reorderTasks: (tasks) => {
+    const { currentProject } = get();
+    set({ tasks });
+    if (currentProject) {
+      window.api.storage.saveTasks(currentProject.slug, get().tasks).catch((err) => {
+        console.error('Failed to save tasks:', err);
+        set({ saveError: 'Failed to save tasks. Your changes may not persist.' });
+      });
+    }
+  },
 
   saveTasks: async () => {
     const { currentProject, tasks } = get();
@@ -366,14 +477,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Chat actions
   addChatMessage: (message) => {
+    const { currentProject } = get();
     const newMessage: ChatMessage = {
       ...message,
       id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date(),
     };
-    set((state) => ({
-      chatMessages: [...state.chatMessages, newMessage],
-    }));
+    set((state) => {
+      const updated = [...state.chatMessages, newMessage];
+      return { chatMessages: updated.length > MAX_CHAT_MESSAGES ? updated.slice(-MAX_CHAT_MESSAGES) : updated };
+    });
+    if (currentProject) {
+      window.api.storage.saveChatHistory(currentProject.slug, get().chatMessages).catch((err) => {
+        console.error('Failed to save chat history:', err);
+        set({ saveError: 'Failed to save chat history. Your changes may not persist.' });
+      });
+    }
   },
 
   setChatMessages: (messages) => set({ chatMessages: messages }),
@@ -422,26 +541,61 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Backlog actions
   addBacklogItem: (item) => {
+    const { currentProject } = get();
     const newItem: BacklogItem = {
       ...item,
       id: `backlog-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       createdAt: new Date().toISOString(),
+      prdStatus: 'pending',
     };
     set((state) => ({ backlog: [...state.backlog, newItem] }));
+    if (currentProject) {
+      window.api.storage.saveBacklog(currentProject.slug, get().backlog).catch((err) => {
+        console.error('Failed to save backlog:', err);
+        set({ saveError: 'Failed to save backlog. Your changes may not persist.' });
+      });
+      // Auto-generate mini-PRD for new backlog items
+      get().generateBacklogPRD(newItem.id);
+    }
   },
 
   updateBacklogItem: (id, updates) => {
+    const { currentProject } = get();
     set((state) => ({
       backlog: state.backlog.map((item) =>
         item.id === id ? { ...item, ...updates } : item
       ),
     }));
+    if (currentProject) {
+      window.api.storage.saveBacklog(currentProject.slug, get().backlog).catch((err) => {
+        console.error('Failed to save backlog:', err);
+        set({ saveError: 'Failed to save backlog. Your changes may not persist.' });
+      });
+    }
   },
 
   removeBacklogItem: (id) => {
+    const { currentProject } = get();
     set((state) => ({
       backlog: state.backlog.filter((item) => item.id !== id),
     }));
+    if (currentProject) {
+      window.api.storage.saveBacklog(currentProject.slug, get().backlog).catch((err) => {
+        console.error('Failed to save backlog:', err);
+        set({ saveError: 'Failed to save backlog. Your changes may not persist.' });
+      });
+    }
+  },
+
+  reorderBacklog: (items) => {
+    const { currentProject } = get();
+    set({ backlog: items });
+    if (currentProject) {
+      window.api.storage.saveBacklog(currentProject.slug, items).catch((err) => {
+        console.error('Failed to save backlog:', err);
+        set({ saveError: 'Failed to save backlog. Your changes may not persist.' });
+      });
+    }
   },
 
   saveBacklog: async () => {
@@ -468,8 +622,142 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  // Sprint actions
+  addSprint: (name) => {
+    const { currentProject, sprints } = get();
+    const maxOrder = sprints.reduce((max, s) => Math.max(max, s.order), 0);
+    const newSprint: Sprint = {
+      id: `sprint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name,
+      order: maxOrder + 1,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => ({ sprints: [...state.sprints, newSprint] }));
+    if (currentProject) {
+      window.api.storage.saveSprints(currentProject.slug, get().sprints).catch((err) => {
+        console.error('Failed to save sprints:', err);
+        set({ saveError: 'Failed to save sprints. Your changes may not persist.' });
+      });
+    }
+  },
+
+  renameSprint: (id, name) => {
+    const { currentProject } = get();
+    set((state) => ({
+      sprints: state.sprints.map((s) => s.id === id ? { ...s, name } : s),
+    }));
+    if (currentProject) {
+      window.api.storage.saveSprints(currentProject.slug, get().sprints).catch((err) => {
+        console.error('Failed to save sprints:', err);
+        set({ saveError: 'Failed to save sprints. Your changes may not persist.' });
+      });
+    }
+  },
+
+  removeSprint: (id) => {
+    const { currentProject, sprints, backlog } = get();
+    const sprint = sprints.find((s) => s.id === id);
+    if (!sprint) return;
+
+    // Unassign items from the deleted sprint
+    const updatedBacklog = backlog.map((item) =>
+      item.sprintId === id ? { ...item, sprintId: undefined } : item
+    );
+
+    set((state) => ({
+      sprints: state.sprints.filter((s) => s.id !== id),
+      backlog: updatedBacklog,
+    }));
+    if (currentProject) {
+      window.api.storage.saveSprints(currentProject.slug, get().sprints).catch((err) => {
+        console.error('Failed to save sprints:', err);
+      });
+      window.api.storage.saveBacklog(currentProject.slug, get().backlog).catch((err) => {
+        console.error('Failed to save backlog:', err);
+      });
+    }
+  },
+
+  archiveSprint: (id) => {
+    const { currentProject } = get();
+    set((state) => ({
+      sprints: state.sprints.map((s) => s.id === id ? { ...s, archived: true } : s),
+    }));
+    if (currentProject) {
+      window.api.storage.saveSprints(currentProject.slug, get().sprints).catch((err) => {
+        console.error('Failed to save sprints:', err);
+      });
+    }
+  },
+
+  saveSprints: async () => {
+    const { currentProject, sprints } = get();
+    if (currentProject) {
+      try {
+        await window.api.storage.saveSprints(currentProject.slug, sprints);
+      } catch (err) {
+        console.error('Failed to save sprints:', err);
+      }
+    }
+  },
+
+  loadSprints: async () => {
+    const { currentProject } = get();
+    if (currentProject) {
+      try {
+        const sprints = await window.api.storage.getSprints(currentProject.slug);
+        set({ sprints });
+      } catch (err) {
+        console.error('Failed to load sprints:', err);
+        set({ sprints: [] });
+      }
+    }
+  },
+
+  initializeSprintsIfNeeded: () => {
+    const { currentProject, sprints, backlog } = get();
+    if (!currentProject || sprints.length > 0) return;
+
+    const now = new Date().toISOString();
+    const sprint1: Sprint = {
+      id: `sprint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: 'Sprint 1',
+      order: 1,
+      createdAt: now,
+    };
+    const sprint2: Sprint = {
+      id: `sprint-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`,
+      name: 'Sprint 2',
+      order: 2,
+      createdAt: now,
+    };
+
+    // Assign all existing backlog items without a sprintId to Sprint 1
+    const updatedBacklog = backlog.map((item) =>
+      !item.sprintId ? { ...item, sprintId: sprint1.id } : item
+    );
+
+    set({ sprints: [sprint1, sprint2], backlog: updatedBacklog });
+    window.api.storage.saveSprints(currentProject.slug, [sprint1, sprint2]).catch((err) => {
+      console.error('Failed to save initial sprints:', err);
+    });
+    if (updatedBacklog.some((item, i) => item !== backlog[i])) {
+      window.api.storage.saveBacklog(currentProject.slug, updatedBacklog).catch((err) => {
+        console.error('Failed to save backlog with sprint assignments:', err);
+      });
+    }
+  },
+
   // Planning chat actions
+  getActivePlanningMessages: () => {
+    const { planningChats, activePlanningChatId } = get();
+    if (!activePlanningChatId) return [];
+    const chat = planningChats.find((c) => c.id === activePlanningChatId);
+    return chat?.messages || [];
+  },
+
   createPlanningChat: (title) => {
+    const { currentProject } = get();
     const chatId = `chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const now = new Date().toISOString();
     const newChat: PlanningChat = {
@@ -482,77 +770,88 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       planningChats: [...state.planningChats, newChat],
       activePlanningChatId: chatId,
-      planningChatMessages: [],
     }));
+    if (currentProject) {
+      window.api.storage.savePlanningChats(currentProject.slug, get().planningChats).catch((err) => {
+        console.error('Failed to save planning chats:', err);
+        set({ saveError: 'Failed to save planning chats. Your changes may not persist.' });
+      });
+    }
     return chatId;
   },
 
   setActivePlanningChat: (chatId) => {
-    const { planningChats } = get();
-    const chat = planningChats.find((c) => c.id === chatId);
-    set({
-      activePlanningChatId: chatId,
-      planningChatMessages: chat?.messages || [],
-    });
+    set({ activePlanningChatId: chatId });
   },
 
   addPlanningMessage: (message) => {
+    const { currentProject } = get();
     const newMessage: ChatMessage = {
       ...message,
       id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date(),
     };
     set((state) => {
-      const updatedMessages = [...state.planningChatMessages, newMessage];
-      // Also update the chat in planningChats
       const updatedChats = state.planningChats.map((chat) =>
         chat.id === state.activePlanningChatId
-          ? { ...chat, messages: updatedMessages, updatedAt: new Date().toISOString() }
+          ? { ...chat, messages: [...chat.messages, newMessage], updatedAt: new Date().toISOString() }
           : chat
       );
-      return {
-        planningChatMessages: updatedMessages,
-        planningChats: updatedChats,
-      };
+      return { planningChats: updatedChats };
     });
+    if (currentProject) {
+      window.api.storage.savePlanningChats(currentProject.slug, get().planningChats).catch((err) => {
+        console.error('Failed to save planning chats:', err);
+        set({ saveError: 'Failed to save planning chats. Your changes may not persist.' });
+      });
+    }
   },
 
   deletePlanningChat: (chatId) => {
-    const { planningChats, activePlanningChatId } = get();
+    const { currentProject, planningChats, activePlanningChatId } = get();
     const filtered = planningChats.filter((c) => c.id !== chatId);
 
     // If we deleted the active chat, select another or clear
     if (chatId === activePlanningChatId) {
       if (filtered.length > 0) {
-        // Select the most recent remaining chat
         const sorted = [...filtered].sort(
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
         set({
           planningChats: filtered,
           activePlanningChatId: sorted[0].id,
-          planningChatMessages: sorted[0].messages,
         });
       } else {
         set({
           planningChats: filtered,
           activePlanningChatId: null,
-          planningChatMessages: [],
         });
       }
     } else {
       set({ planningChats: filtered });
     }
+    if (currentProject) {
+      window.api.storage.savePlanningChats(currentProject.slug, get().planningChats).catch((err) => {
+        console.error('Failed to save planning chats:', err);
+        set({ saveError: 'Failed to save planning chats. Your changes may not persist.' });
+      });
+    }
   },
 
   renamePlanningChat: (chatId, newTitle) => {
-    const { planningChats } = get();
+    const { currentProject, planningChats } = get();
     const updated = planningChats.map((chat) =>
       chat.id === chatId
         ? { ...chat, title: newTitle, updatedAt: new Date().toISOString() }
         : chat
     );
     set({ planningChats: updated });
+    if (currentProject) {
+      window.api.storage.savePlanningChats(currentProject.slug, get().planningChats).catch((err) => {
+        console.error('Failed to save planning chats:', err);
+        set({ saveError: 'Failed to save planning chats. Your changes may not persist.' });
+      });
+    }
   },
 
   savePlanningChats: async () => {
@@ -593,11 +892,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       id: `git-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date().toISOString(),
     };
-    set((state) => ({ gitEvents: [...state.gitEvents, newEvent] }));
+    set((state) => {
+      const updated = [...state.gitEvents, newEvent];
+      return { gitEvents: updated.length > MAX_GIT_EVENTS ? updated.slice(-MAX_GIT_EVENTS) : updated };
+    });
     // Auto-save: capture slug now so even if project changes, we write to the right place
     const slug = currentProject.slug;
     window.api.storage.saveGitEvents(slug, get().gitEvents).catch((err) => {
       console.error('Failed to save git events:', err);
+      set({ saveError: 'Failed to save git events. Your changes may not persist.' });
     });
   },
 
@@ -639,10 +942,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.warn('addDeployment called without a current project');
       return;
     }
-    set((state) => ({ deployments: [...state.deployments, record] }));
+    set((state) => {
+      const updated = [...state.deployments, record];
+      return { deployments: updated.length > MAX_DEPLOYMENTS ? updated.slice(-MAX_DEPLOYMENTS) : updated };
+    });
     const slug = currentProject.slug;
     window.api.storage.saveDeployments(slug, get().deployments).catch((err) => {
       console.error('Failed to save deployments:', err);
+      set({ saveError: 'Failed to save deployments. Your changes may not persist.' });
     });
   },
 
@@ -657,6 +964,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const slug = currentProject.slug;
     window.api.storage.saveDeployments(slug, get().deployments).catch((err) => {
       console.error('Failed to save deployments:', err);
+      set({ saveError: 'Failed to save deployments. Your changes may not persist.' });
     });
   },
 
@@ -691,6 +999,55 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ screen: 'deployments' });
   },
 
+  // Gap analysis actions
+  addGapAnalysis: (analysis) => {
+    const { currentProject } = get();
+    if (!currentProject) {
+      console.warn('addGapAnalysis called without a current project');
+      return;
+    }
+    set((state) => {
+      const updated = [...state.gapAnalyses, analysis];
+      return { gapAnalyses: updated.length > MAX_GAP_ANALYSES ? updated.slice(-MAX_GAP_ANALYSES) : updated };
+    });
+    const slug = currentProject.slug;
+    window.api.storage.saveGapAnalysis(slug, get().gapAnalyses).catch((err) => {
+      console.error('Failed to save gap analyses:', err);
+      set({ saveError: 'Failed to save gap analyses. Your changes may not persist.' });
+    });
+  },
+
+  saveGapAnalyses: async () => {
+    const { currentProject, gapAnalyses } = get();
+    if (!currentProject) {
+      console.warn('saveGapAnalyses called without a current project');
+      return;
+    }
+    try {
+      await window.api.storage.saveGapAnalysis(currentProject.slug, gapAnalyses);
+    } catch (err) {
+      console.error('Failed to save gap analyses:', err);
+    }
+  },
+
+  loadGapAnalyses: async () => {
+    const { currentProject } = get();
+    if (currentProject) {
+      try {
+        const analyses = await window.api.storage.getGapAnalysis(currentProject.slug);
+        set({ gapAnalyses: analyses });
+      } catch (err) {
+        console.error('Failed to load gap analyses:', err);
+        set({ gapAnalyses: [] });
+      }
+    }
+  },
+
+  goToGapAnalysis: () => {
+    if (!get().currentProject) return;
+    set({ screen: 'gap-analysis' });
+  },
+
   // Onboarding actions
   completeOnboarding: async () => {
     try {
@@ -723,6 +1080,62 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ screen: 'setup-deploy' });
   },
 
+  // Build status actions
+  setBuildTaskPhase: (phase) => set({ buildTaskPhase: phase }),
+  setBuildCurrentTaskId: (id) => set({ buildCurrentTaskId: id }),
+  setBuildSessionActive: (active) => set({ buildSessionActive: active }),
+
+  // Project home actions
+  setProjectHomeTab: (tab) => set({ projectHomeTab: tab }),
+  setPlanSubTab: (tab) => set({ planSubTab: tab }),
+  setShipSubTab: (tab) => set({ shipSubTab: tab }),
+  goToProjectHome: () => set({ screen: 'project-home' }),
+
+  generateBacklogPRD: async (itemId) => {
+    const { currentProject, backlog } = get();
+    if (!currentProject) return;
+    const item = backlog.find((b) => b.id === itemId);
+    if (!item) return;
+
+    get().updateBacklogItem(itemId, { prdStatus: 'generating' });
+
+    try {
+      const mainPrd = await window.api.storage.getPRD(currentProject.slug);
+      const prompt = `Write a focused mini-PRD for the following feature. Keep it concise (300-500 words). Include: Overview, User Stories (3-5), Technical Considerations, and Acceptance Criteria.
+
+Project: ${currentProject.name}
+${mainPrd ? `\nExisting PRD context:\n${mainPrd.substring(0, 2000)}\n` : ''}
+Feature: ${item.title}
+Description: ${item.description}
+Priority: ${item.priority}
+
+At the very end, on their own lines, include these two estimates:
+ESTIMATED_TASKS: <number of implementation tasks needed, e.g. 5>
+STORY_POINTS: <fibonacci story points 1-21 estimating total Claude Code effort>
+
+Output markdown only (plus the two estimate lines at the end).`;
+
+      const prdContent = await window.api.claude.chat(currentProject.projectPath, prompt);
+
+      // Parse estimated tasks and story points from the end of the response
+      let estimatedTasks: number | undefined;
+      let storyPoints: number | undefined;
+      let cleanPrd = prdContent;
+
+      const tasksMatch = prdContent.match(/ESTIMATED_TASKS:\s*(\d+)/);
+      const pointsMatch = prdContent.match(/STORY_POINTS:\s*(\d+)/);
+      if (tasksMatch) estimatedTasks = parseInt(tasksMatch[1], 10);
+      if (pointsMatch) storyPoints = parseInt(pointsMatch[1], 10);
+      // Remove the estimate lines from the PRD content
+      cleanPrd = prdContent.replace(/\n?ESTIMATED_TASKS:\s*\d+/g, '').replace(/\n?STORY_POINTS:\s*\d+/g, '').trim();
+
+      get().updateBacklogItem(itemId, { prd: cleanPrd, prdStatus: 'complete', estimatedTasks, storyPoints });
+    } catch (err) {
+      console.error('Failed to generate backlog PRD:', err);
+      get().updateBacklogItem(itemId, { prdStatus: 'failed' });
+    }
+  },
+
   // Navigation helpers
   goToHome: async () => {
     // Recheck CLI status before going home
@@ -752,10 +1165,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       buildSessionId: null,
       gitEvents: [],
       backlog: [],
+      sprints: [],
       planningChats: [],
       activePlanningChatId: null,
-      planningChatMessages: [],
+      projectHomeTab: 'plan',
+      planSubTab: 'planning',
+      shipSubTab: 'commits',
+      buildTaskPhase: 'idle',
+      buildCurrentTaskId: null,
+      buildSessionActive: false,
+
       deployments: [],
+      gapAnalyses: [],
     });
   },
 
@@ -769,10 +1190,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       terminalOutput: [],
       gitEvents: [],
       backlog: [],
+      sprints: [],
       planningChats: [],
       activePlanningChatId: null,
-      planningChatMessages: [],
+      projectHomeTab: 'plan',
+      planSubTab: 'planning',
+      shipSubTab: 'commits',
+      buildTaskPhase: 'idle',
+      buildCurrentTaskId: null,
+      buildSessionActive: false,
+
       deployments: [],
+      gapAnalyses: [],
     });
   },
 

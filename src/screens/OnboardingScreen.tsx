@@ -9,12 +9,12 @@ function StepDots({ current, total }: { current: number; total: number }) {
       {Array.from({ length: total }, (_, i) => (
         <div
           key={i}
-          className={`rounded-full transition-all duration-300 ${
+          className={`transition-all duration-300 ${
             i + 1 === current
-              ? 'w-6 h-2 bg-terracotta-500'
+              ? 'w-6 h-2 bg-ink'
               : i + 1 < current
-                ? 'w-2 h-2 bg-terracotta-500/50'
-                : 'w-2 h-2 bg-charcoal-600'
+                ? 'w-2 h-2 bg-ink/50'
+                : 'w-2 h-2 bg-border'
           }`}
         />
       ))}

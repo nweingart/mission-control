@@ -52,9 +52,9 @@ export default function ToolDisconnectedOverlay() {
   ];
 
   const getStatus = (tool: typeof tools[number]) => {
-    if (!tool.installed) return { label: 'Not installed', color: 'text-rust-500' };
-    if (!tool.authenticated) return { label: 'Not authenticated', color: 'text-amber-400' };
-    return { label: 'Connected', color: 'text-sage-400' };
+    if (!tool.installed) return { label: 'Not installed', color: 'text-error' };
+    if (!tool.authenticated) return { label: 'Not authenticated', color: 'text-spectrum-orange' };
+    return { label: 'Connected', color: 'text-success' };
   };
 
   const isConnected = (tool: typeof tools[number]) => tool.installed && tool.authenticated;
@@ -83,18 +83,18 @@ export default function ToolDisconnectedOverlay() {
   };
 
   return (
-    <div className="absolute inset-0 z-50 bg-charcoal-950/80 backdrop-blur-sm flex items-center justify-center">
-      <div className="bg-charcoal-800 border border-charcoal-600 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
+    <div className="absolute inset-0 z-50 bg-surface-light/80 backdrop-blur-sm flex items-center justify-center">
+      <div className="card-panel p-8 max-w-md w-full mx-4">
         {/* Header */}
         <div className="flex items-center space-x-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-rust-500/15 flex items-center justify-center">
-            <svg className="w-5 h-5 text-rust-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-10 h-10 bg-error/15 flex items-center justify-center">
+            <svg className="w-5 h-5 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-cream-100">Tools Disconnected</h2>
-            <p className="text-sm text-charcoal-300">Some required tools have lost connection</p>
+            <h2 className="text-lg font-sans font-semibold text-ink">Tools Disconnected</h2>
+            <p className="text-sm text-ink-muted">Some required tools have lost connection</p>
           </div>
         </div>
 
@@ -106,25 +106,25 @@ export default function ToolDisconnectedOverlay() {
             return (
               <div
                 key={tool.name}
-                className={`flex items-center justify-between px-4 py-3 rounded-lg border ${
+                className={`flex items-center justify-between px-4 py-3 border ${
                   connected
-                    ? 'bg-charcoal-700/50 border-charcoal-600'
-                    : 'bg-rust-500/5 border-rust-500/20'
+                    ? 'bg-surface/50 border-border'
+                    : 'bg-error/5 border-error/20'
                 }`}
               >
                 <div className="flex items-center space-x-3">
-                  <div className={connected ? 'text-sage-400' : 'text-charcoal-400'}>
+                  <div className={connected ? 'text-success' : 'text-ink-muted'}>
                     {tool.icon}
                   </div>
-                  <span className="text-sm font-medium text-cream-100">{tool.name}</span>
+                  <span className="text-sm font-medium text-ink">{tool.name}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   {connected ? (
-                    <svg className="w-4 h-4 text-sage-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
-                    <svg className="w-4 h-4 text-rust-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   )}
@@ -140,13 +140,10 @@ export default function ToolDisconnectedOverlay() {
           <button
             onClick={handleRecheck}
             disabled={isRechecking}
-            className="flex-1 flex items-center justify-center space-x-2 px-4 py-2.5 bg-charcoal-700 text-charcoal-100 rounded-lg hover:bg-charcoal-600 disabled:opacity-50 transition-colors border border-charcoal-600"
+            className="btn-solid flex-1 flex items-center justify-center space-x-2 px-4 py-2.5 disabled:opacity-50"
           >
             {isRechecking ? (
-              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
+              <div className="w-4 h-4 border-2 border-ink-muted border-t-transparent animate-spin" />
             ) : (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -156,7 +153,7 @@ export default function ToolDisconnectedOverlay() {
           </button>
           <button
             onClick={handleReconnect}
-            className="flex-1 flex items-center justify-center space-x-2 px-4 py-2.5 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors font-medium"
+            className="btn-solid-primary flex-1 flex items-center justify-center space-x-2 px-4 py-2.5 font-medium"
           >
             <span>Reconnect</span>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

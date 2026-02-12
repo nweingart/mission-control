@@ -1,10 +1,23 @@
 import { useEffect, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { STEP_REQUIREMENTS, type ServiceKey } from '../constants/preflight-requirements';
+import type { Screen } from '../types';
 
 const POLL_INTERVAL = 30_000; // 30 seconds
 
 // Screens where we don't need to poll (they handle their own CLI setup)
 const EXEMPT_SCREENS = new Set(['onboarding', 'setup-workspace', 'setup-deploy']);
+
+// Screens that have their own PreflightGateOverlay — don't block globally
+const PREFLIGHT_GATE_SCREENS = new Set<Screen>(['building', 'deploying', 'prd-review']);
+
+// Map screen names to STEP_REQUIREMENTS keys
+const SCREEN_TO_STEP: Partial<Record<Screen, string>> = {
+  discovery: 'discovery',
+  'prd-review': 'prd-review',
+  building: 'building',
+  deploying: 'deploying',
+};
 
 export function useCLIMonitor() {
   const { screen, cliStatus, setCLIStatus } = useAppStore();
@@ -34,15 +47,23 @@ export function useCLIMonitor() {
     };
   }, [screen, setCLIStatus]);
 
-  // Derive disconnection info from store cliStatus
-  const allConnected = cliStatus
-    ? cliStatus.claude.installed && cliStatus.claude.authenticated &&
-      cliStatus.github.installed && cliStatus.github.authenticated &&
-      cliStatus.vercel.installed && cliStatus.vercel.authenticated &&
-      cliStatus.supabase.installed && cliStatus.supabase.authenticated
+  // Derive which services are required for the current screen
+  const stepKey = SCREEN_TO_STEP[screen];
+  const requiredServices: ServiceKey[] = stepKey ? (STEP_REQUIREMENTS[stepKey] || []) : ['claude', 'github', 'vercel', 'supabase'];
+
+  // Check only required services
+  const requiredConnected = cliStatus
+    ? requiredServices.every(
+        (key) => cliStatus[key]?.installed && cliStatus[key]?.authenticated
+      )
     : true; // Don't block while status is null (initial load)
 
-  const shouldBlock = !EXEMPT_SCREENS.has(screen) && !allConnected && cliStatus !== null;
+  // Don't block on screens that handle their own preflight gate
+  const shouldBlock =
+    !EXEMPT_SCREENS.has(screen) &&
+    !PREFLIGHT_GATE_SCREENS.has(screen as Screen) &&
+    !requiredConnected &&
+    cliStatus !== null;
 
-  return { allConnected, shouldBlock };
+  return { allConnected: requiredConnected, shouldBlock };
 }

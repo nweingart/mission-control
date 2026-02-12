@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
+import Markdown from 'react-markdown';
 import type { ChatMessage } from '../types';
+import houstonAvatar from '../assets/houston-avatar.webp';
 
 interface ChatProps {
   messages: ChatMessage[];
@@ -11,14 +13,31 @@ interface ChatProps {
 
 const MAX_MESSAGE_LENGTH = 10000;
 
-// Typing indicator with pulsing animation
+// Typing indicator with pulsing animation and rotating status messages
 function TypingIndicator() {
+  const messages = [
+    'Thinking...',
+    'Reviewing your project...',
+    'Searching the codebase...',
+    'Reading docs...',
+    'Drafting a response...',
+    'Almost there...',
+  ];
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIndex((prev) => (prev < messages.length - 1 ? prev + 1 : prev));
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="flex items-center space-x-1.5 px-2 py-1">
-      <div className="w-2 h-2 bg-terracotta-400 rounded-full animate-pulse" style={{ animationDuration: '1s' }}></div>
-      <div className="w-2 h-2 bg-terracotta-400 rounded-full animate-pulse" style={{ animationDuration: '1s', animationDelay: '0.2s' }}></div>
-      <div className="w-2 h-2 bg-terracotta-400 rounded-full animate-pulse" style={{ animationDuration: '1s', animationDelay: '0.4s' }}></div>
-      <span className="text-sm text-charcoal-300 ml-2 italic">Thinking...</span>
+      <div className="w-2 h-2 bg-spectrum-orange animate-pulse" style={{ animationDuration: '1s' }}></div>
+      <div className="w-2 h-2 bg-spectrum-orange animate-pulse" style={{ animationDuration: '1s', animationDelay: '0.2s' }}></div>
+      <div className="w-2 h-2 bg-spectrum-orange animate-pulse" style={{ animationDuration: '1s', animationDelay: '0.4s' }}></div>
+      <span className="text-sm text-ink-muted ml-2 italic">{messages[index]}</span>
     </div>
   );
 }
@@ -34,49 +53,42 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       onMouseEnter={() => setShowTimestamp(true)}
       onMouseLeave={() => setShowTimestamp(false)}
     >
-      {/* AI Avatar - Crossed Hammers */}
+      {/* AI Avatar */}
       {!isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-full mr-2 shadow-md overflow-hidden">
-          <svg className="w-8 h-8" viewBox="0 0 200 200">
-            <defs>
-              <linearGradient id="coralGradChat" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style={{ stopColor: '#E8927C' }} />
-                <stop offset="100%" style={{ stopColor: '#D4806A' }} />
-              </linearGradient>
-              <linearGradient id="handleGradChat" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" style={{ stopColor: '#8B7355' }} />
-                <stop offset="50%" style={{ stopColor: '#9C8465' }} />
-                <stop offset="100%" style={{ stopColor: '#8B7355' }} />
-              </linearGradient>
-            </defs>
-            <circle cx="100" cy="100" r="95" fill="#1E1E1E" stroke="#E8927C" strokeWidth="3" />
-            <g transform="rotate(-40, 100, 100)">
-              <rect x="92" y="55" width="16" height="110" rx="3" fill="url(#handleGradChat)" stroke="#6B5D4D" strokeWidth="1" />
-              <rect x="70" y="35" width="60" height="28" rx="4" fill="url(#coralGradChat)" stroke="#C97563" strokeWidth="1.5" />
-            </g>
-            <g transform="rotate(40, 100, 100)">
-              <rect x="92" y="55" width="16" height="110" rx="3" fill="url(#handleGradChat)" stroke="#6B5D4D" strokeWidth="1" />
-              <rect x="70" y="35" width="60" height="28" rx="4" fill="url(#coralGradChat)" stroke="#C97563" strokeWidth="1.5" />
-            </g>
-          </svg>
-        </div>
+        <div className="flex-shrink-0 w-7 h-7 mr-2 rounded-full overflow-hidden border-[3px] border-spectrum-blue"><img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" /></div>
       )}
 
       <div className="flex flex-col max-w-[75%]">
         <div
-          className={`rounded-2xl px-4 py-3 shadow-md transition-all duration-200 ${
+          className={`px-4 py-3 transition-all duration-200 ${
             isUser
-              ? 'bg-gradient-to-br from-charcoal-700 to-charcoal-800 border border-terracotta-500/20 text-cream-50'
-              : 'bg-gradient-to-br from-cream-50 to-cream-100 text-charcoal-900'
+              ? 'bg-surface border border-border text-ink'
+              : 'bg-surface-light text-ink'
           }`}
         >
-          <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
+          {isUser ? (
+            <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
+          ) : (
+            <Markdown components={{
+              p: ({ children }) => <p className="my-1.5 leading-relaxed">{children}</p>,
+              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+              em: ({ children }) => <em>{children}</em>,
+              ul: ({ children }) => <ul className="my-1.5 ml-4 list-disc">{children}</ul>,
+              ol: ({ children }) => <ol className="my-1.5 ml-4 list-decimal">{children}</ol>,
+              li: ({ children }) => <li className="my-0.5">{children}</li>,
+              code: ({ children }) => <code className="bg-surface/50 px-1 rounded text-[13px]">{children}</code>,
+              pre: ({ children }) => <pre className="bg-surface/50 p-2 rounded my-1.5 overflow-x-auto text-[13px]">{children}</pre>,
+              h1: ({ children }) => <p className="font-semibold text-base my-2">{children}</p>,
+              h2: ({ children }) => <p className="font-semibold text-sm my-2">{children}</p>,
+              h3: ({ children }) => <p className="font-semibold text-sm my-1.5">{children}</p>,
+            }}>{message.content}</Markdown>
+          )}
         </div>
 
         {/* Timestamp - shows on hover */}
         <div
           className={`text-xs mt-1 transition-opacity duration-200 ${
-            isUser ? 'text-right text-charcoal-500' : 'text-left text-charcoal-500'
+            isUser ? 'text-right text-ink-muted' : 'text-left text-ink-muted'
           } ${showTimestamp ? 'opacity-100' : 'opacity-0'}`}
         >
           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -126,7 +138,7 @@ export default function Chat({ messages, onSendMessage, isLoading = false, place
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.length === 0 && (
-          <div className="text-center text-charcoal-400 mt-8 italic">
+          <div className="text-center text-ink-muted mt-8 italic">
             Start a conversation...
           </div>
         )}
@@ -135,31 +147,8 @@ export default function Chat({ messages, onSendMessage, isLoading = false, place
         ))}
         {isLoading && (
           <div className="flex items-start animate-fade-in">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full mr-2 shadow-md overflow-hidden">
-              <svg className="w-8 h-8" viewBox="0 0 200 200">
-                <defs>
-                  <linearGradient id="coralGradLoading" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" style={{ stopColor: '#E8927C' }} />
-                    <stop offset="100%" style={{ stopColor: '#D4806A' }} />
-                  </linearGradient>
-                  <linearGradient id="handleGradLoading" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" style={{ stopColor: '#8B7355' }} />
-                    <stop offset="50%" style={{ stopColor: '#9C8465' }} />
-                    <stop offset="100%" style={{ stopColor: '#8B7355' }} />
-                  </linearGradient>
-                </defs>
-                <circle cx="100" cy="100" r="95" fill="#1E1E1E" stroke="#E8927C" strokeWidth="3" />
-                <g transform="rotate(-40, 100, 100)">
-                  <rect x="92" y="55" width="16" height="110" rx="3" fill="url(#handleGradLoading)" stroke="#6B5D4D" strokeWidth="1" />
-                  <rect x="70" y="35" width="60" height="28" rx="4" fill="url(#coralGradLoading)" stroke="#C97563" strokeWidth="1.5" />
-                </g>
-                <g transform="rotate(40, 100, 100)">
-                  <rect x="92" y="55" width="16" height="110" rx="3" fill="url(#handleGradLoading)" stroke="#6B5D4D" strokeWidth="1" />
-                  <rect x="70" y="35" width="60" height="28" rx="4" fill="url(#coralGradLoading)" stroke="#C97563" strokeWidth="1.5" />
-                </g>
-              </svg>
-            </div>
-            <div className="bg-gradient-to-br from-cream-50 to-cream-100 rounded-2xl shadow-md">
+            <div className="flex-shrink-0 w-7 h-7 mr-2 rounded-full overflow-hidden border-[3px] border-spectrum-blue"><img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" /></div>
+            <div className="bg-surface-light">
               <TypingIndicator />
             </div>
           </div>
@@ -169,7 +158,7 @@ export default function Chat({ messages, onSendMessage, isLoading = false, place
 
       {/* Input */}
       {!hideInput && (
-        <form onSubmit={handleSubmit} className="border-t border-charcoal-700 p-4 bg-charcoal-800/50">
+        <form onSubmit={handleSubmit} className="border-t border-border-subtle p-4 bg-surface-card/50">
           <div className="flex space-x-3 items-end">
             <div className="flex-1 relative">
               <textarea
@@ -181,10 +170,10 @@ export default function Chat({ messages, onSendMessage, isLoading = false, place
                 disabled={isLoading}
                 rows={2}
                 maxLength={MAX_MESSAGE_LENGTH}
-                className="w-full resize-none rounded-xl border border-charcoal-600 bg-charcoal-800 text-cream-50 placeholder:text-charcoal-500 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-terracotta-500/50 focus:border-terracotta-500/50 disabled:bg-charcoal-700 disabled:cursor-not-allowed transition-all duration-200"
+                className="input-inset w-full resize-none placeholder:text-ink-muted disabled:bg-surface disabled:cursor-not-allowed"
               />
               {showCharCount && (
-                <span className={`absolute bottom-2 right-3 text-xs ${isOverLimit ? 'text-rust-500' : 'text-charcoal-500'}`}>
+                <span className={`absolute bottom-2 right-3 text-xs ${isOverLimit ? 'text-error' : 'text-ink-muted'}`}>
                   {input.length.toLocaleString()}/{MAX_MESSAGE_LENGTH.toLocaleString()}
                 </span>
               )}
@@ -192,7 +181,7 @@ export default function Chat({ messages, onSendMessage, isLoading = false, place
             <button
               type="submit"
               disabled={!input.trim() || isLoading || isOverLimit}
-              className="p-3 bg-terracotta-500 text-charcoal-950 rounded-xl hover:bg-terracotta-400 disabled:bg-charcoal-700 disabled:text-charcoal-500 disabled:cursor-not-allowed transition-all duration-200 hover:shadow-lg hover:shadow-terracotta-500/20"
+              className="btn-solid-primary p-3 disabled:bg-surface disabled:text-ink-muted disabled:cursor-not-allowed transition-all duration-200"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

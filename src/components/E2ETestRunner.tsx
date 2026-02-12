@@ -25,7 +25,18 @@ interface E2EConfig {
   idea: string;
   includeDiscovery: boolean;
   includePlanning: boolean;
+  includeGapAnalysis: boolean;
   includeDeploy: boolean;
+}
+
+interface E2ECheckpoint {
+  projectSlug: string;
+  projectPath: string;
+  config: E2EConfig;
+  resumeFromPhaseIndex: number;
+  completedPhases: PhaseResult[];
+  phaseList: { name: string; key: string; skip: boolean }[];
+  timestamp: number;
 }
 
 // ─── Prompts (same as the real app uses) ────────────────────────────
@@ -91,7 +102,19 @@ List any decisions that still need to be made
 
 Output ONLY the PRD markdown, starting with "# [Product Name] - Product Requirements Document". No preamble or explanation.`;
 
-const DEFAULT_IDEA = 'A simple todo list app where users can add tasks, mark them as complete, and delete them. Clean minimal UI with a single page.';
+const DEFAULT_IDEA = `A personal finance dashboard where users can track income and expenses, categorize transactions, set monthly budgets per category, and view spending analytics. Features: transaction list with add/edit/delete, category management (food, rent, entertainment, etc.), monthly budget targets with progress bars, a dashboard with spending breakdown charts (pie chart by category, bar chart monthly trend), and a simple search/filter for transactions. Use a clean modern UI with a sidebar navigation.`;
+
+import {
+  extractJsonObject,
+  buildGapAnalysisPrompt,
+  buildGapMetaReviewPrompt,
+  buildGapFixPrompt,
+  countWords,
+  detectPRDSections,
+  formatRelativeTime,
+} from '../utils/gap-helpers';
+
+const GAP_PASS_THRESHOLD = 95;
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -103,25 +126,13 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function countWords(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
-}
-
-function detectPRDSections(prd: string): string[] {
-  const sections: string[] = [];
-  const sectionPatterns = [
-    { pattern: /##?\s*\d*\.?\s*overview/i, name: 'Overview' },
-    { pattern: /##?\s*\d*\.?\s*user\s*stories/i, name: 'User Stories' },
-    { pattern: /##?\s*\d*\.?\s*feature/i, name: 'Features' },
-    { pattern: /##?\s*\d*\.?\s*data\s*model/i, name: 'Data Model' },
-    { pattern: /##?\s*\d*\.?\s*api/i, name: 'API Endpoints' },
-    { pattern: /##?\s*\d*\.?\s*tech\s*stack/i, name: 'Tech Stack' },
-    { pattern: /##?\s*\d*\.?\s*mvp/i, name: 'MVP Scope' },
-  ];
-  for (const { pattern, name } of sectionPatterns) {
-    if (pattern.test(prd)) sections.push(name);
+function loadCheckpoint(): E2ECheckpoint | null {
+  try {
+    const saved = localStorage.getItem('e2e-checkpoint');
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
   }
-  return sections;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -132,6 +143,7 @@ export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
     idea: DEFAULT_IDEA,
     includeDiscovery: true,
     includePlanning: true,
+    includeGapAnalysis: true,
     includeDeploy: false,
   });
   const [phases, setPhases] = useState<PhaseResult[]>([]);
@@ -141,6 +153,7 @@ export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
   const [isRunning, setIsRunning] = useState(false);
   const [copied, setCopied] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [checkpoint, setCheckpoint] = useState<E2ECheckpoint | null>(loadCheckpoint);
   const cancelledRef = useRef(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -309,6 +322,21 @@ export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
     // Update status but DON'T navigate to BuildScreen - we'll run tasks programmatically
     await store.getState().updateProject({ status: 'building' });
 
+    // Initialize git early so we have commit history throughout the build
+    log('Initializing git repo...');
+    try {
+      const gitStatus = await window.api.github.checkGitStatus(projectPath);
+      if (!gitStatus.hasGitRepo) {
+        await window.api.github.gitInit(projectPath);
+        log('  Git repo initialized');
+      }
+      const username = await window.api.github.getUsername();
+      await window.api.github.ensureGitignore(projectPath);
+      await window.api.github.ensureGitConfig(projectPath, username);
+    } catch (err) {
+      log('  Git init failed, continuing without per-task commits', 'warn');
+    }
+
     // Get the PRD for context
     const prd = await window.api.storage.getPRD(currentProject.slug);
     const context = prd || currentProject.idea || '';
@@ -316,6 +344,7 @@ export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
     const taskTimings: Record<string, number> = {};
     const buildStart = Date.now();
     let completedCount = 0;
+    let commitCount = 0;
 
     // Run each task using claude --print (non-interactive)
     for (let i = 0; i < tasks.length; i++) {
@@ -350,6 +379,23 @@ Do not ask questions - make reasonable decisions and proceed.`;
         completedCount++;
 
         log(`  Completed in ${(taskDuration / 1000).toFixed(1)}s (${response.length} chars output)`, 'success');
+
+        // Commit after each task for incremental git history
+        try {
+          const commitResult = await window.api.github.gitAddAndCommit(
+            projectPath,
+            `feat: ${task.title}`
+          );
+          commitCount++;
+          log(`  Committed: ${commitResult.commitHash.slice(0, 7)}`, 'success');
+          store.getState().addGitEvent({
+            type: 'committed',
+            commitHash: commitResult.commitHash,
+            commitMessage: `feat: ${task.title}`,
+          });
+        } catch {
+          log('  No changes to commit for this task', 'warn');
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         log(`  FAILED: ${message}`, 'error');
@@ -364,7 +410,7 @@ Do not ask questions - make reasonable decisions and proceed.`;
       throw new Error(`Build failed: 0/${tasks.length} tasks completed after ${Math.round(totalBuildTime / 1000)}s`);
     }
 
-    log(`\nBuild complete: ${completedCount}/${tasks.length} tasks in ${(totalBuildTime / 1000).toFixed(1)}s`, 'success');
+    log(`\nBuild complete: ${completedCount}/${tasks.length} tasks, ${commitCount} commits in ${(totalBuildTime / 1000).toFixed(1)}s`, 'success');
 
     if (completedCount < tasks.length) {
       log(`Warning: Only ${completedCount}/${tasks.length} tasks completed`, 'warn');
@@ -383,13 +429,207 @@ Do not ask questions - make reasonable decisions and proceed.`;
       log('Could not verify files on disk', 'warn');
     }
 
+    // Advance status past 'building' so loadProject won't route back to BuildScreen
+    await store.getState().updateProject({ status: 'previewing' });
+
     return {
       totalBuildTime: Math.round(totalBuildTime / 1000),
       tasksCompleted: completedCount,
       tasksTotal: tasks.length,
+      commits: commitCount,
       ...Object.fromEntries(
         Object.entries(taskTimings).map(([k, v]) => [`task_${k.substring(0, 30)}`, Math.round(v / 1000)])
       ),
+    };
+  }
+
+  async function phaseGapAnalysis(): Promise<Record<string, string | number>> {
+    const { currentProject } = store.getState();
+    if (!currentProject) throw new Error('No current project');
+    const projectPath = currentProject.projectPath;
+
+    store.getState().setScreen('gap-analysis');
+    log('Starting gap analysis...');
+
+    // Load PRD
+    const prd = await window.api.storage.getPRD(currentProject.slug);
+    if (!prd || prd.trim().length === 0) {
+      log('No PRD found, skipping gap analysis', 'warn');
+      return { skipped: 1, reason: 'no_prd' };
+    }
+
+    let passCount = 0;
+    let finalGrade = 0;
+    let finalValidatedGrade = 0;
+    let findingsCount = 0;
+    let fixApplied = false;
+
+    // ── Pass 1: Analysis ──
+    log('Pass 1: Analyzing codebase against PRD...');
+    const analysisResponse = await window.api.claude.chat(projectPath, buildGapAnalysisPrompt(prd));
+    checkCancelled();
+
+    const analysisJson = extractJsonObject(analysisResponse);
+    let parsedAnalysis: { grade: number; summary: string; findings: Array<{ category: string; description: string; prdSection?: string; severity: string; resolved: boolean }>; remainingItems: string[] };
+
+    if (analysisJson) {
+      try {
+        parsedAnalysis = JSON.parse(analysisJson);
+      } catch {
+        // Retry with stricter prompt
+        log('  JSON parse failed, retrying...', 'warn');
+        const retryResponse = await window.api.claude.chat(projectPath,
+          `Your previous response was not valid JSON. ${buildGapAnalysisPrompt(prd)}`);
+        checkCancelled();
+        const retryJson = extractJsonObject(retryResponse);
+        if (!retryJson) throw new Error('Failed to parse gap analysis response as JSON after retry');
+        parsedAnalysis = JSON.parse(retryJson);
+      }
+    } else {
+      throw new Error('Failed to parse gap analysis response as JSON');
+    }
+
+    log(`  Initial grade: ${parsedAnalysis.grade}/100, ${parsedAnalysis.findings?.length || 0} findings`, 'success');
+
+    // ── Pass 1: Meta-review ──
+    log('Pass 1: Meta-reviewing findings...');
+    const metaResponse = await window.api.claude.chat(projectPath,
+      buildGapMetaReviewPrompt(prd, analysisJson || analysisResponse));
+    checkCancelled();
+
+    const metaJson = extractJsonObject(metaResponse);
+    let parsedMeta: { validatedGrade: number; summary: string; adjustedFindings: Array<{ category: string; description: string; prdSection?: string; severity: string; resolved: boolean }>; remainingItems: string[] };
+
+    if (metaJson) {
+      try {
+        parsedMeta = JSON.parse(metaJson);
+      } catch {
+        parsedMeta = {
+          validatedGrade: parsedAnalysis.grade,
+          summary: parsedAnalysis.summary,
+          adjustedFindings: parsedAnalysis.findings,
+          remainingItems: parsedAnalysis.remainingItems,
+        };
+      }
+    } else {
+      parsedMeta = {
+        validatedGrade: parsedAnalysis.grade,
+        summary: parsedAnalysis.summary,
+        adjustedFindings: parsedAnalysis.findings,
+        remainingItems: parsedAnalysis.remainingItems,
+      };
+    }
+
+    log(`  Validated grade: ${parsedMeta.validatedGrade}/100`, 'success');
+    passCount = 1;
+    finalGrade = parsedAnalysis.grade;
+    finalValidatedGrade = parsedMeta.validatedGrade;
+    findingsCount = parsedMeta.adjustedFindings?.length || 0;
+
+    // Store pass 1 result
+    store.getState().addGapAnalysis({
+      id: `gap-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      pass: 1,
+      grade: parsedAnalysis.grade,
+      validatedGrade: parsedMeta.validatedGrade,
+      findings: (parsedMeta.adjustedFindings || []) as any,
+      summary: parsedMeta.summary,
+      fixesApplied: false,
+      remainingItems: parsedMeta.remainingItems || [],
+      timestamp: new Date().toISOString(),
+    });
+    store.getState().addGitEvent({
+      type: 'gap_analysis_complete',
+      commitMessage: `Gap analysis pass 1: grade ${parsedMeta.validatedGrade}/100`,
+    });
+
+    // ── Decision: Fix needed? ──
+    if (parsedMeta.validatedGrade < GAP_PASS_THRESHOLD) {
+      // ── Auto-fix ──
+      log(`Grade ${parsedMeta.validatedGrade} < ${GAP_PASS_THRESHOLD}, running auto-fix...`);
+      const fixFindings = parsedMeta.adjustedFindings || parsedAnalysis.findings || [];
+      await window.api.claude.chat(projectPath, buildGapFixPrompt(fixFindings));
+      checkCancelled();
+
+      try {
+        const commitResult = await window.api.github.gitAddAndCommit(projectPath, 'fix: gap analysis auto-fix');
+        log(`  Fix committed: ${commitResult.commitHash}`, 'success');
+        fixApplied = true;
+        store.getState().addGitEvent({
+          type: 'committed',
+          commitHash: commitResult.commitHash,
+          commitMessage: 'fix: gap analysis auto-fix',
+        });
+      } catch {
+        log('  No changes to commit from auto-fix', 'warn');
+      }
+
+      // ── Pass 2: Re-analysis ──
+      log('Pass 2: Re-analyzing after fixes...');
+      const reResponse = await window.api.claude.chat(projectPath, buildGapAnalysisPrompt(prd));
+      checkCancelled();
+
+      const reJson = extractJsonObject(reResponse);
+      let reParsed: { grade: number; summary: string; findings: any[]; remainingItems: string[] };
+
+      if (reJson) {
+        try { reParsed = JSON.parse(reJson); } catch {
+          reParsed = { grade: parsedMeta.validatedGrade, summary: parsedMeta.summary, findings: [], remainingItems: [] };
+        }
+      } else {
+        reParsed = { grade: parsedMeta.validatedGrade, summary: parsedMeta.summary, findings: [], remainingItems: [] };
+      }
+
+      // Pass 2 meta-review
+      const reMetaResponse = await window.api.claude.chat(projectPath,
+        buildGapMetaReviewPrompt(prd, reJson || reResponse));
+      checkCancelled();
+
+      const reMetaJson = extractJsonObject(reMetaResponse);
+      let reMetaParsed: { validatedGrade: number; summary: string; adjustedFindings: any[]; remainingItems: string[] };
+
+      if (reMetaJson) {
+        try { reMetaParsed = JSON.parse(reMetaJson); } catch {
+          reMetaParsed = { validatedGrade: reParsed.grade, summary: reParsed.summary, adjustedFindings: reParsed.findings, remainingItems: reParsed.remainingItems };
+        }
+      } else {
+        reMetaParsed = { validatedGrade: reParsed.grade, summary: reParsed.summary, adjustedFindings: reParsed.findings, remainingItems: reParsed.remainingItems };
+      }
+
+      log(`  Pass 2 validated grade: ${reMetaParsed.validatedGrade}/100`, 'success');
+      passCount = 2;
+      finalGrade = reParsed.grade;
+      finalValidatedGrade = reMetaParsed.validatedGrade;
+      findingsCount = reMetaParsed.adjustedFindings?.length || 0;
+
+      // Store pass 2 result
+      store.getState().addGapAnalysis({
+        id: `gap-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        pass: 2,
+        grade: reParsed.grade,
+        validatedGrade: reMetaParsed.validatedGrade,
+        findings: (reMetaParsed.adjustedFindings || []) as any,
+        summary: reMetaParsed.summary,
+        fixesApplied: true,
+        remainingItems: reMetaParsed.remainingItems || [],
+        timestamp: new Date().toISOString(),
+      });
+      store.getState().addGitEvent({
+        type: 'gap_analysis_complete',
+        commitMessage: `Gap analysis pass 2: grade ${reMetaParsed.validatedGrade}/100`,
+      });
+    }
+
+    const passed = finalValidatedGrade >= GAP_PASS_THRESHOLD;
+    log(`Gap analysis ${passed ? 'PASSED' : 'NEEDS REVIEW'}: ${finalValidatedGrade}/100`, passed ? 'success' : 'warn');
+
+    return {
+      grade: finalGrade,
+      validatedGrade: finalValidatedGrade,
+      findings: findingsCount,
+      passes: passCount,
+      fixApplied: fixApplied ? 1 : 0,
+      result: passed ? 'passed' : 'needs-review',
     };
   }
 
@@ -519,7 +759,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
     await store.getState().loadPlanningChats();
 
     const finalBacklogCount = store.getState().backlog.length;
-    const chatMessages = store.getState().planningChatMessages.length;
+    const chatMessages = store.getState().getActivePlanningMessages().length;
 
     log(`[Planning] Verified: ${finalBacklogCount} backlog items, ${chatMessages} chat messages`);
 
@@ -641,6 +881,10 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
     setCopied(false);
     setMinimized(false);
 
+    // Clear any old checkpoint on fresh start
+    localStorage.removeItem('e2e-checkpoint');
+    setCheckpoint(null);
+
     // Define phases
     // Note: 'building+planning' is a special parallel phase
     const phaseList: { name: string; key: string; skip: boolean }[] = [
@@ -649,6 +893,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
       { name: 'PRD Generation', key: 'prd', skip: false },
       { name: 'Task Generation', key: 'tasks', skip: false },
       { name: 'Building + V2 Planning', key: 'building+planning', skip: false },
+      { name: 'Gap Analysis', key: 'gap-analysis', skip: !config.includeGapAnalysis },
       { name: 'Preview', key: 'preview', skip: false },
       { name: 'Deploy', key: 'deploy', skip: !config.includeDeploy },
     ];
@@ -730,6 +975,9 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
               metrics.parallelExecution = 'false';
             }
             break;
+          case 'gap-analysis':
+            metrics = await phaseGapAnalysis();
+            break;
           case 'preview':
             metrics = await phasePreview();
             break;
@@ -739,8 +987,23 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
         }
 
         const duration = Date.now() - phaseStart;
+        results[i] = { ...results[i], status: 'passed', duration, metrics };
         updatePhase(i, { status: 'passed', duration, metrics });
         log(`Phase "${phase.name}" passed (${(duration / 1000).toFixed(1)}s)\n`, 'success');
+
+        // Save checkpoint after each successful phase
+        try {
+          const cp: E2ECheckpoint = {
+            projectSlug: store.getState().currentProject?.slug || '',
+            projectPath: store.getState().currentProject?.projectPath || '',
+            config,
+            resumeFromPhaseIndex: i + 1,
+            completedPhases: results.slice(0, i + 1),
+            phaseList,
+            timestamp: Date.now(),
+          };
+          localStorage.setItem('e2e-checkpoint', JSON.stringify(cp));
+        } catch { /* ignore localStorage errors */ }
       } catch (err) {
         const duration = Date.now() - phaseStart;
         const message = err instanceof Error ? err.message : String(err);
@@ -783,7 +1046,11 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
 
     // Clear planning data and git events
     store.getState().setActivePlanningChat(null);
-    store.setState({ gitEvents: [], backlog: [], planningChats: [], planningChatMessages: [], deployments: [] });
+    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false });
+
+    // Clear checkpoint
+    localStorage.removeItem('e2e-checkpoint');
+    setCheckpoint(null);
 
     store.getState().setScreen('home');
 
@@ -799,6 +1066,210 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
     log(`\nE2E test complete in ${(elapsed / 1000).toFixed(1)}s`);
   };
 
+  // ─── Resume from checkpoint ──────────────────────────────────
+
+  const resumeE2ETest = async (cp: E2ECheckpoint) => {
+    const testStart = Date.now();
+    cancelledRef.current = false;
+    setIsRunning(true);
+    setView('running');
+    setLogs([]);
+    setTotalDuration(null);
+    setCopied(false);
+    setMinimized(false);
+
+    // Restore config from checkpoint
+    setConfig(cp.config);
+
+    // Restore phase list from checkpoint
+    const phaseList = cp.phaseList;
+    const resumeIndex = cp.resumeFromPhaseIndex;
+
+    // Build results array: completed phases from checkpoint + pending for the rest
+    const results: PhaseResult[] = phaseList.map((p, idx) => {
+      if (idx < cp.completedPhases.length) {
+        return cp.completedPhases[idx];
+      }
+      return {
+        name: p.name,
+        status: p.skip ? 'skipped' as const : 'pending' as const,
+        duration: 0,
+        metrics: {},
+      };
+    });
+    setPhases(results);
+
+    log('Resuming E2E test from checkpoint...');
+    log(`Project: ${cp.projectSlug}`);
+    log(`Resuming from phase ${resumeIndex + 1}: ${phaseList[resumeIndex]?.name || 'unknown'}`);
+    log(`${cp.completedPhases.filter(p => p.status === 'passed').length} phases already passed`);
+    log('─'.repeat(50));
+
+    // Reload the project from disk
+    log('Reloading project from disk...');
+    try {
+      await store.getState().loadProject(cp.projectSlug);
+      // Override the screen that loadProject set based on project status —
+      // we don't want the build screen (or any other) rendering behind the E2E modal
+      store.getState().setScreen('home');
+      await delay(1000); // Let store settle
+      const project = store.getState().currentProject;
+      if (!project) {
+        throw new Error(`Failed to load project "${cp.projectSlug}" — project not found`);
+      }
+      log(`Project loaded: ${project.name} (${project.slug})`, 'success');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log(`Failed to load project: ${message}`, 'error');
+      setTotalDuration(Date.now() - testStart);
+      setCurrentPhase(-1);
+      setIsRunning(false);
+      setView('report');
+      return;
+    }
+
+    // Run remaining phases starting from resumeIndex
+    for (let i = resumeIndex; i < phaseList.length; i++) {
+      const phase = phaseList[i];
+
+      if (phase.skip) {
+        log(`Skipping: ${phase.name}`);
+        continue;
+      }
+
+      if (cancelledRef.current) {
+        for (let j = i; j < phaseList.length; j++) {
+          if (!phaseList[j].skip) {
+            updatePhase(j, { status: 'skipped' });
+          }
+        }
+        break;
+      }
+
+      setCurrentPhase(i);
+      updatePhase(i, { status: 'running' });
+      log(`\n── Phase ${i + 1}: ${phase.name} (resumed) ──`);
+      const phaseStart = Date.now();
+
+      try {
+        let metrics: Record<string, string | number> = {};
+
+        switch (phase.key) {
+          case 'create':
+            // Skip project creation on resume — project already exists
+            log('Skipping project creation (already exists from previous run)', 'success');
+            metrics = { skipped: 1, reason: 'resume' };
+            break;
+          case 'discovery':
+            metrics = await phaseDiscovery();
+            break;
+          case 'prd':
+            metrics = await phasePRDGeneration();
+            break;
+          case 'tasks':
+            metrics = await phaseTaskGeneration();
+            break;
+          case 'building+planning':
+            if (cp.config.includePlanning) {
+              log('Running Building and V2 Planning in PARALLEL...');
+              const [buildMetrics, planMetrics] = await Promise.all([
+                phaseBuilding(),
+                phasePlanningV2(),
+              ]);
+              metrics = {
+                ...buildMetrics,
+                ...Object.fromEntries(
+                  Object.entries(planMetrics).map(([k, v]) => [`planning_${k}`, v])
+                ),
+                parallelExecution: 'true',
+              };
+            } else {
+              metrics = await phaseBuilding();
+              metrics.parallelExecution = 'false';
+            }
+            break;
+          case 'gap-analysis':
+            metrics = await phaseGapAnalysis();
+            break;
+          case 'preview':
+            metrics = await phasePreview();
+            break;
+          case 'deploy':
+            metrics = await phaseDeploy();
+            break;
+        }
+
+        const duration = Date.now() - phaseStart;
+        results[i] = { ...results[i], status: 'passed', duration, metrics };
+        updatePhase(i, { status: 'passed', duration, metrics });
+        log(`Phase "${phase.name}" passed (${(duration / 1000).toFixed(1)}s)\n`, 'success');
+
+        // Update checkpoint
+        try {
+          const updatedCp: E2ECheckpoint = {
+            ...cp,
+            resumeFromPhaseIndex: i + 1,
+            completedPhases: results.slice(0, i + 1),
+            timestamp: Date.now(),
+          };
+          localStorage.setItem('e2e-checkpoint', JSON.stringify(updatedCp));
+        } catch { /* ignore */ }
+      } catch (err) {
+        const duration = Date.now() - phaseStart;
+        const message = err instanceof Error ? err.message : String(err);
+        updatePhase(i, { status: 'failed', duration, error: message });
+        log(`Phase "${phase.name}" FAILED: ${message}`, 'error');
+
+        for (let j = i + 1; j < phaseList.length; j++) {
+          if (!phaseList[j].skip) {
+            updatePhase(j, { status: 'skipped' });
+          }
+        }
+        break;
+      }
+    }
+
+    // Cleanup
+    log('\n── Cleanup ──');
+
+    try { await window.api.devServer.stop(); } catch { /* ignore */ }
+
+    const sessionId = store.getState().buildSessionId;
+    if (sessionId) {
+      try { await window.api.claude.kill(sessionId); } catch { /* ignore */ }
+    }
+
+    const testProject = store.getState().currentProject;
+    if (testProject) {
+      log(`Test project kept on disk at: ${testProject.projectPath}`);
+    }
+
+    store.getState().setCurrentProject(null);
+    store.getState().setTasks([]);
+    store.getState().setChatMessages([]);
+    store.getState().clearTerminalOutput();
+
+    store.getState().setActivePlanningChat(null);
+    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false });
+
+    // Clear checkpoint
+    localStorage.removeItem('e2e-checkpoint');
+    setCheckpoint(null);
+
+    store.getState().setScreen('home');
+
+    try {
+      await store.getState().refreshProjects();
+    } catch { /* ignore */ }
+
+    const elapsed = Date.now() - testStart;
+    setTotalDuration(elapsed);
+    setCurrentPhase(-1);
+    setIsRunning(false);
+    setView('report');
+    log(`\nResumed E2E test complete in ${(elapsed / 1000).toFixed(1)}s`);
+  };
+
   const cancelTest = () => {
     cancelledRef.current = true;
     log('Cancelling test...', 'warn');
@@ -812,7 +1283,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
     const failed = phases.filter(p => p.status === 'failed').length;
     const skipped = phases.filter(p => p.status === 'skipped').length;
 
-    let report = `FORGE E2E TEST REPORT\n`;
+    let report = `KILN E2E TEST REPORT\n`;
     report += `========================\n`;
     report += `Date: ${ts}\n`;
     report += `Idea: ${config.idea}\n`;
@@ -864,48 +1335,48 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
   if (view === 'config') {
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60">
-        <div className="bg-charcoal-900 border border-charcoal-600 rounded-xl shadow-2xl shadow-black/40 w-[480px] max-h-[90vh] overflow-hidden">
+        <div className="bg-surface border border-border w-[480px] max-h-[90vh] flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-charcoal-600">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
             <div>
-              <h3 className="font-bold text-cream-100 text-base">E2E Flow Test</h3>
-              <p className="text-xs text-charcoal-400 mt-0.5">Test the full app pipeline with real Claude calls</p>
+              <h3 className="text-lg font-sans font-semibold text-ink">E2E Flow Test</h3>
+              <p className="text-xs text-ink-muted mt-0.5">Test the full app pipeline with real Claude calls</p>
             </div>
-            <button onClick={onClose} className="text-charcoal-400 hover:text-charcoal-200">
+            <button onClick={onClose} className="text-ink-muted hover:text-ink-secondary">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
 
-          <div className="p-5 space-y-5">
+          <div className="p-5 space-y-5 overflow-y-auto min-h-0 flex-1">
             {/* Idea */}
             <div>
-              <label className="block text-sm font-medium text-charcoal-200 mb-1.5">Test Project Idea</label>
+              <label className="block text-sm font-sans font-medium text-ink-secondary mb-1.5">Test Project Idea</label>
               <textarea
                 value={config.idea}
                 onChange={e => setConfig(c => ({ ...c, idea: e.target.value }))}
                 rows={3}
-                className="w-full bg-charcoal-950 border border-charcoal-500 rounded-lg px-3 py-2 text-sm text-cream-100 placeholder-charcoal-500 focus:outline-none focus:border-terracotta-500 resize-none"
+                className="w-full input-inset bg-surface-light border border-border px-3 py-2 text-sm text-ink placeholder-ink-muted focus:outline-none focus:border-accent resize-none"
                 placeholder="Describe a simple app to test with..."
               />
-              <p className="text-[10px] text-charcoal-500 mt-1">Simpler ideas = faster tests. Complex ideas may take 10+ minutes.</p>
+              <p className="text-[13px] text-ink-muted mt-1">Simpler ideas = faster tests. Complex ideas may take 10+ minutes.</p>
             </div>
 
             {/* Options */}
             <div className="space-y-3">
-              <label className="block text-sm font-medium text-charcoal-200">Options</label>
+              <label className="block text-sm font-sans font-medium text-ink-secondary">Options</label>
 
               <label className="flex items-center space-x-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={config.includeDiscovery}
                   onChange={e => setConfig(c => ({ ...c, includeDiscovery: e.target.checked }))}
-                  className="w-4 h-4 rounded border-charcoal-500 bg-charcoal-950 text-terracotta-500 focus:ring-terracotta-500"
+                  className="w-4 h-4 border-border bg-surface-light text-accent focus:ring-accent"
                 />
                 <div>
-                  <span className="text-sm text-charcoal-200">Discovery Chat</span>
-                  <p className="text-[10px] text-charcoal-500">Send idea to Claude, get a response before PRD generation</p>
+                  <span className="text-sm text-ink-secondary">Discovery Chat</span>
+                  <p className="text-[13px] text-ink-muted">Send idea to Claude, get a response before PRD generation</p>
                 </div>
               </label>
 
@@ -914,11 +1385,24 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
                   type="checkbox"
                   checked={config.includePlanning}
                   onChange={e => setConfig(c => ({ ...c, includePlanning: e.target.checked }))}
-                  className="w-4 h-4 rounded border-charcoal-500 bg-charcoal-950 text-terracotta-500 focus:ring-terracotta-500"
+                  className="w-4 h-4 border-border bg-surface-light text-accent focus:ring-accent"
                 />
                 <div>
-                  <span className="text-sm text-charcoal-200">V2 Planning (Parallel)</span>
-                  <p className="text-[10px] text-charcoal-500">Test planning V2 features while building (two Claude sessions)</p>
+                  <span className="text-sm text-ink-secondary">V2 Planning (Parallel)</span>
+                  <p className="text-[13px] text-ink-muted">Test planning V2 features while building (two Claude sessions)</p>
+                </div>
+              </label>
+
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.includeGapAnalysis}
+                  onChange={e => setConfig(c => ({ ...c, includeGapAnalysis: e.target.checked }))}
+                  className="w-4 h-4 border-border bg-surface-light text-accent focus:ring-accent"
+                />
+                <div>
+                  <span className="text-sm text-ink-secondary">Gap Analysis</span>
+                  <p className="text-[13px] text-ink-muted">Compare build against PRD, auto-fix gaps if grade &lt; 95</p>
                 </div>
               </label>
 
@@ -927,18 +1411,18 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
                   type="checkbox"
                   checked={config.includeDeploy}
                   onChange={e => setConfig(c => ({ ...c, includeDeploy: e.target.checked }))}
-                  className="w-4 h-4 rounded border-charcoal-500 bg-charcoal-950 text-terracotta-500 focus:ring-terracotta-500"
+                  className="w-4 h-4 border-border bg-surface-light text-accent focus:ring-accent"
                 />
                 <div>
-                  <span className="text-sm text-charcoal-200">Deploy to GitHub</span>
-                  <p className="text-[10px] text-charcoal-500">Push code to a real GitHub repo (creates a new repo)</p>
+                  <span className="text-sm text-ink-secondary">Deploy to GitHub</span>
+                  <p className="text-[13px] text-ink-muted">Push code to a real GitHub repo (creates a new repo)</p>
                 </div>
               </label>
             </div>
 
             {/* Phases preview */}
-            <div className="bg-charcoal-800 rounded-lg p-3 border border-charcoal-700">
-              <p className="text-[10px] text-charcoal-400 font-medium mb-2 uppercase tracking-wide">Test Phases</p>
+            <div className="card-panel p-3">
+              <p className="text-sm font-sans font-medium text-ink-muted mb-2">Test Phases</p>
               <div className="space-y-1.5">
                 {[
                   { name: 'Create Project', active: true, parallel: false },
@@ -946,16 +1430,17 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
                   { name: 'PRD Generation', active: true, parallel: false },
                   { name: 'Task Generation', active: true, parallel: false },
                   { name: config.includePlanning ? 'Building + V2 Planning' : 'Building', active: true, parallel: config.includePlanning },
+                  { name: 'Gap Analysis', active: config.includeGapAnalysis, parallel: false },
                   { name: 'Preview', active: true, parallel: false },
                   { name: 'Deploy', active: config.includeDeploy, parallel: false },
                 ].map((p, i) => (
                   <div key={i} className="flex items-center space-x-2 text-xs">
-                    <div className={`w-1.5 h-1.5 rounded-full ${p.active ? 'bg-terracotta-500' : 'bg-charcoal-600'}`} />
-                    <span className={p.active ? 'text-charcoal-200' : 'text-charcoal-600 line-through'}>
+                    <div className={`w-1.5 h-1.5 ${p.active ? 'bg-accent' : 'bg-border'}`} />
+                    <span className={p.active ? 'text-ink-secondary' : 'text-ink-muted line-through'}>
                       {p.name}
                     </span>
                     {p.parallel && (
-                      <span className="text-[9px] text-terracotta-400 bg-terracotta-500/10 px-1.5 py-0.5 rounded">
+                      <span className="text-[13px] text-accent bg-accent/10 px-1.5 py-0.5">
                         parallel
                       </span>
                     )}
@@ -965,13 +1450,50 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
             </div>
           </div>
 
+          {/* Resume banner */}
+          {checkpoint && (
+            <div className="mx-5 mb-2">
+              <div className="card-panel p-4 border-accent/30">
+                <p className="text-xs font-semibold text-accent mb-2">Resume available</p>
+                <div className="space-y-1 mb-3">
+                  <p className="text-xs text-ink-muted">
+                    Project: <span className="text-ink font-medium">{checkpoint.projectSlug}</span>
+                  </p>
+                  <p className="text-xs text-ink-muted">
+                    Failed at: <span className="text-ink font-medium">
+                      {checkpoint.phaseList[checkpoint.resumeFromPhaseIndex]?.name || 'Unknown'}
+                    </span>
+                    <span className="text-ink-muted">
+                      {' '}({checkpoint.completedPhases.filter(p => p.status === 'passed').length}/{checkpoint.phaseList.length} phases passed)
+                    </span>
+                  </p>
+                  <p className="text-[13px] text-ink-muted">{formatRelativeTime(checkpoint.timestamp)}</p>
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => resumeE2ETest(checkpoint)}
+                    className="btn-solid-primary px-4 py-1.5 text-xs font-semibold"
+                  >
+                    Resume from {checkpoint.phaseList[checkpoint.resumeFromPhaseIndex]?.name || 'next phase'}
+                  </button>
+                  <button
+                    onClick={() => { localStorage.removeItem('e2e-checkpoint'); setCheckpoint(null); }}
+                    className="btn-solid px-3 py-1.5 text-xs"
+                  >
+                    Discard
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Footer */}
-          <div className="px-5 py-4 border-t border-charcoal-600 flex justify-between items-center">
-            <p className="text-[10px] text-charcoal-500">This will create a real project and call Claude</p>
+          <div className="px-5 py-4 border-t border-border flex justify-between items-center flex-shrink-0">
+            <p className="text-[13px] text-ink-muted">This will create a real project and call Claude</p>
             <button
               onClick={runE2ETest}
               disabled={!config.idea.trim()}
-              className="px-5 py-2 text-sm bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:text-charcoal-400 disabled:cursor-not-allowed transition-colors font-semibold"
+              className="btn-solid-primary px-5 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Start E2E Test
             </button>
@@ -990,21 +1512,18 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
       const passedCount = phases.filter(p => p.status === 'passed').length;
       return (
         <div
-          className="fixed bottom-4 right-4 z-[100] bg-charcoal-900 border border-charcoal-600 rounded-lg shadow-xl shadow-black/40 p-3 cursor-pointer hover:border-charcoal-500 transition-colors"
+          className="fixed bottom-4 right-4 z-[100] bg-surface border border-border p-3 cursor-pointer hover:border-accent transition-colors"
           onClick={() => setMinimized(false)}
         >
           <div className="flex items-center space-x-3">
-            <svg className="animate-spin h-4 w-4 text-terracotta-500" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+            <div className="w-4 h-4 border-4 border-accent border-t-transparent animate-spin" />
             <div>
-              <p className="text-xs font-medium text-cream-100">E2E Test Running</p>
-              <p className="text-[10px] text-charcoal-400">
+              <p className="text-xs font-medium text-ink">E2E Test Running</p>
+              <p className="text-[13px] text-ink-muted">
                 {runningPhase ? runningPhase.name : `${passedCount}/${phases.length} phases`}
               </p>
             </div>
-            <svg className="w-4 h-4 text-charcoal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 text-ink-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
             </svg>
           </div>
@@ -1014,20 +1533,17 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
 
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60">
-        <div className="bg-charcoal-900 border border-charcoal-600 rounded-xl shadow-2xl shadow-black/40 w-[560px] max-h-[85vh] overflow-hidden flex flex-col">
+        <div className="bg-surface border border-border w-[560px] max-h-[85vh] overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-charcoal-600 flex-shrink-0">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border flex-shrink-0">
             <div className="flex items-center space-x-2">
-              <svg className="animate-spin h-4 w-4 text-terracotta-500" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              <h3 className="font-semibold text-cream-100 text-sm">E2E Test Running</h3>
+              <div className="w-4 h-4 border-4 border-accent border-t-transparent animate-spin" />
+              <h3 className="text-base font-sans font-semibold text-ink">E2E Test Running</h3>
             </div>
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setMinimized(true)}
-                className="p-1.5 text-charcoal-400 hover:text-charcoal-200 rounded transition-colors"
+                className="p-1.5 text-ink-muted hover:text-ink-secondary transition-colors"
                 title="Minimize"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1037,7 +1553,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
               <button
                 onClick={cancelTest}
                 disabled={!isRunning}
-                className="px-3 py-1 text-xs bg-rust-500/20 text-rust-400 rounded-lg hover:bg-rust-500/30 disabled:opacity-30 transition-colors"
+                className="btn-solid-danger px-3 py-1 text-xs disabled:opacity-30"
               >
                 Cancel
               </button>
@@ -1045,22 +1561,22 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
           </div>
 
           {/* Phase progress */}
-          <div className="px-5 py-3 border-b border-charcoal-700 flex-shrink-0">
+          <div className="px-5 py-3 border-b border-border-subtle flex-shrink-0">
             <div className="flex space-x-1">
               {phases.map((phase, i) => (
                 <div key={i} className="flex-1 flex flex-col items-center">
-                  <div className={`w-full h-1.5 rounded-full ${
-                    phase.status === 'passed' ? 'bg-sage-500' :
-                    phase.status === 'running' ? 'bg-terracotta-500 animate-pulse' :
-                    phase.status === 'failed' ? 'bg-rust-500' :
-                    phase.status === 'skipped' ? 'bg-charcoal-700' :
-                    'bg-charcoal-700'
+                  <div className={`w-full h-1.5 ${
+                    phase.status === 'passed' ? 'bg-success' :
+                    phase.status === 'running' ? 'bg-accent animate-pulse' :
+                    phase.status === 'failed' ? 'bg-error' :
+                    phase.status === 'skipped' ? 'bg-surface' :
+                    'bg-surface'
                   }`} />
                   <span className={`text-[8px] mt-1 truncate w-full text-center ${
-                    phase.status === 'running' ? 'text-terracotta-400 font-medium' :
-                    phase.status === 'passed' ? 'text-sage-400' :
-                    phase.status === 'failed' ? 'text-rust-400' :
-                    'text-charcoal-600'
+                    phase.status === 'running' ? 'text-accent font-medium' :
+                    phase.status === 'passed' ? 'text-success' :
+                    phase.status === 'failed' ? 'text-error' :
+                    'text-ink-muted'
                   }`}>
                     {phase.name.split(' ')[0]}
                   </span>
@@ -1070,20 +1586,20 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
           </div>
 
           {/* Log output */}
-          <div ref={logContainerRef} className="flex-1 overflow-y-auto px-4 py-3 font-mono text-[11px] leading-relaxed min-h-0">
+          <div ref={logContainerRef} className="flex-1 overflow-y-auto px-4 py-3 font-mono text-[14px] leading-relaxed min-h-0">
             {logs.map((entry, i) => (
               <div key={i} className={`${
-                entry.level === 'error' ? 'text-rust-400' :
-                entry.level === 'warn' ? 'text-terracotta-400' :
-                entry.level === 'success' ? 'text-sage-400' :
-                'text-charcoal-300'
+                entry.level === 'error' ? 'text-error' :
+                entry.level === 'warn' ? 'text-accent' :
+                entry.level === 'success' ? 'text-success' :
+                'text-ink-muted'
               }`}>
-                <span className="text-charcoal-600 select-none">{entry.time} </span>
+                <span className="text-ink-muted select-none">{entry.time} </span>
                 {entry.message}
               </div>
             ))}
             {isRunning && (
-              <div className="text-charcoal-500 animate-pulse mt-1">...</div>
+              <div className="text-ink-muted animate-pulse mt-1">...</div>
             )}
           </div>
         </div>
@@ -1097,11 +1613,11 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60">
-      <div className="bg-charcoal-900 border border-charcoal-600 rounded-xl shadow-2xl shadow-black/40 w-[560px] max-h-[85vh] overflow-hidden flex flex-col">
+      <div className="bg-surface border border-border w-[560px] max-h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-charcoal-600 flex-shrink-0">
-          <h3 className="font-semibold text-cream-100 text-sm">E2E Test Report</h3>
-          <button onClick={onClose} className="text-charcoal-400 hover:text-charcoal-200">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border flex-shrink-0">
+          <h3 className="text-base font-sans font-semibold text-ink">E2E Test Report</h3>
+          <button onClick={onClose} className="text-ink-muted hover:text-ink-secondary">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -1109,24 +1625,24 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
         </div>
 
         {/* Summary */}
-        <div className={`mx-4 mt-3 px-4 py-3 rounded-lg border flex-shrink-0 ${
-          allPassed ? 'bg-sage-500/10 border-sage-500/30' : 'bg-rust-500/10 border-rust-500/30'
+        <div className={`mx-4 mt-3 px-4 py-3 border flex-shrink-0 ${
+          allPassed ? 'bg-success/10 border-success/30' : 'bg-error/10 border-error/30'
         }`}>
           <div className="flex items-center space-x-3">
             {allPassed ? (
-              <svg className="w-8 h-8 text-sage-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-8 h-8 text-success flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
             ) : (
-              <svg className="w-8 h-8 text-rust-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-8 h-8 text-error flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
             )}
             <div>
-              <p className={`text-sm font-bold ${allPassed ? 'text-sage-400' : 'text-rust-400'}`}>
+              <p className={`text-sm font-bold ${allPassed ? 'text-success' : 'text-error'}`}>
                 {allPassed ? 'All Phases Passed' : `${failedCount} Phase${failedCount > 1 ? 's' : ''} Failed`}
               </p>
-              <p className="text-xs text-charcoal-400 mt-0.5">
+              <p className="text-xs text-ink-muted mt-0.5">
                 {passedCount} passed, {failedCount} failed &middot; {totalDuration ? `${(totalDuration / 1000).toFixed(1)}s` : ''}
               </p>
             </div>
@@ -1136,26 +1652,26 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
         {/* Phase results */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 min-h-0">
           {phases.map((phase, i) => (
-            <div key={i} className={`rounded-lg px-3 py-2.5 ${
-              phase.status === 'failed' ? 'bg-rust-500/5 border border-rust-500/20' :
-              phase.status === 'passed' ? 'bg-charcoal-800/50' :
+            <div key={i} className={`px-3 py-2.5 ${
+              phase.status === 'failed' ? 'bg-error/5 border border-error/20' :
+              phase.status === 'passed' ? 'bg-surface-card/50' :
               ''
             }`}>
               <div className="flex items-center space-x-2.5">
                 {/* Icon */}
                 <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
                   {phase.status === 'passed' && (
-                    <svg className="w-4 h-4 text-sage-500" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   )}
                   {phase.status === 'failed' && (
-                    <svg className="w-4 h-4 text-rust-500" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-4 h-4 text-error" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
                   )}
                   {phase.status === 'skipped' && (
-                    <svg className="w-4 h-4 text-charcoal-500" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-4 h-4 text-ink-muted" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 000 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
                     </svg>
                   )}
@@ -1163,14 +1679,14 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
 
                 {/* Name + duration */}
                 <span className={`flex-1 text-sm ${
-                  phase.status === 'passed' ? 'text-charcoal-200' :
-                  phase.status === 'failed' ? 'text-rust-400 font-medium' :
-                  'text-charcoal-500'
+                  phase.status === 'passed' ? 'text-ink-secondary' :
+                  phase.status === 'failed' ? 'text-error font-medium' :
+                  'text-ink-muted'
                 }`}>
                   {phase.name}
                 </span>
                 {phase.duration > 0 && (
-                  <span className="text-[10px] text-charcoal-500 font-mono">
+                  <span className="text-[13px] text-ink-muted font-mono">
                     {phase.duration >= 60000
                       ? `${Math.floor(phase.duration / 60000)}m ${Math.round((phase.duration % 60000) / 1000)}s`
                       : `${(phase.duration / 1000).toFixed(1)}s`
@@ -1183,8 +1699,8 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
               {Object.keys(phase.metrics).length > 0 && phase.status === 'passed' && (
                 <div className="mt-1.5 ml-7 space-y-0.5">
                   {Object.entries(phase.metrics).map(([key, value]) => (
-                    <p key={key} className="text-[10px] text-charcoal-500 font-mono">
-                      {key}: <span className="text-charcoal-300">{value}</span>
+                    <p key={key} className="text-[13px] text-ink-muted font-mono">
+                      {key}: <span className="text-ink-muted">{value}</span>
                     </p>
                   ))}
                 </div>
@@ -1192,7 +1708,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
 
               {/* Error */}
               {phase.error && (
-                <div className="mt-1.5 ml-7 px-2 py-1.5 bg-rust-500/10 rounded text-[11px] text-rust-400 font-mono break-all">
+                <div className="mt-1.5 ml-7 px-2 py-1.5 bg-error/10 text-[14px] text-error font-mono break-all">
                   {phase.error}
                 </div>
               )}
@@ -1201,13 +1717,13 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
         </div>
 
         {/* Actions */}
-        <div className="px-5 py-3 border-t border-charcoal-600 flex space-x-2 flex-shrink-0">
+        <div className="px-5 py-3 border-t border-border flex space-x-2 flex-shrink-0">
           <button
             onClick={copyReport}
-            className="flex-1 px-3 py-1.5 text-xs bg-charcoal-700 text-charcoal-200 rounded-lg hover:bg-charcoal-600 transition-colors flex items-center justify-center space-x-1.5"
+            className="btn-solid flex-1 px-3 py-1.5 text-xs flex items-center justify-center space-x-1.5"
           >
             {copied ? (
-              <span className="text-sage-400">Copied!</span>
+              <span className="text-success">Copied!</span>
             ) : (
               <>
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1218,14 +1734,14 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
             )}
           </button>
           <button
-            onClick={() => { setView('config'); setPhases([]); setLogs([]); }}
-            className="flex-1 px-3 py-1.5 text-xs bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 transition-colors font-medium"
+            onClick={() => { localStorage.removeItem('e2e-checkpoint'); setCheckpoint(null); setView('config'); setPhases([]); setLogs([]); }}
+            className="btn-solid-primary flex-1 px-3 py-1.5 text-xs font-medium"
           >
             Run Again
           </button>
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs bg-charcoal-700 text-charcoal-200 rounded-lg hover:bg-charcoal-600 transition-colors"
+            className="btn-solid px-3 py-1.5 text-xs"
           >
             Close
           </button>

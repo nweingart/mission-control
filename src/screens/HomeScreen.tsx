@@ -8,7 +8,15 @@ export default function HomeScreen() {
   const [showFlowTest, setShowFlowTest] = useState(false);
   const [loadingSlug, setLoadingSlug] = useState<string | null>(null);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   const settingsMenuRef = useRef<HTMLDivElement>(null);
+
+  const toggleDarkMode = () => {
+    const next = !isDark;
+    document.documentElement.classList.toggle('dark', next);
+    localStorage.setItem('theme', next ? 'dark' : 'light');
+    setIsDark(next);
+  };
 
   // Just start new project immediately - no blocking checks
   const handleNewProject = () => {
@@ -21,7 +29,6 @@ export default function HomeScreen() {
       try {
         const status = await window.api.cli.checkAll();
         setCLIStatus(status);
-        // Don't redirect - just update status for display
       } catch (err) {
         console.error('Failed to check CLI status:', err);
       }
@@ -60,6 +67,32 @@ export default function HomeScreen() {
   };
 
   const handleDeleteProject = async (slug: string) => {
+    const project = projects.find(p => p.slug === slug);
+    if (!project) return;
+
+    // Determine cleanup description for confirmation
+    let cleanupMsg = 'This will delete all local files.';
+    if (project.supabaseRef && project.supabaseSchema) {
+      const sharesRef = projects.some(p => p.slug !== slug && p.supabaseRef === project.supabaseRef);
+      cleanupMsg = sharesRef
+        ? `This will delete local files and drop the Supabase schema "${project.supabaseSchema}" (shared DB \u2014 other projects are unaffected).`
+        : `This will delete local files and drop the Supabase schema "${project.supabaseSchema}".`;
+    } else if (project.supabaseRef && !project.supabaseSchema) {
+      cleanupMsg = `This will delete local files. You can also delete the dedicated Supabase project "${project.supabaseRef}" from the Supabase dashboard.`;
+    }
+
+    if (!confirm(`Delete "${project.name}"?\n\n${cleanupMsg}`)) return;
+
+    // Mode B: shared DB — drop only this project's schema
+    if (project.supabaseRef && project.supabaseSchema) {
+      try {
+        await window.api.supabase.dropSchema(project.supabaseRef, project.supabaseSchema);
+      } catch (err) {
+        console.error('Failed to drop schema:', err);
+        // Continue with local delete even if schema drop fails
+      }
+    }
+
     await window.api.storage.deleteProject(slug);
     await refreshProjects();
   };
@@ -112,7 +145,7 @@ export default function HomeScreen() {
   return (
     <div className="flex-1 overflow-hidden flex">
       {/* Sidebar */}
-      <div className="w-20 bg-charcoal-950 flex flex-col items-center flex-shrink-0">
+      <div className="w-[90px] sidebar-warm flex flex-col items-center flex-shrink-0">
         {/* Traffic lights spacer + drag region */}
         <div className="w-full h-14 drag-region flex-shrink-0" />
 
@@ -128,24 +161,46 @@ export default function HomeScreen() {
               className="group relative no-drag"
               title={`${service.name}: ${service.ready ? 'Connected' : 'Not connected'}`}
             >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 ${
+              <div className={`w-10 h-10 flex items-center justify-center transition-all duration-200 border-2 sidebar-icon rounded-md ${
                 service.ready
-                  ? 'bg-sage-500/15 text-sage-400 group-hover:bg-sage-500/25'
-                  : 'bg-white/5 text-charcoal-400 group-hover:bg-white/10 group-hover:text-charcoal-300'
+                  ? 'bg-success/15 text-success border-success/30'
+                  : 'bg-surface text-ink-muted border-border'
               }`}>
                 {service.icon}
               </div>
               {/* Tooltip */}
-              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-charcoal-700 text-cream-100 text-xs rounded-md whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-ink text-surface-light text-xs whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
                 {service.name}
-                <span className={service.ready ? 'text-sage-400' : 'text-charcoal-400'}> — {service.ready ? 'Connected' : 'Not connected'}</span>
+                <span className={service.ready ? 'text-success' : 'text-ink-muted'}> — {service.ready ? 'Connected' : 'Not connected'}</span>
               </div>
             </button>
           ))}
         </div>
 
+        {/* Dark mode toggle */}
+        <button
+          onClick={toggleDarkMode}
+          className="group relative no-drag mb-3"
+          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <div className="w-10 h-10 border-2 border-border hover:border-ink-muted flex items-center justify-center text-ink-muted hover:text-ink-secondary sidebar-icon rounded-md">
+            {isDark ? (
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            ) : (
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            )}
+          </div>
+          <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-ink text-surface-light text-xs whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
+            {isDark ? 'Light mode' : 'Dark mode'}
+          </div>
+        </button>
+
         {/* Divider */}
-        <div className="w-9 border-t border-white/10 mb-5" />
+        <div className="w-9 divider-warm mb-5" />
 
         {/* Settings */}
         <div className="mb-6 relative" ref={settingsMenuRef}>
@@ -154,7 +209,7 @@ export default function HomeScreen() {
             className="group relative no-drag"
             title="Settings"
           >
-            <div className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-charcoal-400 hover:text-charcoal-200 transition-all duration-200">
+            <div className="w-10 h-10 border-2 border-border hover:border-ink-muted flex items-center justify-center text-ink-muted hover:text-ink-secondary sidebar-icon rounded-md">
               <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -162,20 +217,20 @@ export default function HomeScreen() {
             </div>
             {/* Tooltip (only when menu is closed) */}
             {!showSettingsMenu && (
-              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-charcoal-700 text-cream-100 text-xs rounded-md whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-ink text-surface-light text-xs whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
                 Settings
               </div>
             )}
           </button>
           {/* Settings dropdown */}
           {showSettingsMenu && (
-            <div className="absolute left-full ml-3 bottom-0 w-48 bg-charcoal-700 border border-charcoal-600 rounded-lg shadow-xl z-50 py-1">
+            <div className="absolute left-full ml-3 bottom-0 w-48 card-panel z-50 py-1">
               <button
                 onClick={() => {
                   setShowSettingsMenu(false);
                   setScreen('setup-deploy');
                 }}
-                className="w-full text-left px-3 py-2 text-sm text-cream-100 hover:bg-charcoal-600 transition-colors"
+                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
               >
                 Manage Tools
               </button>
@@ -184,23 +239,23 @@ export default function HomeScreen() {
                   setShowSettingsMenu(false);
                   setScreen('setup-workspace');
                 }}
-                className="w-full text-left px-3 py-2 text-sm text-cream-100 hover:bg-charcoal-600 transition-colors"
+                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
               >
                 Workspace Directory
               </button>
               <button
                 onClick={handleResetOnboarding}
-                className="w-full text-left px-3 py-2 text-sm text-cream-100 hover:bg-charcoal-600 transition-colors"
+                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
               >
                 Reset Onboarding
               </button>
-              <div className="border-t border-charcoal-600 my-1" />
+              <div className="divider-warm my-1" />
               <button
                 onClick={() => {
                   setShowSettingsMenu(false);
                   setShowFlowTest(true);
                 }}
-                className="w-full text-left px-3 py-2 text-sm text-cream-100 hover:bg-charcoal-600 transition-colors"
+                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
               >
                 Run Flow Test
               </button>
@@ -209,9 +264,18 @@ export default function HomeScreen() {
                   setShowSettingsMenu(false);
                   (window as unknown as { openE2ETest?: () => void }).openE2ETest?.();
                 }}
-                className="w-full text-left px-3 py-2 text-sm text-cream-100 hover:bg-charcoal-600 transition-colors"
+                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
               >
                 Run E2E Test
+              </button>
+              <button
+                onClick={() => {
+                  setShowSettingsMenu(false);
+                  (window as unknown as { openCICDTest?: () => void }).openCICDTest?.();
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-surface transition-colors"
+              >
+                Run CI/CD Test
               </button>
             </div>
           )}
@@ -221,51 +285,23 @@ export default function HomeScreen() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="bg-charcoal-800 border-b border-charcoal-700 px-4 py-3 drag-region">
+        <header className="bg-surface-card border-b border-border px-4 py-3 drag-region">
           <div className="flex items-center justify-between">
-            {/* Logo with Icon */}
-            <div className="flex items-center space-x-2">
-              <svg className="w-10 h-10" viewBox="0 0 200 200">
-                <defs>
-                  <linearGradient id="coralGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" style={{ stopColor: '#E8927C' }} />
-                    <stop offset="100%" style={{ stopColor: '#D4806A' }} />
-                  </linearGradient>
-                  <linearGradient id="handleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" style={{ stopColor: '#8B7355' }} />
-                    <stop offset="50%" style={{ stopColor: '#9C8465' }} />
-                    <stop offset="100%" style={{ stopColor: '#8B7355' }} />
-                  </linearGradient>
-                </defs>
-                <circle cx="100" cy="100" r="95" fill="#1E1E1E" stroke="#E8927C" strokeWidth="3" />
-                <g transform="rotate(-40, 100, 100)">
-                  <rect x="92" y="55" width="16" height="110" rx="3" fill="url(#handleGrad)" stroke="#6B5D4D" strokeWidth="1" />
-                  <line x1="94" y1="130" x2="106" y2="130" stroke="#6B5D4D" strokeWidth="1" />
-                  <line x1="94" y1="140" x2="106" y2="140" stroke="#6B5D4D" strokeWidth="1" />
-                  <line x1="94" y1="150" x2="106" y2="150" stroke="#6B5D4D" strokeWidth="1" />
-                  <rect x="70" y="35" width="60" height="28" rx="4" fill="url(#coralGrad)" stroke="#C97563" strokeWidth="1.5" />
-                  <rect x="73" y="38" width="54" height="6" rx="2" fill="#F2A896" opacity="0.5" />
-                </g>
-                <g transform="rotate(40, 100, 100)">
-                  <rect x="92" y="55" width="16" height="110" rx="3" fill="url(#handleGrad)" stroke="#6B5D4D" strokeWidth="1" />
-                  <line x1="94" y1="130" x2="106" y2="130" stroke="#6B5D4D" strokeWidth="1" />
-                  <line x1="94" y1="140" x2="106" y2="140" stroke="#6B5D4D" strokeWidth="1" />
-                  <line x1="94" y1="150" x2="106" y2="150" stroke="#6B5D4D" strokeWidth="1" />
-                  <rect x="70" y="35" width="60" height="28" rx="4" fill="url(#coralGrad)" stroke="#C97563" strokeWidth="1.5" />
-                  <rect x="73" y="38" width="54" height="6" rx="2" fill="#F2A896" opacity="0.5" />
-                </g>
+            <h1 className="font-display text-lg tracking-wide font-bold text-secondary flex items-center gap-2">
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M13.13 22.19L11.5 18.36C13.07 17.78 14.54 17 15.9 16.09L13.13 22.19M5.64 12.5L1.81 10.87L7.91 8.1C7 9.46 6.22 10.93 5.64 12.5M21.61 2.39C21.61 2.39 16.66 .269 11 5.93C8.81 8.12 7.5 10.53 6.65 12.64C6.37 13.39 6.56 14.21 7.11 14.77L9.24 16.89C9.79 17.45 10.61 17.63 11.36 17.35C13.5 16.53 15.88 15.19 18.07 13C23.73 7.34 21.61 2.39 21.61 2.39M14.54 9.46C13.76 8.68 13.76 7.41 14.54 6.63S16.59 5.85 17.37 6.63C18.14 7.41 18.15 8.68 17.37 9.46C16.59 10.24 15.32 10.24 14.54 9.46M8.88 16.53L7.47 15.12L8.88 16.53M6.24 22L9.88 18.36C9.54 18.27 9.21 18.12 8.91 17.91L4.83 22H6.24M2 22H3.41L8.18 17.24L6.76 15.83L2 20.59V22M2 19.17L6.09 15.09C5.88 14.79 5.73 14.46 5.64 14.12L2 17.76V19.17Z" />
               </svg>
-              <h1 className="text-3xl font-logo font-semibold tracking-tight text-cream-100">Forge</h1>
-            </div>
+              Houston
+            </h1>
             <button
               onClick={handleNewProject}
               disabled={loadingSlug !== null}
-              className="flex items-center space-x-2 px-4 py-2 bg-terracotta-500 text-cream-50 rounded-lg hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:text-charcoal-400 transition-colors no-drag"
+              className="btn-solid-primary flex items-center space-x-2 no-drag"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              <span>New Project</span>
+              <span>NEW PROJECT</span>
             </button>
           </div>
         </header>
@@ -274,8 +310,8 @@ export default function HomeScreen() {
         <main className="flex-1 overflow-y-auto p-6">
           {projects.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-24 h-24 bg-charcoal-700 rounded-full flex items-center justify-center mb-4">
-                <svg className="w-12 h-12 text-charcoal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-24 h-24 bg-surface border border-border flex items-center justify-center mb-4">
+                <svg className="w-12 h-12 text-ink-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -284,18 +320,18 @@ export default function HomeScreen() {
                   />
                 </svg>
               </div>
-              <h2 className="text-xl font-semibold text-cream-100 mb-2">No projects yet</h2>
-              <p className="text-charcoal-400 mb-6 max-w-md">
+              <h2 className="text-lg font-sans font-semibold text-ink mb-2">No Projects Yet</h2>
+              <p className="text-ink-muted mb-6 max-w-md text-sm">
                 Start your first project and let Claude Code help you build and deploy your MVP.
               </p>
               <button
                 onClick={handleNewProject}
-                className="flex items-center space-x-2 px-6 py-3 bg-terracotta-500 text-cream-50 rounded-lg hover:bg-terracotta-600 transition-colors"
+                className="btn-solid-primary flex items-center space-x-2"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <span>Create your first project</span>
+                <span>CREATE YOUR FIRST PROJECT</span>
               </button>
             </div>
           ) : (
@@ -309,24 +345,10 @@ export default function HomeScreen() {
                   />
                   {/* Loading overlay */}
                   {loadingSlug === project.slug && (
-                    <div className="absolute inset-0 bg-charcoal-800/80 rounded-lg flex items-center justify-center">
-                      <div className="flex items-center space-x-2 text-terracotta-500">
-                        <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          />
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          />
-                        </svg>
-                        <span className="text-sm font-medium">Loading...</span>
+                    <div className="absolute inset-0 bg-surface-card/80 flex items-center justify-center">
+                      <div className="flex items-center space-x-2 text-accent">
+                        <div className="w-5 h-5 border-2 border-accent border-t-transparent animate-spin" />
+                        <span className="font-display uppercase text-[13px] tracking-wider">LOADING...</span>
                       </div>
                     </div>
                   )}

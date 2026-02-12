@@ -1,20 +1,137 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import Chat from '../components/Chat';
-import { extractBacklogSuggestions, type BacklogSuggestion } from '../utils/planning';
-import type { PlanningChat, BacklogItem } from '../types';
+import { extractBacklogSuggestions } from '../utils/planning';
+import type { PlanningChat, PlanningType } from '../types';
+
+const PLANNING_TYPE_OPTIONS: Array<{
+  type: PlanningType;
+  icon: JSX.Element;
+  label: string;
+  description: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+}> = [
+  {
+    type: 'bug_fix',
+    icon: (
+      <svg className="w-9 h-9" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" opacity="0" />
+        <path d="M12 21a2 2 0 01-2-2h4a2 2 0 01-2 2zm-4-4h8v-1.5H8V17zm.5-3h7a4.5 4.5 0 00.88-2H7.62a4.5 4.5 0 00.88 2zM19 10h2v2h-2a7.02 7.02 0 00-1.28-3.19l1.42-1.42-1.42-1.42-1.42 1.42A6.98 6.98 0 0013 5.08V3h-2v2.08a6.98 6.98 0 00-3.3 1.31L6.28 4.97 4.86 6.39l1.42 1.42A7.02 7.02 0 005 12H3v-2h2" />
+      </svg>
+    ),
+    label: 'Fix Bug',
+    description: 'Something broke — let\'s find it and fix it',
+    color: '#CC4434',
+    bgColor: 'rgba(204,68,52,0.08)',
+    borderColor: 'rgba(204,68,52,0.25)',
+  },
+  {
+    type: 'feature_refactor',
+    icon: (
+      <svg className="w-9 h-9" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6-3.4 3.4-1.6-1.6a1 1 0 00-1.4 0l-4.3 4.3a1 1 0 000 1.4l2.6 2.6a1 1 0 001.4 0l4.3-4.3a1 1 0 000-1.4l-1.6-1.6 3.4-3.4 1.6 1.6a1 1 0 001.4 0l2-2a1 1 0 000-1.4l-2.6-2.6a1 1 0 00-1.4 0l-2 2z" />
+      </svg>
+    ),
+    label: 'Refactor Existing',
+    description: 'Clean up, rework, or improve what\'s already there',
+    color: '#3E8AC2',
+    bgColor: 'rgba(62,138,194,0.08)',
+    borderColor: 'rgba(62,138,194,0.25)',
+  },
+  {
+    type: 'new_feature',
+    icon: (
+      <svg className="w-9 h-9" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M9.5 2A1.5 1.5 0 008 3.5V4H5.5A1.5 1.5 0 004 5.5v13A1.5 1.5 0 005.5 20h13a1.5 1.5 0 001.5-1.5v-13A1.5 1.5 0 0018.5 4H16v-.5A1.5 1.5 0 0014.5 2h-5zM12 8a.75.75 0 01.75.75v2.5h2.5a.75.75 0 010 1.5h-2.5v2.5a.75.75 0 01-1.5 0v-2.5h-2.5a.75.75 0 010-1.5h2.5v-2.5A.75.75 0 0112 8z" />
+      </svg>
+    ),
+    label: 'New Feature',
+    description: 'Add something that doesn\'t exist yet',
+    color: '#449256',
+    bgColor: 'rgba(68,146,86,0.08)',
+    borderColor: 'rgba(68,146,86,0.25)',
+  },
+];
+
+function buildTypeSystemPrompt(
+  planningType: PlanningType,
+  projectName: string,
+  prd: string | null,
+  v1Features: string,
+  backlogFeatures: string
+): string {
+  const backlogAddFormat = `When you have gathered enough information, add the item to the backlog using EXACTLY this format:
+
+[BACKLOG_ADD]
+Title: [title]
+Description: [1-2 sentence description]
+Priority: [high/medium/low]
+Type: [bug_fix/feature_refactor/new_feature]
+
+After adding, confirm what was added and ask if they want to plan something else.
+NEVER use this format until you have enough detail from the conversation.`;
+
+  const context = `Context:
+- PRD: ${prd || 'Not available'}
+- V1 Features being built:
+${v1Features || 'None specified'}
+${backlogFeatures}`;
+
+  if (planningType === 'bug_fix') {
+    return `You are helping document a bug report for "${projectName}".
+Ask about: what's broken, expected vs actual behavior, steps to reproduce, which screen/feature, severity.
+Keep responses short — 2-3 sentences max.
+When you have enough info (behavior, repro steps, severity), automatically add it using the format below.
+
+${context}
+
+${backlogAddFormat}`;
+  }
+
+  if (planningType === 'feature_refactor') {
+    return `You are helping plan a feature refactor for "${projectName}".
+Ask about: which existing feature needs improvement, what's wrong with current UX/implementation, desired outcome.
+Keep responses short — 2-3 sentences max.
+When the refactor scope is clear, automatically add it using the format below.
+
+${context}
+
+${backlogAddFormat}`;
+  }
+
+  // new_feature
+  return `You are helping plan a new feature for "${projectName}".
+Discuss the feature idea. Ask clarifying questions about scope, UX, and edge cases.
+Keep responses short — 2-3 sentences max.
+When the feature is fleshed out, automatically add it using the format below.
+
+${context}
+
+${backlogAddFormat}`;
+}
+
+function getAutoGreetPrompt(planningType: PlanningType): string {
+  if (planningType === 'bug_fix') {
+    return "Hi! I'm here to help document a bug. What's going wrong? Tell me what you're seeing.";
+  }
+  if (planningType === 'feature_refactor') {
+    return "Hi! I'm here to help plan a feature refactor. Which existing feature needs improvement, and what's the issue with it?";
+  }
+  return "Hi! I'm here to help plan a new feature. What's the idea?";
+}
 
 export default function PlanningChatsScreen() {
   const {
     currentProject,
     planningChats,
     activePlanningChatId,
-    planningChatMessages,
+    getActivePlanningMessages,
     loadPlanningChats,
     setActivePlanningChat,
     createPlanningChat,
     addPlanningMessage,
-    savePlanningChats,
     goToPreview,
     backlog,
     loadBacklog,
@@ -24,15 +141,30 @@ export default function PlanningChatsScreen() {
   } = useAppStore();
 
   const [isLoading, setIsLoading] = useState(false);
-  const [pendingSuggestions, setPendingSuggestions] = useState<
-    Array<{ title: string; description: string; priority: 'high' | 'medium' | 'low' }>
-  >([]);
+  const [planningType, setPlanningType] = useState<PlanningType | null>(null);
+  const [autoAddedItems, setAutoAddedItems] = useState<string[]>([]);
 
   // Load planning chats and backlog on mount
   useEffect(() => {
     loadPlanningChats();
     loadBacklog();
   }, [loadPlanningChats, loadBacklog]);
+
+  // Handle type selection — create a new chat and auto-greet
+  const handleTypeSelect = useCallback(
+    (type: PlanningType) => {
+      setPlanningType(type);
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const label = PLANNING_TYPE_OPTIONS.find((o) => o.type === type)?.label || 'Planning';
+      createPlanningChat(`${label} — ${dateStr}`);
+
+      setTimeout(() => {
+        addPlanningMessage({ role: 'assistant', content: getAutoGreetPrompt(type) });
+      }, 100);
+    },
+    [createPlanningChat, addPlanningMessage]
+  );
 
   // Handle sending a message
   const handleSendMessage = async (content: string) => {
@@ -60,28 +192,15 @@ export default function PlanningChatsScreen() {
         ? `\n\nCurrent backlog:\n${currentBacklog.map((b) => `- [${b.priority}] ${b.title}`).join('\n')}`
         : '';
 
-      const systemPrompt = `You are helping plan V2 features for "${currentProject.name}".
+      const systemPrompt = buildTypeSystemPrompt(
+        planningType || 'new_feature',
+        currentProject.name,
+        prd,
+        v1Features,
+        backlogFeatures
+      );
 
-Context:
-- PRD: ${prd || 'Not available'}
-- V1 Features being built:
-${v1Features}
-${backlogFeatures}
-
-Your role:
-1. Suggest potential V2 features based on natural extensions of the MVP
-2. Discuss ideas conversationally with the user
-3. When an idea is ready to add, use this exact format:
-
-**Add to backlog?**
-Title: [Feature title]
-Description: [1-2 sentence description]
-Priority: [high/medium/low]
-
-4. Help prioritize and refine ideas
-5. Keep responses concise and conversational`;
-
-      const messages = useAppStore.getState().planningChatMessages;
+      const messages = useAppStore.getState().getActivePlanningMessages();
       const conversationHistory = messages
         .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
         .join('\n\n');
@@ -98,10 +217,21 @@ Respond as the assistant. Be helpful and conversational.`;
       const response = await window.api.claude.chat(currentProject.projectPath, fullPrompt);
       addPlanningMessage({ role: 'assistant', content: response });
 
-      // Check for backlog suggestions
+      // Auto-add: extract and immediately add to backlog
       const suggestions = extractBacklogSuggestions(response);
       if (suggestions.length > 0) {
-        setPendingSuggestions(suggestions);
+        for (const s of suggestions) {
+          addBacklogItem({
+            title: s.title,
+            description: s.description,
+            priority: s.priority,
+            type: s.type || planningType || undefined,
+            chatId: activePlanningChatId || undefined,
+          });
+        }
+        // Show confirmation banner
+        setAutoAddedItems(suggestions.map((s) => s.title));
+        setTimeout(() => setAutoAddedItems([]), 4000);
       }
     } catch (err) {
       console.error('Planning chat error:', err);
@@ -114,12 +244,11 @@ Respond as the assistant. Be helpful and conversational.`;
     }
   };
 
-  // Save chats when messages change
-  useEffect(() => {
-    if (planningChatMessages.length > 0) {
-      savePlanningChats();
-    }
-  }, [planningChatMessages, savePlanningChats]);
+  // Handle new chat — reset type selector
+  const handleNewChat = useCallback(() => {
+    setPlanningType(null);
+    setAutoAddedItems([]);
+  }, []);
 
   // Sort chats by most recent
   const sortedChats = [...planningChats].sort(
@@ -128,64 +257,36 @@ Respond as the assistant. Be helpful and conversational.`;
 
   const activeChat = planningChats.find((c) => c.id === activePlanningChatId);
 
-  // Handle adding a suggestion to backlog
-  const handleAddSuggestion = useCallback(
-    (suggestion: { title: string; description: string; priority: 'high' | 'medium' | 'low' }) => {
-      addBacklogItem({
-        title: suggestion.title,
-        description: suggestion.description,
-        priority: suggestion.priority,
-        chatId: activePlanningChatId || undefined,
-      });
-      setPendingSuggestions((prev) =>
-        prev.filter((s) => s.title !== suggestion.title)
-      );
-    },
-    [addBacklogItem, activePlanningChatId]
-  );
-
-  // Handle dismissing a suggestion
-  const handleDismissSuggestion = useCallback(
-    (suggestion: { title: string }) => {
-      setPendingSuggestions((prev) =>
-        prev.filter((s) => s.title !== suggestion.title)
-      );
-    },
-    []
-  );
-
   const handleDeleteChat = (chatId: string) => {
     deletePlanningChat(chatId);
-    savePlanningChats();
   };
 
   const handleRenameChat = (chatId: string, newTitle: string) => {
     renamePlanningChat(chatId, newTitle);
-    savePlanningChats();
   };
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Header */}
-      <header className="bg-charcoal-800 border-b border-charcoal-600 px-6 py-4">
+      <header className="bg-surface-card border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
               onClick={goToPreview}
-              className="text-charcoal-300 hover:text-cream-100 transition-colors no-drag"
+              className="text-ink-muted hover:text-ink transition-colors no-drag"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <div>
-              <h1 className="text-xl font-bold text-cream-100">Planning Chats</h1>
-              <p className="text-charcoal-300 text-sm">{currentProject?.name}</p>
+              <h1 className="text-xl font-sans font-bold text-ink">Planning Chats</h1>
+              <p className="text-sm font-mono text-ink-muted">{currentProject?.name}</p>
             </div>
           </div>
           <button
-            onClick={() => createPlanningChat()}
-            className="px-4 py-2 bg-terracotta-500 text-charcoal-950 text-sm font-medium rounded-lg hover:bg-terracotta-600 transition-colors no-drag"
+            onClick={handleNewChat}
+            className="btn-solid-primary px-4 py-2 text-sm font-medium no-drag"
           >
             New Chat
           </button>
@@ -195,12 +296,12 @@ Respond as the assistant. Be helpful and conversational.`;
       {/* Content */}
       <div className="flex-1 overflow-hidden flex">
         {/* Chat list sidebar */}
-        <div className="w-64 border-r border-charcoal-600 bg-charcoal-800 overflow-y-auto">
+        <div className="w-64 border-r border-border bg-surface-card overflow-y-auto">
           <div className="p-3 space-y-1">
             {sortedChats.length === 0 && (
-              <div className="text-center py-8 text-charcoal-400">
+              <div className="text-center py-8 text-ink-muted">
                 <p className="text-sm">No planning chats yet</p>
-                <p className="text-xs mt-1">Click "New Chat" to start</p>
+                <p className="text-xs mt-1">Choose a type to start</p>
               </div>
             )}
             {sortedChats.map((chat) => (
@@ -208,7 +309,11 @@ Respond as the assistant. Be helpful and conversational.`;
                 key={chat.id}
                 chat={chat}
                 isActive={chat.id === activePlanningChatId}
-                onClick={() => setActivePlanningChat(chat.id)}
+                onClick={() => {
+                  setActivePlanningChat(chat.id);
+                  // If switching to an existing chat, set a generic type so we skip the selector
+                  if (!planningType) setPlanningType('new_feature');
+                }}
                 onDelete={() => handleDeleteChat(chat.id)}
                 onRename={(newTitle) => handleRenameChat(chat.id, newTitle)}
               />
@@ -218,33 +323,79 @@ Respond as the assistant. Be helpful and conversational.`;
 
         {/* Chat area */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {activeChat ? (
+          {/* Type selector (when no type selected and no active chat) */}
+          {!planningType && !activeChat ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8">
+              <h3 className="text-lg font-sans font-bold text-ink mb-1">What would you like to plan?</h3>
+              <p className="text-sm text-ink-muted mb-8">Choose a type to start a new conversation</p>
+              <div className="flex gap-5 w-full max-w-3xl">
+                {PLANNING_TYPE_OPTIONS.map((option) => (
+                  <button
+                    key={option.type}
+                    onClick={() => handleTypeSelect(option.type)}
+                    className="flex-1 flex flex-col items-start gap-5 py-8 px-6 bg-surface-light rounded-lg transition-all group overflow-hidden relative hover:-translate-y-1"
+                    style={{
+                      border: `2px solid ${option.borderColor}`,
+                      boxShadow: `0 2px 8px rgba(44,38,32,0.07), 0 1px 3px rgba(44,38,32,0.05)`,
+                      minHeight: '220px',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.boxShadow = `0 12px 32px ${option.borderColor}, 0 4px 12px rgba(44,38,32,0.08)`;
+                      e.currentTarget.style.borderColor = option.color;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.boxShadow = `0 2px 8px rgba(44,38,32,0.07), 0 1px 3px rgba(44,38,32,0.05)`;
+                      e.currentTarget.style.borderColor = option.borderColor;
+                    }}
+                  >
+                    {/* Colored left accent */}
+                    <div className="absolute top-0 left-0 bottom-0 w-1.5 rounded-l-lg" style={{ background: option.color }} />
+                    <div
+                      className="w-14 h-14 flex items-center justify-center rounded-xl transition-all group-hover:scale-110"
+                      style={{ background: option.bgColor, color: option.color }}
+                    >
+                      {option.icon}
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-lg font-bold text-ink">{option.label}</span>
+                      <span className="text-sm text-ink-secondary leading-relaxed text-left">{option.description}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : activeChat ? (
             <>
               <div className="flex-1 overflow-hidden">
                 <Chat
-                  messages={planningChatMessages}
+                  messages={getActivePlanningMessages()}
                   onSendMessage={handleSendMessage}
                   isLoading={isLoading}
-                  placeholder="Continue planning V2 features..."
+                  placeholder={
+                    planningType === 'bug_fix'
+                      ? 'Describe the bug...'
+                      : planningType === 'feature_refactor'
+                      ? 'Which feature needs improvement?'
+                      : 'Describe your feature idea...'
+                  }
                 />
               </div>
-              {/* Pending suggestions */}
-              {pendingSuggestions.length > 0 && (
-                <div className="px-4 pb-2 border-t border-charcoal-600 pt-2 bg-charcoal-800/50">
-                  <p className="text-xs text-charcoal-400 mb-2">Suggested features:</p>
-                  {pendingSuggestions.map((suggestion, i) => (
-                    <SuggestionCard
-                      key={i}
-                      suggestion={suggestion}
-                      onAdd={() => handleAddSuggestion(suggestion)}
-                      onDismiss={() => handleDismissSuggestion(suggestion)}
-                    />
+              {/* Auto-added confirmation banner */}
+              {autoAddedItems.length > 0 && (
+                <div className="px-4 py-2 border-t border-border bg-success/10">
+                  {autoAddedItems.map((title, i) => (
+                    <p key={i} className="text-sm text-success flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      "{title}" added to backlog
+                    </p>
                   ))}
                 </div>
               )}
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-charcoal-400">
+            <div className="flex-1 flex items-center justify-center text-ink-muted">
               <div className="text-center">
                 <svg
                   className="w-12 h-12 mx-auto mb-4 opacity-50"
@@ -308,13 +459,13 @@ function ChatListItem({
 
   if (isRenaming) {
     return (
-      <div className="rounded-lg p-3 bg-charcoal-700 border border-charcoal-500">
+      <div className="p-3 bg-surface border border-border">
         <form onSubmit={handleSaveRename} onClick={(e) => e.stopPropagation()}>
           <input
             type="text"
             value={editTitle}
             onChange={(e) => setEditTitle(e.target.value)}
-            className="w-full px-2 py-1 bg-charcoal-800 border border-charcoal-600 rounded text-cream-100 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-500"
+            className="input-inset w-full px-2 py-1 bg-surface-card border border-border text-ink text-sm focus:outline-none focus:ring-1 focus:ring-border-strong"
             autoFocus
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
@@ -326,13 +477,13 @@ function ChatListItem({
             <button
               type="button"
               onClick={handleCancelRename}
-              className="px-2 py-1 text-xs text-charcoal-400 hover:text-cream-100"
+              className="px-2 py-1 text-xs text-ink-muted hover:text-ink"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-2 py-1 text-xs bg-terracotta-500 text-charcoal-950 rounded hover:bg-terracotta-600"
+              className="btn-solid-primary px-2 py-1 text-xs"
             >
               Save
             </button>
@@ -344,16 +495,16 @@ function ChatListItem({
 
   if (showDeleteConfirm) {
     return (
-      <div className="rounded-lg p-3 bg-charcoal-700 border border-rust-500/50">
-        <p className="text-sm text-cream-100 mb-2">Delete this chat?</p>
-        <p className="text-xs text-charcoal-400 mb-3">This action cannot be undone.</p>
+      <div className="p-3 bg-surface border border-error/50">
+        <p className="text-sm text-ink mb-2">Delete this chat?</p>
+        <p className="text-xs text-ink-muted mb-3">This action cannot be undone.</p>
         <div className="flex gap-2">
           <button
             onClick={(e) => {
               e.stopPropagation();
               setShowDeleteConfirm(false);
             }}
-            className="px-2 py-1 text-xs text-charcoal-400 hover:text-cream-100"
+            className="px-2 py-1 text-xs text-ink-muted hover:text-ink"
           >
             Cancel
           </button>
@@ -362,7 +513,7 @@ function ChatListItem({
               e.stopPropagation();
               onDelete();
             }}
-            className="px-2 py-1 text-xs bg-rust-500 text-cream-100 rounded hover:bg-rust-600"
+            className="btn-solid-danger px-2 py-1 text-xs"
           >
             Delete
           </button>
@@ -373,10 +524,10 @@ function ChatListItem({
 
   return (
     <div
-      className={`group relative rounded-lg p-3 cursor-pointer transition-colors ${
+      className={`group relative p-3 cursor-pointer transition-colors ${
         isActive
-          ? 'bg-charcoal-700 border border-charcoal-500'
-          : 'hover:bg-charcoal-700/50'
+          ? 'bg-surface border border-border'
+          : 'hover:bg-surface/50'
       }`}
       onClick={onClick}
       onMouseEnter={() => setShowActions(true)}
@@ -384,13 +535,13 @@ function ChatListItem({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-medium text-cream-100 truncate">{chat.title}</h4>
-          <p className="text-xs text-charcoal-400 truncate mt-0.5">{preview}...</p>
+          <h4 className="text-sm font-medium text-ink truncate">{chat.title}</h4>
+          <p className="text-xs text-ink-muted truncate mt-0.5">{preview}...</p>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-charcoal-500">
+            <span className="text-xs text-ink-muted">
               {new Date(chat.updatedAt).toLocaleDateString()}
             </span>
-            <span className="text-xs text-charcoal-500">
+            <span className="text-xs text-ink-muted">
               {messageCount} message{messageCount !== 1 ? 's' : ''}
             </span>
           </div>
@@ -402,7 +553,7 @@ function ChatListItem({
                 e.stopPropagation();
                 setIsRenaming(true);
               }}
-              className="p-1 text-charcoal-400 hover:text-cream-100 transition-colors"
+              className="p-1 text-ink-muted hover:text-ink transition-colors"
               title="Rename"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -419,7 +570,7 @@ function ChatListItem({
                 e.stopPropagation();
                 setShowDeleteConfirm(true);
               }}
-              className="p-1 text-charcoal-400 hover:text-rust-400 transition-colors"
+              className="p-1 text-ink-muted hover:text-error transition-colors"
               title="Delete"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -433,52 +584,6 @@ function ChatListItem({
             </button>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function SuggestionCard({
-  suggestion,
-  onAdd,
-  onDismiss,
-}: {
-  suggestion: { title: string; description: string; priority: 'high' | 'medium' | 'low' };
-  onAdd: () => void;
-  onDismiss: () => void;
-}) {
-  const priorityColors = {
-    high: 'text-rust-400',
-    medium: 'text-terracotta-400',
-    low: 'text-sage-400',
-  };
-
-  return (
-    <div className="bg-charcoal-700 border border-terracotta-500/30 rounded-lg p-3 my-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1">
-          <h4 className="text-sm font-medium text-cream-100">{suggestion.title}</h4>
-          {suggestion.description && (
-            <p className="text-xs text-charcoal-300 mt-1">{suggestion.description}</p>
-          )}
-          <span className={`text-xs ${priorityColors[suggestion.priority]} mt-1 inline-block`}>
-            {suggestion.priority} priority
-          </span>
-        </div>
-        <div className="flex gap-2 flex-shrink-0">
-          <button
-            onClick={onDismiss}
-            className="px-2 py-1 text-xs text-charcoal-400 hover:text-cream-100"
-          >
-            Dismiss
-          </button>
-          <button
-            onClick={onAdd}
-            className="px-3 py-1 text-xs bg-terracotta-500 text-charcoal-950 rounded hover:bg-terracotta-600"
-          >
-            Add to Backlog
-          </button>
-        </div>
       </div>
     </div>
   );

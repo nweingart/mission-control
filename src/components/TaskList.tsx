@@ -80,21 +80,26 @@ export default function TaskList({
 
   const completedCount = tasks.filter((t) => t.completed).length;
   const progress = tasks.length > 0 ? (completedCount / tasks.length) * 100 : 0;
+  const filledSegments = Math.round(progress / 10);
 
   return (
     <div className="space-y-4">
       {/* Progress bar */}
       {tasks.length > 0 && (
         <div className="mb-4">
-          <div className="flex justify-between text-sm text-charcoal-200 mb-1">
+          <div className="flex justify-between text-sm font-sans font-medium text-ink-secondary mb-1">
             <span>Progress</span>
             <span>{completedCount} / {tasks.length} tasks</span>
           </div>
-          <div className="w-full bg-charcoal-600 rounded-full h-2">
-            <div
-              className="bg-terracotta-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
+          <div className="w-full flex gap-1 h-2">
+            {Array.from({ length: 10 }, (_, i) => (
+              <div
+                key={i}
+                className={`flex-1 h-2 transition-all duration-300 ${
+                  i < filledSegments ? 'bg-accent' : 'bg-border'
+                }`}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -108,13 +113,13 @@ export default function TaskList({
             onDragStart={() => handleDragStart(index)}
             onDragOver={(e) => handleDragOver(e, index)}
             onDragEnd={handleDragEnd}
-            className={`flex items-center space-x-3 p-3 bg-charcoal-700 border border-charcoal-600 rounded-lg ${
-              editable ? 'cursor-move hover:border-terracotta-500/40' : ''
+            className={`flex items-center space-x-3 p-3 bg-surface border border-border ${
+              editable ? 'cursor-move hover:border-accent/40' : ''
             } ${draggedIndex === index ? 'opacity-50' : ''}`}
           >
             {/* Drag handle */}
             {editable && (
-              <div className="text-charcoal-400">
+              <div className="text-ink-muted">
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
                 </svg>
@@ -126,7 +131,7 @@ export default function TaskList({
               type="checkbox"
               checked={task.completed}
               onChange={() => onTaskToggle(task.id)}
-              className="w-5 h-5 text-terracotta-500 border-charcoal-500 rounded focus:ring-terracotta-500"
+              className="w-5 h-5 text-accent border-border focus:ring-accent"
             />
 
             {/* Title */}
@@ -138,11 +143,11 @@ export default function TaskList({
                 onBlur={handleEditSave}
                 onKeyDown={handleEditKeyDown}
                 autoFocus
-                className="flex-1 px-2 py-1 border border-terracotta-500/40 rounded focus:outline-none focus:ring-2 focus:ring-terracotta-500"
+                className="input-inset flex-1 px-2 py-1 border border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent"
               />
             ) : (
               <span
-                className={`flex-1 ${task.completed ? 'line-through text-charcoal-400' : ''}`}
+                className={`flex-1 ${task.completed ? 'line-through text-ink-muted' : ''}`}
                 onDoubleClick={() => editable && onTaskEdit && handleEditStart(task)}
               >
                 {task.title}
@@ -158,7 +163,7 @@ export default function TaskList({
                     onTaskRemove(task.id);
                   }
                 }}
-                className="text-charcoal-400 hover:text-rust-500 transition-colors"
+                className="text-ink-muted hover:text-error transition-colors"
                 title="Delete task"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -178,12 +183,12 @@ export default function TaskList({
             value={newTaskTitle}
             onChange={(e) => setNewTaskTitle(e.target.value)}
             placeholder="Add a new task..."
-            className="flex-1 px-4 py-2 border border-charcoal-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-terracotta-500 bg-charcoal-700 text-cream-100 placeholder:text-charcoal-400"
+            className="input-inset flex-1 px-4 py-2 border border-border focus:outline-none focus:ring-2 focus:ring-accent bg-surface text-ink placeholder:text-ink-muted"
           />
           <button
             type="submit"
             disabled={!newTaskTitle.trim()}
-            className="px-4 py-2 bg-terracotta-500 text-charcoal-950 rounded-lg hover:bg-terracotta-600 disabled:bg-charcoal-600 disabled:cursor-not-allowed transition-colors"
+            className="btn-solid-primary px-4 py-2 disabled:bg-border disabled:cursor-not-allowed transition-colors"
           >
             Add
           </button>
@@ -192,7 +197,7 @@ export default function TaskList({
 
       {/* Empty state */}
       {tasks.length === 0 && (
-        <div className="text-center py-8 text-charcoal-400">
+        <div className="text-center py-8 text-ink-muted">
           No tasks yet. Add some tasks to get started!
         </div>
       )}

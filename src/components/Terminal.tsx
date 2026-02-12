@@ -39,31 +39,54 @@ export default function Terminal({ title = 'Claude Code', onInput, onOutputRecei
     if (!terminalRef.current) return;
 
     // Create terminal with settings optimized for Claude Code's TUI
+    const isDark = document.documentElement.classList.contains('dark');
     const xterm = new XTerm({
-      theme: {
-        background: '#0d1117',
-        foreground: '#e6edf3',
-        cursor: '#58a6ff',
-        cursorAccent: '#0d1117',
-        selectionBackground: '#264f78',
-        black: '#484f58',
-        red: '#ff7b72',
-        green: '#3fb950',
-        yellow: '#d29922',
-        blue: '#58a6ff',
-        magenta: '#bc8cff',
-        cyan: '#39c5cf',
-        white: '#b1bac4',
-        brightBlack: '#6e7681',
-        brightRed: '#ffa198',
-        brightGreen: '#56d364',
-        brightYellow: '#e3b341',
-        brightBlue: '#79c0ff',
-        brightMagenta: '#d2a8ff',
-        brightCyan: '#56d4dd',
-        brightWhite: '#ffffff',
+      theme: isDark ? {
+        background: '#1C1A18',
+        foreground: '#E8E4DC',
+        cursor: '#58B26C',
+        cursorAccent: '#1C1A18',
+        selectionBackground: '#3A3630',
+        black: '#1C1A18',
+        red: '#E45848',
+        green: '#58B26C',
+        yellow: '#DA9E3E',
+        blue: '#529ED6',
+        magenta: '#6CB2E4',
+        cyan: '#529ED6',
+        white: '#E8E4DC',
+        brightBlack: '#766E64',
+        brightRed: '#F07868',
+        brightGreen: '#72C886',
+        brightYellow: '#E8B258',
+        brightBlue: '#72B8E8',
+        brightMagenta: '#88C8F0',
+        brightCyan: '#72B8E8',
+        brightWhite: '#F4F0E8',
+      } : {
+        background: '#F5F0E4',
+        foreground: '#26211C',
+        cursor: '#449256',
+        cursorAccent: '#F5F0E4',
+        selectionBackground: '#D6DCEE',
+        black: '#26211C',
+        red: '#CC4434',
+        green: '#449256',
+        yellow: '#C0822A',
+        blue: '#3E8AC2',
+        magenta: '#2A6C9E',
+        cyan: '#3E8AC2',
+        white: '#FEFBF4',
+        brightBlack: '#8E8678',
+        brightRed: '#D4685A',
+        brightGreen: '#5AAE6C',
+        brightYellow: '#D09838',
+        brightBlue: '#5AA0CE',
+        brightMagenta: '#4A8AB8',
+        brightCyan: '#5AA0CE',
+        brightWhite: '#FEFBF4',
       },
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      fontFamily: '"JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
       fontSize: 13,
       lineHeight: 1.2,
       cursorBlink: true,
@@ -167,20 +190,20 @@ export default function Terminal({ title = 'Claude Code', onInput, onOutputRecei
   };
 
   return (
-    <div className="rounded-lg overflow-hidden border border-charcoal-600 h-full flex flex-col bg-charcoal-950">
+    <div className="overflow-hidden border border-border h-full flex flex-col bg-surface-light">
       {/* Header */}
-      <div className="bg-charcoal-900 px-4 py-2 flex items-center justify-between border-b border-charcoal-600 flex-shrink-0">
+      <div className="bg-surface px-4 py-2 flex items-center justify-between border-b border-border flex-shrink-0">
         <div className="flex items-center space-x-3">
           <div className="flex space-x-1.5">
-            <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
-            <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
-            <div className="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+            <div className="w-3 h-3 bg-spectrum-red"></div>
+            <div className="w-3 h-3 bg-spectrum-yellow"></div>
+            <div className="w-3 h-3 bg-spectrum-green"></div>
           </div>
-          <span className="text-charcoal-300 text-sm font-medium">{title}</span>
+          <span className="text-ink-muted text-[13px] font-display uppercase tracking-wider">{title}</span>
         </div>
         <div className="flex items-center space-x-2">
-          <span className="text-xs text-charcoal-400">claude-code</span>
-          {sessionId && <div className="w-2 h-2 rounded-full bg-sage-500 animate-pulse"></div>}
+          <span className="text-[13px] text-ink-muted font-display uppercase tracking-wider">claude-code</span>
+          {sessionId && <div className="w-2 h-2 bg-success animate-pulse"></div>}
         </div>
       </div>
 

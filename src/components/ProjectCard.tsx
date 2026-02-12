@@ -10,19 +10,31 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'idea':
-        return 'bg-charcoal-600 text-charcoal-200';
+        return 'bg-spectrum-blue/15 text-spectrum-blue border border-spectrum-blue/25';
       case 'discovery':
-        return 'bg-terracotta-500/15 text-terracotta-400';
+        return 'bg-spectrum-purple/15 text-spectrum-purple border border-spectrum-purple/25';
       case 'planning':
-        return 'bg-terracotta-500/15 text-terracotta-400';
+        return 'bg-spectrum-yellow/15 text-spectrum-yellow border border-spectrum-yellow/25';
       case 'building':
-        return 'bg-terracotta-500/10 text-terracotta-500';
+        return 'bg-spectrum-orange/15 text-spectrum-orange border border-spectrum-orange/25';
       case 'deploying':
-        return 'bg-terracotta-500/10 text-terracotta-500';
+        return 'bg-spectrum-blue/15 text-spectrum-blue border border-spectrum-blue/25';
       case 'complete':
-        return 'bg-sage-500/15 text-sage-400';
+        return 'bg-spectrum-green/15 text-spectrum-green border border-spectrum-green/25';
       default:
-        return 'bg-charcoal-600 text-charcoal-200';
+        return 'bg-border/50 text-ink-secondary border border-border';
+    }
+  };
+
+  const getStatusLeftBorder = (status: string) => {
+    switch (status) {
+      case 'idea': return '#3E8AC2';
+      case 'discovery': return '#3E8AC2';
+      case 'planning': return '#C0822A';
+      case 'building': return '#3E8AC2';
+      case 'deploying': return '#C0822A';
+      case 'complete': return '#449256';
+      default: return '#C0B8A8';
     }
   };
 
@@ -63,20 +75,19 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (onDelete && confirm(`Are you sure you want to delete "${project.name}"?\n\nThis will also delete all generated code files.`)) {
-      onDelete();
-    }
+    onDelete?.();
   };
 
   return (
     <div
       onClick={onClick}
-      className="bg-charcoal-800 rounded-lg border border-charcoal-700 p-4 hover:border-terracotta-500/40 hover:shadow-md transition-all cursor-pointer group"
+      className="card-panel p-5 transition-all cursor-pointer group overflow-hidden"
+      style={{ borderLeft: `4px solid ${getStatusLeftBorder(project.status)}` }}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-cream-100 truncate">{project.name}</h3>
-          <p className="text-sm text-charcoal-400 mt-1 line-clamp-2">
+          <h3 className="text-base font-sans font-semibold text-ink truncate">{project.name}</h3>
+          <p className="text-sm text-ink-muted mt-1 line-clamp-2">
             {project.idea || 'No description'}
           </p>
         </div>
@@ -85,7 +96,7 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
         {onDelete && (
           <button
             onClick={handleDelete}
-            className="ml-2 p-1 text-charcoal-400 hover:text-rust-500 opacity-0 group-hover:opacity-100 transition-all"
+            className="ml-2 p-1 text-ink-muted hover:text-error opacity-0 group-hover:opacity-100 transition-all"
             title="Delete project"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -102,23 +113,24 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
 
       <div className="flex items-center justify-between mt-4">
         <span
-          className={`text-xs font-medium px-2 py-1 rounded-full ${getStatusColor(project.status)}`}
+          className={`font-display font-bold text-[14px] px-2.5 py-1 rounded ${getStatusColor(project.status)}`}
         >
           {getStatusLabel(project.status)}
         </span>
-        <span className="text-xs text-charcoal-400">{formatDate(project.createdAt)}</span>
+        <span className="text-xs text-ink-muted">{formatDate(project.createdAt)}</span>
       </div>
 
       {/* URLs if deployed */}
       {project.vercelUrl && (
-        <div className="mt-3 pt-3 border-t border-charcoal-700">
+        <div className="mt-3 pt-3 relative">
+          <div className="divider-warm absolute top-0 left-0 right-0" />
           <a
             href={project.vercelUrl}
             onClick={(e) => {
               e.stopPropagation();
               window.api.shell.openExternal(project.vercelUrl!);
             }}
-            className="text-xs text-terracotta-500 hover:text-terracotta-400 flex items-center"
+            className="text-xs text-accent hover:text-accent flex items-center"
           >
             <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path

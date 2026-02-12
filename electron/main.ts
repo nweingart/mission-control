@@ -1,19 +1,32 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'path';
 import * as pty from 'node-pty';
-import { homedir } from 'os';
 import { StorageService } from './services/storage';
 import { CLICheckService } from './services/cli-check';
 import { ClaudeCodeService } from './services/claude-code';
 import { VercelService } from './services/vercel';
 import { SupabaseService } from './services/supabase';
 import { GitHubService } from './services/github';
+import { registerShellHandlers } from './ipc/shell-handlers';
+import { registerSetupHandlers } from './ipc/setup-handlers';
+import { registerDevServerHandlers } from './ipc/devserver-handlers';
+
+// Prevent EPIPE errors from crashing the app when stdout/stderr pipes break
+// (common in Electron on macOS when the parent terminal is closed)
+for (const stream of [process.stdout, process.stderr]) {
+  if (stream && typeof stream.on === 'function') {
+    stream.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EPIPE') return;
+      throw err;
+    });
+  }
+}
 
 // Track active setup PTY sessions
 const setupSessions: Map<string, pty.IPty> = new Map();
 
-// Track dev server session
-let devServerSession: { pty: pty.IPty; sessionId: string } | null = null;
+// Shared mutable state for dev server session (passed to IPC handler module)
+const devServerState: { session: { pty: pty.IPty; sessionId: string } | null } = { session: null };
 
 let mainWindow: BrowserWindow | null = null;
 const storageService = new StorageService();
@@ -55,6 +68,26 @@ function createWindow() {
     trafficLightPosition: { x: 15, y: 15 },
   });
 
+  // Enforce CSP via response headers (works in both dev and production)
+  const isDev = process.env.NODE_ENV === 'development';
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self';" +
+          (isDev
+            ? " script-src 'self' 'unsafe-inline' 'unsafe-eval';"
+            : " script-src 'self';") +
+          " style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;" +
+          " font-src 'self' https://fonts.gstatic.com;" +
+          " connect-src 'self' http://localhost:* ws://localhost:*;" +
+          " img-src 'self' data:;"
+        ],
+      },
+    });
+  });
+
   // Load the app
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
@@ -64,6 +97,18 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => {
+    // Kill all PTY sessions when the window closes.
+    // On macOS, closing the window doesn't quit the app, so without this
+    // Claude, setup, and dev-server PTY processes become zombies.
+    claudeCodeService.killAll();
+    for (const [id, session] of setupSessions) {
+      try { session.kill(); } catch { /* ignore */ }
+      setupSessions.delete(id);
+    }
+    if (devServerState.session) {
+      try { devServerState.session.pty.kill(); } catch { /* ignore */ }
+      devServerState.session = null;
+    }
     mainWindow = null;
   });
 
@@ -128,12 +173,16 @@ ipcMain.handle('storage:getChatHistory', (_, slug) => storageService.getChatHist
 ipcMain.handle('storage:saveChatHistory', (_, slug, messages) => storageService.saveChatHistory(slug, messages));
 ipcMain.handle('storage:getBacklog', (_, slug) => storageService.getBacklog(slug));
 ipcMain.handle('storage:saveBacklog', (_, slug, items) => storageService.saveBacklog(slug, items));
+ipcMain.handle('storage:getSprints', (_, slug) => storageService.getSprints(slug));
+ipcMain.handle('storage:saveSprints', (_, slug, sprints) => storageService.saveSprints(slug, sprints));
 ipcMain.handle('storage:getPlanningChats', (_, slug) => storageService.getPlanningChats(slug));
 ipcMain.handle('storage:savePlanningChats', (_, slug, chats) => storageService.savePlanningChats(slug, chats));
 ipcMain.handle('storage:getGitEvents', (_, slug) => storageService.getGitEvents(slug));
 ipcMain.handle('storage:saveGitEvents', (_, slug, events) => storageService.saveGitEvents(slug, events));
 ipcMain.handle('storage:getDeployments', (_, slug) => storageService.getDeployments(slug));
 ipcMain.handle('storage:saveDeployments', (_, slug, deployments) => storageService.saveDeployments(slug, deployments));
+ipcMain.handle('storage:getGapAnalysis', (_, slug) => storageService.getGapAnalysis(slug));
+ipcMain.handle('storage:saveGapAnalysis', (_, slug, analyses) => storageService.saveGapAnalysis(slug, analyses));
 
 // IPC Handlers - CLI Check
 ipcMain.handle('cli:checkAll', () => cliCheckService.checkAll());
@@ -162,7 +211,7 @@ ipcMain.handle('cli:saveVercelToken', async (_, token: string) => {
       token: token.trim()
     };
 
-    await fs.writeFile(authFile, JSON.stringify(authData, null, 2), 'utf-8');
+    await fs.writeFile(authFile, JSON.stringify(authData, null, 2), { encoding: 'utf-8', mode: 0o600 });
     console.log('[cli:saveVercelToken] Token saved to', authFile);
     return { success: true };
   } catch (err) {
@@ -209,6 +258,7 @@ ipcMain.handle('claude:chat', async (event, projectPath, prompt) => {
 ipcMain.handle('claude:sendInput', (_, sessionId, input) => claudeCodeService.sendInput(sessionId, input));
 ipcMain.handle('claude:resize', (_, sessionId, cols, rows) => claudeCodeService.resize(sessionId, cols, rows));
 ipcMain.handle('claude:kill', (_, sessionId) => claudeCodeService.kill(sessionId));
+ipcMain.handle('claude:cancelChat', () => claudeCodeService.cancelChat());
 
 // Completion detection IPC handlers
 ipcMain.handle('claude:enableCompletionDetection', (_, sessionId: string) => {
@@ -229,6 +279,16 @@ ipcMain.handle('vercel:deploy', (event, projectPath, envVars) => {
   return vercelService.deploy(projectPath, envVars, (data) => {
     safeSend('vercel:output', data);
   });
+});
+
+ipcMain.handle('vercel:getProjectConfig', (_, projectPath: string) => {
+  return vercelService.getProjectConfig(projectPath);
+});
+ipcMain.handle('vercel:getToken', () => {
+  return vercelService.getToken();
+});
+ipcMain.handle('vercel:addEnvVars', (_, projectPath: string, envVars: Record<string, string>) => {
+  return vercelService.addEnvVars(projectPath, envVars);
 });
 
 // IPC Handlers - GitHub
@@ -287,16 +347,44 @@ ipcMain.handle('github:renameBranch', (_, projectPath: string, newName: string) 
 ipcMain.handle('github:deleteBranch', (_, projectPath: string, branchName: string) => {
   return githubService.deleteBranch(projectPath, branchName);
 });
+ipcMain.handle('github:branchExists', (_, projectPath: string, branchName: string) => {
+  return githubService.branchExists(projectPath, branchName);
+});
 ipcMain.handle('github:getDiff', (_, projectPath: string, base?: string) => {
   return githubService.getDiff(projectPath, base);
 });
 ipcMain.handle('github:getDiffStat', (_, projectPath: string, base: string) => {
   return githubService.getDiffStat(projectPath, base);
 });
+ipcMain.handle('github:getCommitDiff', (_, projectPath: string, commitHash: string) => {
+  return githubService.getCommitDiff(projectPath, commitHash);
+});
+ipcMain.handle('github:getTaskDiff', (_, projectPath: string, commitHashes: string[]) => {
+  return githubService.getTaskDiff(projectPath, commitHashes);
+});
+
+ipcMain.handle('github:setSecret', (_, repoFullName: string, name: string, value: string) => {
+  return githubService.setSecret(repoFullName, name, value);
+});
+ipcMain.handle('github:getWorkflowRuns', (_, projectPath: string, limit?: number) => {
+  return githubService.getWorkflowRuns(projectPath, limit);
+});
+ipcMain.handle('github:writeWorkflowFile', (_, projectPath: string, content: string) => {
+  return githubService.writeWorkflowFile(projectPath, content);
+});
 
 // IPC Handlers - Supabase
-ipcMain.handle('supabase:createProject', (event, name) => {
-  return supabaseService.createProject(name, (data) => {
+ipcMain.handle('supabase:getOrganizations', () => {
+  return supabaseService.getOrganizations();
+});
+ipcMain.handle('supabase:getProjects', () => {
+  return supabaseService.getProjects();
+});
+ipcMain.handle('supabase:getProjectKeys', (_event, ref) => {
+  return supabaseService.getProjectKeys(ref);
+});
+ipcMain.handle('supabase:createProject', (event, name, orgId) => {
+  return supabaseService.createProject(name, orgId, (data) => {
     safeSend('supabase:output', data);
   });
 });
@@ -305,410 +393,31 @@ ipcMain.handle('supabase:runMigrations', (event, projectPath, supabaseRef) => {
     safeSend('supabase:output', data);
   });
 });
-
-// IPC Handlers - File System (limited operations)
-ipcMain.handle('fs:readdir', async (_, path: string) => {
-  const fs = await import('fs/promises');
-  return fs.readdir(path);
+ipcMain.handle('supabase:fetchOpenApiSpec', (_, supabaseUrl: string, serviceKey: string) => {
+  return supabaseService.fetchOpenApiSpec(supabaseUrl, serviceKey);
+});
+ipcMain.handle('supabase:getSchemaTableInfo', (_, ref: string, schema?: string) => {
+  return supabaseService.getSchemaTableInfo(ref, schema);
+});
+ipcMain.handle('supabase:dropSchema', (_, ref: string, schema: string) => {
+  return supabaseService.dropSchema(ref, schema);
+});
+ipcMain.handle('supabase:deleteSupabaseProject', (_, ref: string) => {
+  return supabaseService.deleteSupabaseProject(ref);
 });
 
-ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
-  const fs = await import('fs/promises');
-  const path = await import('path');
-  // Security: only allow writing inside known project directories
-  const dir = path.dirname(filePath);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(filePath, content, 'utf-8');
+// Register modular IPC handlers
+registerShellHandlers({
+  storageService,
+  getMainWindow: () => mainWindow,
 });
 
-// IPC Handlers - Shell
-ipcMain.handle('shell:openExternal', (_, url: string) => {
-  // Validate URL to prevent opening malicious protocols
-  // Only allow http:// and https:// URLs
-  if (typeof url !== 'string') {
-    console.warn('Invalid URL type provided to shell:openExternal');
-    return Promise.reject(new Error('Invalid URL'));
-  }
-
-  try {
-    const parsedUrl = new URL(url);
-    const allowedProtocols = ['http:', 'https:'];
-
-    if (!allowedProtocols.includes(parsedUrl.protocol)) {
-      console.warn(`Blocked attempt to open URL with protocol: ${parsedUrl.protocol}`);
-      return Promise.reject(new Error(`Blocked protocol: ${parsedUrl.protocol}`));
-    }
-
-    return shell.openExternal(url);
-  } catch (err) {
-    console.warn('Invalid URL provided to shell:openExternal:', url);
-    return Promise.reject(new Error('Invalid URL format'));
-  }
-});
-ipcMain.handle('shell:openPath', (_, path: string) => {
-  // Basic validation for path
-  if (typeof path !== 'string' || path.length === 0) {
-    return Promise.reject(new Error('Invalid path'));
-  }
-  return shell.openPath(path);
+registerSetupHandlers({
+  setupSessions,
+  safeSend,
 });
 
-// Open path in code editor (tries Cursor, then VS Code, then falls back to Finder)
-ipcMain.handle('shell:openInEditor', async (_, path: string) => {
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  const execAsync = promisify(exec);
-
-  if (typeof path !== 'string' || path.length === 0) {
-    return Promise.reject(new Error('Invalid path'));
-  }
-
-  // Try editors in order of preference
-  const editors = [
-    { cmd: 'cursor', name: 'Cursor' },
-    { cmd: 'code', name: 'VS Code' },
-  ];
-
-  for (const editor of editors) {
-    try {
-      // Check if the editor command exists
-      await execAsync(`which ${editor.cmd}`);
-      // If it exists, open the path
-      await execAsync(`${editor.cmd} "${path}"`);
-      console.log(`[shell:openInEditor] Opened in ${editor.name}`);
-      return { editor: editor.name };
-    } catch {
-      // Editor not found, try next
-      continue;
-    }
-  }
-
-  // Fall back to opening in Finder
-  console.log('[shell:openInEditor] No code editor found, opening in Finder');
-  await shell.openPath(path);
-  return { editor: 'Finder' };
-});
-
-// Open native Terminal app with a command (macOS only for now)
-ipcMain.handle('shell:openInTerminal', async (_, command: string) => {
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  const execAsync = promisify(exec);
-  const { platform } = await import('os');
-
-  if (typeof command !== 'string' || command.length === 0) {
-    return Promise.reject(new Error('Invalid command'));
-  }
-
-  // Sanitize command to prevent injection (basic escaping)
-  const sanitizedCommand = command.replace(/"/g, '\\"');
-
-  if (platform() === 'darwin') {
-    // macOS: Use osascript to open Terminal.app with the command
-    const script = `tell application "Terminal"
-      activate
-      do script "${sanitizedCommand}"
-    end tell`;
-    try {
-      await execAsync(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`);
-      console.log('[shell:openInTerminal] Opened Terminal with command:', command);
-      return { success: true };
-    } catch (err) {
-      console.error('[shell:openInTerminal] Failed:', err);
-      throw err;
-    }
-  } else {
-    // For other platforms, just return instructions
-    return { success: false, message: 'Please run the command manually in your terminal' };
-  }
-});
-
-// IPC Handler - Directory picker dialog
-ipcMain.handle('dialog:selectDirectory', async (_, defaultPath?: string) => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath: defaultPath || homedir(),
-  });
-  return result.canceled ? null : result.filePaths[0];
-});
-
-// IPC Handlers - Setup commands (run install/auth commands with PTY)
-ipcMain.handle('setup:runCommand', (event, command: string, sessionId: string) => {
-  return new Promise<void>((resolve, reject) => {
-    // Kill existing session if any
-    const existing = setupSessions.get(sessionId);
-    if (existing) {
-      try {
-        existing.kill();
-      } catch (e) {
-        // Ignore
-      }
-      setupSessions.delete(sessionId);
-    }
-
-    const shellProgram = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
-    const shellArgs = process.platform === 'win32' ? [] : ['-l'];
-    const home = homedir();
-
-    // Build enhanced PATH including common CLI locations
-    const extraPaths = [
-      `${home}/.local/bin`,
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-    ];
-    const currentPath = process.env.PATH || '';
-    const fullPath = [...extraPaths, ...currentPath.split(':')].join(':');
-
-    console.log('[setup:runCommand] Running command:', command);
-    console.log('[setup:runCommand] HOME:', home);
-    console.log('[setup:runCommand] Shell:', shellProgram);
-
-    let ptyProcess: pty.IPty;
-    try {
-      ptyProcess = pty.spawn(shellProgram, shellArgs, {
-        name: 'xterm-256color',
-        cols: 100,
-        rows: 30,
-        cwd: home,
-        env: {
-          ...process.env,
-          HOME: home,  // Explicitly set HOME
-          TERM: 'xterm-256color',
-          PATH: fullPath,
-        },
-      });
-      console.log('[setup:runCommand] PTY spawned, pid:', ptyProcess.pid);
-    } catch (err) {
-      console.error('[setup:runCommand] Failed to spawn PTY:', err);
-      reject(err);
-      return;
-    }
-
-    setupSessions.set(sessionId, ptyProcess);
-
-    ptyProcess.onData((data) => {
-      safeSend('setup:output', { sessionId, content: data });
-    });
-
-    ptyProcess.onExit(({ exitCode }) => {
-      console.log('[setup:runCommand] Command exited with code:', exitCode);
-      setupSessions.delete(sessionId);
-      safeSend('setup:exit', { sessionId, code: exitCode });
-      if (exitCode === 0) {
-        resolve();
-      } else {
-        reject(new Error(`Command exited with code ${exitCode}`));
-      }
-    });
-
-    // Send the command, then exit the shell when done
-    // Only keep shell open for 'claude' which is a fully interactive session
-    const isInteractive = command.trim() === 'claude';
-    const commandToRun = isInteractive ? command : `${command}; exit`;
-    console.log('[setup:runCommand] Sending:', commandToRun.substring(0, 100) + '...');
-    ptyProcess.write(`${commandToRun}\r`);
-  });
-});
-
-ipcMain.handle('setup:sendInput', (_, sessionId: string, input: string) => {
-  const session = setupSessions.get(sessionId);
-  if (session) {
-    session.write(input);
-  }
-});
-
-ipcMain.handle('setup:killSession', (_, sessionId: string) => {
-  const session = setupSessions.get(sessionId);
-  if (session) {
-    try {
-      session.kill();
-    } catch (e) {
-      // Ignore
-    }
-    setupSessions.delete(sessionId);
-  }
-});
-
-// Open command in system terminal (for interactive commands like 'claude')
-ipcMain.handle('setup:openInTerminal', async (_, command: string) => {
-  const { exec } = await import('child_process');
-
-  return new Promise<void>((resolve, reject) => {
-    if (process.platform === 'darwin') {
-      // macOS: Use AppleScript to open Terminal.app and run the command
-      const script = `tell application "Terminal"
-        activate
-        do script "${command.replace(/"/g, '\\"')}"
-      end tell`;
-
-      exec(`osascript -e '${script}'`, (error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
-    } else if (process.platform === 'win32') {
-      // Windows: Open cmd with the command
-      exec(`start cmd /k ${command}`, (error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    } else {
-      // Linux: Try common terminal emulators
-      const terminals = ['gnome-terminal', 'konsole', 'xterm'];
-      let found = false;
-
-      for (const term of terminals) {
-        try {
-          exec(`which ${term}`, (err) => {
-            if (!err && !found) {
-              found = true;
-              exec(`${term} -e "${command}"`, (execErr) => {
-                if (execErr) reject(execErr);
-                else resolve();
-              });
-            }
-          });
-        } catch {
-          // Continue to next terminal
-        }
-      }
-
-      if (!found) {
-        reject(new Error('No supported terminal emulator found'));
-      }
-    }
-  });
-});
-
-// IPC Handlers - Dev Server (for preview)
-ipcMain.handle('devServer:start', async (event, projectPath: string) => {
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  const execAsync = promisify(exec);
-
-  // Kill existing dev server session if running
-  if (devServerSession) {
-    try {
-      devServerSession.pty.kill();
-    } catch (e) {
-      // Ignore
-    }
-    devServerSession = null;
-  }
-
-  // Kill any process on ports 3000 and 3001 to ensure we always use port 3000
-  console.log('[devServer:start] Killing any process on ports 3000/3001...');
-
-  // Use full path to lsof and be more aggressive
-  const killPort = async (port: number) => {
-    try {
-      const { stdout } = await execAsync(`/usr/sbin/lsof -ti:${port}`);
-      const pids = stdout.trim().split('\n').filter(p => p);
-      if (pids.length > 0) {
-        console.log(`[devServer:start] Found PIDs on port ${port}:`, pids);
-        for (const pid of pids) {
-          try {
-            await execAsync(`kill -9 ${pid}`);
-            console.log(`[devServer:start] Killed PID ${pid}`);
-          } catch (killErr) {
-            console.log(`[devServer:start] Could not kill PID ${pid}:`, killErr);
-          }
-        }
-      } else {
-        console.log(`[devServer:start] Port ${port} is free`);
-      }
-    } catch (e) {
-      console.log(`[devServer:start] Port ${port} appears to be free (lsof returned nothing)`);
-    }
-  };
-
-  await killPort(3000);
-  await killPort(3001);
-
-  // Give time for ports to be released
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  console.log('[devServer:start] Port cleanup complete');
-
-  return new Promise<string>((resolve, reject) => {
-    const sessionId = `dev-${Date.now()}`;
-    const home = homedir();
-
-    // Build enhanced PATH
-    const extraPaths = [
-      `${home}/.local/bin`,
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-    ];
-    const currentPath = process.env.PATH || '';
-    const fullPath = [...extraPaths, ...currentPath.split(':')].join(':');
-
-    console.log('[devServer:start] Starting dev server in:', projectPath);
-
-    let ptyProcess: pty.IPty;
-    try {
-      ptyProcess = pty.spawn('/bin/bash', ['--norc', '--noprofile'], {
-        name: 'xterm-256color',
-        cols: 100,
-        rows: 30,
-        cwd: projectPath,
-        env: {
-          ...process.env,
-          HOME: home,
-          TERM: 'xterm-256color',
-          PATH: fullPath,
-          FORCE_COLOR: '1',
-        },
-      });
-      console.log('[devServer:start] PTY spawned, pid:', ptyProcess.pid);
-    } catch (err) {
-      console.error('[devServer:start] Failed to spawn PTY:', err);
-      reject(err);
-      return;
-    }
-
-    devServerSession = { pty: ptyProcess, sessionId };
-
-    ptyProcess.onData((data) => {
-      safeSend('devServer:output', { sessionId, content: data });
-    });
-
-    ptyProcess.onExit(({ exitCode }) => {
-      console.log('[devServer:start] Dev server exited with code:', exitCode);
-      safeSend('devServer:exit', { sessionId, code: exitCode });
-      devServerSession = null;
-    });
-
-    // Start the dev server
-    ptyProcess.write('npm run dev\r');
-
-    resolve(sessionId);
-  });
-});
-
-ipcMain.handle('devServer:stop', () => {
-  if (devServerSession) {
-    console.log('[devServer:stop] Stopping dev server');
-    try {
-      devServerSession.pty.kill();
-    } catch (e) {
-      console.error('[devServer:stop] Error killing dev server:', e);
-    }
-    devServerSession = null;
-  }
-  return { success: true };
-});
-
-ipcMain.handle('devServer:openBrowser', async (_, url: string) => {
-  // Validate it's a localhost URL
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
-      return Promise.reject(new Error('Only localhost URLs allowed'));
-    }
-    return shell.openExternal(url);
-  } catch {
-    return Promise.reject(new Error('Invalid URL'));
-  }
+registerDevServerHandlers({
+  state: devServerState,
+  safeSend,
 });
