@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import type { GapFinding, GapAnalysis } from '../types';
+import { resilientChat } from '../utils/resilient-chat';
 
 type GapPhase =
   | 'analyzing'
@@ -135,6 +136,7 @@ export default function GapAnalysisScreen() {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamOutputRef = useRef<HTMLDivElement>(null);
   const fixConfirmResolverRef = useRef<((proceed: boolean) => void) | null>(null);
+  const cancelRef = useRef<(() => void) | null>(null);
 
   const waitForFixConfirmation = (): Promise<boolean> =>
     new Promise((resolve) => { fixConfirmResolverRef.current = resolve; });
@@ -212,7 +214,10 @@ export default function GapAnalysisScreen() {
           setStreamOutput(prev => prev + content);
         });
 
-        const analysisResponse = await window.api.claude.chat(projectPath, buildAnalysisPrompt(prd));
+        const analysis1 = resilientChat.long(projectPath, buildAnalysisPrompt(prd));
+        cancelRef.current = analysis1.cancel;
+        const analysisResponse = await analysis1.promise;
+        cancelRef.current = null;
         if (!isMountedRef.current) return;
 
         const analysisJson = extractJsonObject(analysisResponse);
@@ -224,8 +229,11 @@ export default function GapAnalysisScreen() {
           } catch {
             // Retry with stricter prompt
             setStreamOutput('');
-            const retryResponse = await window.api.claude.chat(projectPath,
+            const analysisRetry = resilientChat.long(projectPath,
               `Your previous response was not valid JSON. ${buildAnalysisPrompt(prd)}`);
+            cancelRef.current = analysisRetry.cancel;
+            const retryResponse = await analysisRetry.promise;
+            cancelRef.current = null;
             if (!isMountedRef.current) return;
             const retryJson = extractJsonObject(retryResponse);
             if (!retryJson) {
@@ -268,8 +276,11 @@ export default function GapAnalysisScreen() {
         setPhase('meta-reviewing');
         setStreamOutput('');
 
-        const metaResponse = await window.api.claude.chat(projectPath,
+        const meta1 = resilientChat.standard(projectPath,
           buildMetaReviewPrompt(prd, analysisJson || analysisResponse));
+        cancelRef.current = meta1.cancel;
+        const metaResponse = await meta1.promise;
+        cancelRef.current = null;
         if (!isMountedRef.current) return;
 
         const metaJson = extractJsonObject(metaResponse);
@@ -281,8 +292,11 @@ export default function GapAnalysisScreen() {
           } catch {
             // Retry with stricter prompt
             setStreamOutput('');
-            const metaRetryResponse = await window.api.claude.chat(projectPath,
+            const metaRetry1 = resilientChat.standard(projectPath,
               `Your previous response was not valid JSON. ${buildMetaReviewPrompt(prd, analysisJson || analysisResponse)}`);
+            cancelRef.current = metaRetry1.cancel;
+            const metaRetryResponse = await metaRetry1.promise;
+            cancelRef.current = null;
             if (!isMountedRef.current) return;
             const metaRetryJson = extractJsonObject(metaRetryResponse);
             if (metaRetryJson) {
@@ -309,8 +323,11 @@ export default function GapAnalysisScreen() {
         } else {
           // No JSON found — retry once
           setStreamOutput('');
-          const metaRetryResponse = await window.api.claude.chat(projectPath,
+          const metaRetry2 = resilientChat.standard(projectPath,
             `Your previous response was not valid JSON. ${buildMetaReviewPrompt(prd, analysisJson || analysisResponse)}`);
+          cancelRef.current = metaRetry2.cancel;
+          const metaRetryResponse = await metaRetry2.promise;
+          cancelRef.current = null;
           if (!isMountedRef.current) return;
           const metaRetryJson = extractJsonObject(metaRetryResponse);
           if (metaRetryJson) {
@@ -370,7 +387,10 @@ export default function GapAnalysisScreen() {
         setStreamOutput('');
 
         const fixFindings = parsedMeta.adjustedFindings || parsedAnalysis.findings || [];
-        await window.api.claude.chat(projectPath, buildFixPrompt(fixFindings));
+        const fix1 = resilientChat.long(projectPath, buildFixPrompt(fixFindings));
+        cancelRef.current = fix1.cancel;
+        await fix1.promise;
+        cancelRef.current = null;
         if (!isMountedRef.current) return;
 
         try {
@@ -395,7 +415,10 @@ export default function GapAnalysisScreen() {
         setPhase('re-analyzing');
         setStreamOutput('');
 
-        const reResponse = await window.api.claude.chat(projectPath, buildAnalysisPrompt(prd));
+        const reAnalysis = resilientChat.long(projectPath, buildAnalysisPrompt(prd));
+        cancelRef.current = reAnalysis.cancel;
+        const reResponse = await reAnalysis.promise;
+        cancelRef.current = null;
         if (!isMountedRef.current) return;
 
         const reJson = extractJsonObject(reResponse);
@@ -414,8 +437,11 @@ export default function GapAnalysisScreen() {
         setGrade(reParsed.grade);
 
         // Meta-review pass 2 to validate findings after fixes
-        const reMetaResponse = await window.api.claude.chat(projectPath,
+        const reMeta = resilientChat.standard(projectPath,
           buildMetaReviewPrompt(prd, reJson || reResponse));
+        cancelRef.current = reMeta.cancel;
+        const reMetaResponse = await reMeta.promise;
+        cancelRef.current = null;
         if (!isMountedRef.current) return;
 
         const reMetaJson = extractJsonObject(reMetaResponse);
@@ -504,7 +530,10 @@ export default function GapAnalysisScreen() {
           setStreamOutput(prev => prev + content);
         });
 
-        const response = await window.api.claude.chat(projectPath, buildAnalysisPrompt(prd));
+        const retryAnalysis = resilientChat.long(projectPath, buildAnalysisPrompt(prd));
+        cancelRef.current = retryAnalysis.cancel;
+        const response = await retryAnalysis.promise;
+        cancelRef.current = null;
         if (!isMountedRef.current) return;
         const json = extractJsonObject(response);
         if (!json) {
@@ -534,6 +563,8 @@ export default function GapAnalysisScreen() {
   }, [currentProject, projectPath, updateProject, goToPreview, startAutoProceed]);
 
   const handleSkipToPreview = useCallback(() => {
+    cancelRef.current?.();
+    cancelRef.current = null;
     continueToPreview();
   }, [continueToPreview]);
 

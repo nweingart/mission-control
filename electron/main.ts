@@ -4,8 +4,6 @@ import * as pty from 'node-pty';
 import { StorageService } from './services/storage';
 import { CLICheckService } from './services/cli-check';
 import { ClaudeCodeService } from './services/claude-code';
-import { VercelService } from './services/vercel';
-import { SupabaseService } from './services/supabase';
 import { GitHubService } from './services/github';
 import { registerShellHandlers } from './ipc/shell-handlers';
 import { registerSetupHandlers } from './ipc/setup-handlers';
@@ -28,12 +26,17 @@ const setupSessions: Map<string, pty.IPty> = new Map();
 // Shared mutable state for dev server session (passed to IPC handler module)
 const devServerState: { session: { pty: pty.IPty; sessionId: string } | null } = { session: null };
 
+// Register houston:// custom protocol for OAuth/Stripe callbacks
+if (process.defaultApp) {
+  app.setAsDefaultProtocolClient('houston', process.execPath, [__dirname]);
+} else {
+  app.setAsDefaultProtocolClient('houston');
+}
+
 let mainWindow: BrowserWindow | null = null;
 const storageService = new StorageService();
 const cliCheckService = new CLICheckService();
 const claudeCodeService = new ClaudeCodeService();
-const vercelService = new VercelService();
-const supabaseService = new SupabaseService();
 const githubService = new GitHubService();
 
 /**
@@ -152,6 +155,15 @@ app.on('window-all-closed', () => {
   }
 });
 
+// Handle houston:// deep links (macOS)
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.focus();
+    mainWindow.webContents.send('deep-link', url);
+  }
+});
+
 // Cleanup PTY sessions before quitting
 app.on('before-quit', () => {
   claudeCodeService.killAll();
@@ -183,42 +195,14 @@ ipcMain.handle('storage:getDeployments', (_, slug) => storageService.getDeployme
 ipcMain.handle('storage:saveDeployments', (_, slug, deployments) => storageService.saveDeployments(slug, deployments));
 ipcMain.handle('storage:getGapAnalysis', (_, slug) => storageService.getGapAnalysis(slug));
 ipcMain.handle('storage:saveGapAnalysis', (_, slug, analyses) => storageService.saveGapAnalysis(slug, analyses));
+ipcMain.handle('storage:getGamification', (_, slug) => storageService.getGamification(slug));
+ipcMain.handle('storage:saveGamification', (_, slug, stats) => storageService.saveGamification(slug, stats));
 
 // IPC Handlers - CLI Check
 ipcMain.handle('cli:checkAll', () => cliCheckService.checkAll());
 ipcMain.handle('cli:checkClaude', () => cliCheckService.checkClaude());
 ipcMain.handle('cli:checkClaudeDeep', () => cliCheckService.checkClaudeDeep());
 ipcMain.handle('cli:checkGitHub', () => cliCheckService.checkGitHub());
-ipcMain.handle('cli:checkVercel', () => cliCheckService.checkVercel());
-ipcMain.handle('cli:checkSupabase', () => cliCheckService.checkSupabase());
-
-// IPC Handler - Save Vercel token directly to config
-ipcMain.handle('cli:saveVercelToken', async (_, token: string) => {
-  const fs = await import('fs/promises');
-  const path = await import('path');
-  const os = await import('os');
-
-  const vercelDir = path.join(os.homedir(), '.vercel');
-  const authFile = path.join(vercelDir, 'auth.json');
-
-  try {
-    // Create .vercel directory if it doesn't exist
-    await fs.mkdir(vercelDir, { recursive: true });
-
-    // Write auth.json with the token
-    // Vercel CLI expects this format
-    const authData = {
-      token: token.trim()
-    };
-
-    await fs.writeFile(authFile, JSON.stringify(authData, null, 2), { encoding: 'utf-8', mode: 0o600 });
-    console.log('[cli:saveVercelToken] Token saved to', authFile);
-    return { success: true };
-  } catch (err) {
-    console.error('[cli:saveVercelToken] Failed to save token:', err);
-    throw err;
-  }
-});
 
 // IPC Handlers - Claude Code
 ipcMain.handle('claude:spawn', (event, projectPath, prompt) => {
@@ -240,14 +224,14 @@ ipcMain.handle('claude:spawnInteractive', (event, projectPath) => {
     safeSend('claude:exit', data);
   });
 });
-ipcMain.handle('claude:chat', async (event, projectPath, prompt) => {
+ipcMain.handle('claude:chat', async (event, projectPath, prompt, inactivityTimeoutMs?, chatId?) => {
   console.log('[main.ts] claude:chat IPC handler called');
   console.log('[main.ts] projectPath:', projectPath);
   console.log('[main.ts] prompt length:', prompt?.length);
   try {
     const result = await claudeCodeService.chat(projectPath, prompt, (content) => {
       safeSend('claude:chatOutput', content);
-    });
+    }, inactivityTimeoutMs, chatId);
     console.log('[main.ts] claude:chat completed, result length:', result?.length);
     return result;
   } catch (err) {
@@ -258,7 +242,7 @@ ipcMain.handle('claude:chat', async (event, projectPath, prompt) => {
 ipcMain.handle('claude:sendInput', (_, sessionId, input) => claudeCodeService.sendInput(sessionId, input));
 ipcMain.handle('claude:resize', (_, sessionId, cols, rows) => claudeCodeService.resize(sessionId, cols, rows));
 ipcMain.handle('claude:kill', (_, sessionId) => claudeCodeService.kill(sessionId));
-ipcMain.handle('claude:cancelChat', () => claudeCodeService.cancelChat());
+ipcMain.handle('claude:cancelChat', (_, chatId?) => claudeCodeService.cancelChat(chatId));
 
 // Completion detection IPC handlers
 ipcMain.handle('claude:enableCompletionDetection', (_, sessionId: string) => {
@@ -272,23 +256,6 @@ ipcMain.handle('claude:resetCompletionDetection', (_, sessionId: string) => {
 });
 ipcMain.handle('claude:confirmCompletion', (_, sessionId: string) => {
   claudeCodeService.disableCompletionDetection(sessionId);
-});
-
-// IPC Handlers - Vercel
-ipcMain.handle('vercel:deploy', (event, projectPath, envVars) => {
-  return vercelService.deploy(projectPath, envVars, (data) => {
-    safeSend('vercel:output', data);
-  });
-});
-
-ipcMain.handle('vercel:getProjectConfig', (_, projectPath: string) => {
-  return vercelService.getProjectConfig(projectPath);
-});
-ipcMain.handle('vercel:getToken', () => {
-  return vercelService.getToken();
-});
-ipcMain.handle('vercel:addEnvVars', (_, projectPath: string, envVars: Record<string, string>) => {
-  return vercelService.addEnvVars(projectPath, envVars);
 });
 
 // IPC Handlers - GitHub
@@ -372,39 +339,7 @@ ipcMain.handle('github:getWorkflowRuns', (_, projectPath: string, limit?: number
 ipcMain.handle('github:writeWorkflowFile', (_, projectPath: string, content: string) => {
   return githubService.writeWorkflowFile(projectPath, content);
 });
-
-// IPC Handlers - Supabase
-ipcMain.handle('supabase:getOrganizations', () => {
-  return supabaseService.getOrganizations();
-});
-ipcMain.handle('supabase:getProjects', () => {
-  return supabaseService.getProjects();
-});
-ipcMain.handle('supabase:getProjectKeys', (_event, ref) => {
-  return supabaseService.getProjectKeys(ref);
-});
-ipcMain.handle('supabase:createProject', (event, name, orgId) => {
-  return supabaseService.createProject(name, orgId, (data) => {
-    safeSend('supabase:output', data);
-  });
-});
-ipcMain.handle('supabase:runMigrations', (event, projectPath, supabaseRef) => {
-  return supabaseService.runMigrations(projectPath, supabaseRef, (data) => {
-    safeSend('supabase:output', data);
-  });
-});
-ipcMain.handle('supabase:fetchOpenApiSpec', (_, supabaseUrl: string, serviceKey: string) => {
-  return supabaseService.fetchOpenApiSpec(supabaseUrl, serviceKey);
-});
-ipcMain.handle('supabase:getSchemaTableInfo', (_, ref: string, schema?: string) => {
-  return supabaseService.getSchemaTableInfo(ref, schema);
-});
-ipcMain.handle('supabase:dropSchema', (_, ref: string, schema: string) => {
-  return supabaseService.dropSchema(ref, schema);
-});
-ipcMain.handle('supabase:deleteSupabaseProject', (_, ref: string) => {
-  return supabaseService.deleteSupabaseProject(ref);
-});
+ipcMain.handle('github:deleteRepo', (_, repoUrl: string) => githubService.deleteRepo(repoUrl));
 
 // Register modular IPC handlers
 registerShellHandlers({

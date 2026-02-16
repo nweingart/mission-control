@@ -1,29 +1,29 @@
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, renameSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 
-import type { Config, Project, Task, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapFinding, GapAnalysis } from '../../src/types/index';
+import type { Config, Project, Task, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapFinding, GapAnalysis, GamificationStats } from '../../src/types/index';
 
 export class StorageService {
-  private kilnDir: string;
+  private houstonDir: string;
   private projectsDir: string;
   private configPath: string;
   private defaultDevelopmentPath: string;
 
   constructor() {
     const homeDir = app.getPath('home');
-    this.kilnDir = join(homeDir, '.kiln');
-    this.projectsDir = join(this.kilnDir, 'projects');
-    this.configPath = join(this.kilnDir, 'config.json');
-    this.defaultDevelopmentPath = join(homeDir, 'development', 'kiln');
+    this.houstonDir = join(homeDir, '.houston');
+    this.projectsDir = join(this.houstonDir, 'projects');
+    this.configPath = join(this.houstonDir, 'config.json');
+    this.defaultDevelopmentPath = join(homeDir, 'development', 'houston');
 
     this.ensureDirectories();
   }
 
   private ensureDirectories(): void {
-    if (!existsSync(this.kilnDir)) {
-      mkdirSync(this.kilnDir, { recursive: true });
+    if (!existsSync(this.houstonDir)) {
+      mkdirSync(this.houstonDir, { recursive: true });
     }
     if (!existsSync(this.projectsDir)) {
       mkdirSync(this.projectsDir, { recursive: true });
@@ -205,19 +205,24 @@ export class StorageService {
       idea,
     };
 
-    // Create project directory in Kiln storage
-    const kilnProjectDir = join(this.projectsDir, slug);
-    mkdirSync(kilnProjectDir, { recursive: true });
+    // Create project directory in Houston storage
+    const houstonProjectDir = join(this.projectsDir, slug);
+    mkdirSync(houstonProjectDir, { recursive: true });
 
     // Create project directory in development folder
     mkdirSync(projectPath, { recursive: true });
 
     // Save meta.json atomically
-    const metaPath = join(kilnProjectDir, 'meta.json');
+    const metaPath = join(houstonProjectDir, 'meta.json');
     this.atomicWriteFile(metaPath, JSON.stringify(project, null, 2));
 
     // Initialize empty tasks.json
     this.saveTasks(slug, []);
+
+    // Mark free project as used
+    if (!config.freeProjectUsed) {
+      this.saveConfig({ ...config, freeProjectUsed: true });
+    }
 
     return project;
   }
@@ -237,22 +242,22 @@ export class StorageService {
     return updated;
   }
 
-  deleteProject(slug: string, deleteGeneratedCode: boolean = true): void {
+  async deleteProject(slug: string, deleteGeneratedCode: boolean = true): Promise<void> {
     // Get project info first to find the generated code path
     const project = this.getProject(slug);
 
-    // Delete generated code directory if requested and project exists
+    // Move generated code directory to Trash if requested and project exists
     if (deleteGeneratedCode && project?.projectPath) {
       if (existsSync(project.projectPath)) {
         try {
-          rmSync(project.projectPath, { recursive: true, force: true });
+          await shell.trashItem(project.projectPath);
         } catch (error) {
-          console.error(`Failed to delete generated code at ${project.projectPath}:`, error);
+          console.error(`Failed to trash project folder at ${project.projectPath}:`, error);
         }
       }
     }
 
-    // Delete Kiln metadata directory
+    // Delete Houston metadata directory (internal data, not user files)
     const projectDir = join(this.projectsDir, slug);
     if (existsSync(projectDir)) {
       rmSync(projectDir, { recursive: true, force: true });
@@ -412,6 +417,20 @@ export class StorageService {
     const path = join(this.projectsDir, slug, 'gap-analysis.json');
     this.createBackup(path);
     this.atomicWriteFile(path, JSON.stringify(analyses, null, 2));
+  }
+
+  // Gamification methods
+  getGamification(slug: string): GamificationStats | null {
+    const path = join(this.projectsDir, slug, 'gamification.json');
+    if (!existsSync(path)) return null;
+    const content = readFileSync(path, 'utf-8');
+    return this.safeJsonParse<GamificationStats>(content, path);
+  }
+
+  saveGamification(slug: string, stats: GamificationStats): void {
+    const path = join(this.projectsDir, slug, 'gamification.json');
+    this.createBackup(path);
+    this.atomicWriteFile(path, JSON.stringify(stats, null, 2));
   }
 
   // Helper methods

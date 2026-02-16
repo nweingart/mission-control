@@ -8,6 +8,7 @@ import {
   buildGapMetaReviewPrompt,
   extractJsonObject,
 } from '../utils/gap-helpers';
+import { resilientChat } from '../utils/resilient-chat';
 
 type PreviewStatus = 'starting' | 'running' | 'stopped' | 'error';
 type SidebarTab = 'preview' | 'env' | 'files' | 'planning' | 'settings';
@@ -17,11 +18,7 @@ interface EnvVar {
   value: string;
 }
 
-// Default env vars for a typical Next.js + Supabase project
-const DEFAULT_ENV_VARS: EnvVar[] = [
-  { key: 'NEXT_PUBLIC_SUPABASE_URL', value: '' },
-  { key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY', value: '' },
-];
+const DEFAULT_ENV_VARS: EnvVar[] = [];
 
 export default function PreviewScreen() {
   const {
@@ -257,7 +254,8 @@ export default function PreviewScreen() {
       const fixPrompt = buildGapFixPrompt(allFindings);
 
       // Ask Claude to fix
-      await window.api.claude.chat(projectPath, fixPrompt);
+      const { promise: fixPromise } = resilientChat.long(projectPath, fixPrompt);
+      await fixPromise;
 
       // Commit changes
       let fixCommitHash: string | undefined;
@@ -279,7 +277,8 @@ export default function PreviewScreen() {
       }
 
       // Re-run gap analysis
-      const reResponse = await window.api.claude.chat(projectPath, buildGapAnalysisPrompt(prd));
+      const { promise: rePromise } = resilientChat.long(projectPath, buildGapAnalysisPrompt(prd));
+      const reResponse = await rePromise;
       const reJson = extractJsonObject(reResponse);
       let reParsed: { grade: number; summary: string; findings: GapFinding[]; remainingItems: string[] };
       if (reJson) {
@@ -293,7 +292,8 @@ export default function PreviewScreen() {
       }
 
       // Meta-review
-      const metaResponse = await window.api.claude.chat(projectPath, buildGapMetaReviewPrompt(prd, reJson || reResponse));
+      const { promise: metaPromise } = resilientChat.standard(projectPath, buildGapMetaReviewPrompt(prd, reJson || reResponse));
+      const metaResponse = await metaPromise;
       const metaJson = extractJsonObject(metaResponse);
       let metaParsed: { validatedGrade: number; summary: string; adjustedFindings: GapFinding[]; remainingItems: string[] };
       if (metaJson) {
@@ -632,49 +632,6 @@ export default function PreviewScreen() {
                   </svg>
                   <span className="font-medium">Add Variable</span>
                 </button>
-
-                {/* Supabase status */}
-                {currentProject?.supabaseRef ? (
-                  <div className="mt-6 p-4 bg-success/10 border border-success/30">
-                    <div className="flex items-center space-x-3">
-                      <svg className="w-6 h-6 text-success flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      <div>
-                        <h4 className="font-medium text-success">Supabase Connected</h4>
-                        <p className="text-sm text-success mt-0.5">
-                          Project auto-provisioned — credentials are pre-filled above.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-6 p-4 bg-success/10 border border-success/30">
-                    <div className="flex items-start space-x-3">
-                      <svg className="w-6 h-6 text-success flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div>
-                        <h4 className="font-medium text-success">Need a Supabase project?</h4>
-                        <p className="text-sm text-success mt-1">
-                          Create a free Supabase project to get your database URL and anon key.
-                        </p>
-                        <button
-                          onClick={() => window.api.shell.openExternal('https://supabase.com/dashboard')}
-                          className="mt-2 inline-flex items-center space-x-1 text-sm font-medium text-success hover:text-success underline"
-                        >
-                          <span>Go to Supabase Dashboard</span>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </button>
-                        <p className="text-xs text-success mt-2">
-                          After creating a project, find your credentials in Project Settings → API
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {/* Help text */}
                 <div className="mt-4 p-4 bg-accent/10 border border-accent/30">

@@ -196,114 +196,6 @@ describe('CLICheckService', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // checkVercel
-  // ---------------------------------------------------------------------------
-  describe('checkVercel', () => {
-    it('returns not installed when which fails', async () => {
-      setupExec([
-        ['which vercel', { error: new Error('not found') }],
-      ]);
-
-      const result = await service.checkVercel();
-      expect(result).toEqual({ installed: false, authenticated: false });
-    });
-
-    it('returns authenticated when whoami returns a valid username', async () => {
-      setupExec([
-        ['which vercel', { stdout: '/usr/local/bin/vercel' }],
-        ['vercel whoami', { stdout: 'johndoe\n' }],
-      ]);
-
-      const result = await service.checkVercel();
-      expect(result).toEqual({ installed: true, authenticated: true });
-    });
-
-    it('returns not authenticated when output includes "not logged in"', async () => {
-      setupExec([
-        ['which vercel', { stdout: '/usr/local/bin/vercel' }],
-        ['vercel whoami', { stdout: 'not logged in\n' }],
-      ]);
-
-      const result = await service.checkVercel();
-      expect(result).toEqual({ installed: true, authenticated: false });
-    });
-
-    it('returns not authenticated when output includes "Error"', async () => {
-      setupExec([
-        ['which vercel', { stdout: '/usr/local/bin/vercel' }],
-        ['vercel whoami', { stdout: 'Error: some problem occurred' }],
-      ]);
-
-      const result = await service.checkVercel();
-      expect(result).toEqual({ installed: true, authenticated: false });
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // checkSupabase
-  // ---------------------------------------------------------------------------
-  describe('checkSupabase', () => {
-    it('returns not installed when which fails', async () => {
-      setupExec([
-        ['which supabase', { error: new Error('not found') }],
-      ]);
-
-      const result = await service.checkSupabase();
-      expect(result).toEqual({ installed: false, authenticated: false });
-    });
-
-    it('returns authenticated when projects list succeeds without auth errors', async () => {
-      setupExec([
-        ['which supabase', { stdout: '/usr/local/bin/supabase' }],
-        ['supabase projects list', { stdout: 'ID | NAME\n123 | my-project' }],
-      ]);
-
-      const result = await service.checkSupabase();
-      expect(result).toEqual({ installed: true, authenticated: true });
-    });
-
-    it('returns not authenticated when output contains "Access token not provided"', async () => {
-      setupExec([
-        ['which supabase', { stdout: '/usr/local/bin/supabase' }],
-        ['supabase projects list', { stdout: 'Error: Access token not provided' }],
-      ]);
-
-      const result = await service.checkSupabase();
-      expect(result).toEqual({ installed: true, authenticated: false });
-    });
-
-    it('returns not authenticated when output contains "not logged in"', async () => {
-      setupExec([
-        ['which supabase', { stdout: '/usr/local/bin/supabase' }],
-        ['supabase projects list', { stdout: 'You are not logged in' }],
-      ]);
-
-      const result = await service.checkSupabase();
-      expect(result).toEqual({ installed: true, authenticated: false });
-    });
-
-    it('returns not authenticated when error message contains auth phrases', async () => {
-      setupExec([
-        ['which supabase', { stdout: '/usr/local/bin/supabase' }],
-        ['supabase projects list', { error: new Error('Unauthorized: invalid token') }],
-      ]);
-
-      const result = await service.checkSupabase();
-      expect(result).toEqual({ installed: true, authenticated: false });
-    });
-
-    it('returns not authenticated on non-auth errors (e.g. network timeout)', async () => {
-      setupExec([
-        ['which supabase', { stdout: '/usr/local/bin/supabase' }],
-        ['supabase projects list', { error: new Error('ETIMEDOUT') }],
-      ]);
-
-      const result = await service.checkSupabase();
-      expect(result).toEqual({ installed: true, authenticated: false });
-    });
-  });
-
-  // ---------------------------------------------------------------------------
   // checkAll
   // ---------------------------------------------------------------------------
   describe('checkAll', () => {
@@ -315,11 +207,6 @@ describe('CLICheckService', () => {
         // gh
         ['which gh', { stdout: '/usr/local/bin/gh' }],
         ['gh auth status', { stdout: 'Logged in to github.com' }],
-        // vercel
-        ['which vercel', { stdout: '/usr/local/bin/vercel' }],
-        ['vercel whoami', { stdout: 'myuser' }],
-        // supabase
-        ['which supabase', { error: new Error('not found') }],
       ]);
 
       const result = await service.checkAll();
@@ -327,8 +214,6 @@ describe('CLICheckService', () => {
       expect(result).toEqual({
         claude: { installed: true, authenticated: true },
         github: { installed: true, authenticated: true },
-        vercel: { installed: true, authenticated: true },
-        supabase: { installed: false, authenticated: false },
       });
     });
   });

@@ -27,7 +27,7 @@ export class ClaudeCodeService {
   private completionStates: Map<string, CompletionState> = new Map();
   private isProcessing: boolean = false;
   private activeSessionId: string | null = null;
-  private activeChatChild: ReturnType<typeof import('child_process').spawn> | null = null;
+  private activeChatChildren: Map<string, ReturnType<typeof import('child_process').spawn>> = new Map();
 
   spawn(
     projectPath: string,
@@ -61,23 +61,22 @@ export class ClaudeCodeService {
       const fs = require('fs');
       const os = require('os');
       const path = require('path');
-      const tempFile = path.join(os.tmpdir(), `kiln-prompt-${sessionId}.txt`);
+      const tempFile = path.join(os.tmpdir(), `houston-prompt-${sessionId}.txt`);
       fs.writeFileSync(tempFile, prompt, 'utf-8');
 
       console.log('[ClaudeCode.spawn] Spawning bash --norc --noprofile (skip profile garbage)');
 
       // Skip profile scripts to avoid garbage output
+      // Remove CLAUDECODE env var to avoid "nested session" error when launched from Claude Code
+      const spawnEnv = { ...process.env, PATH: fullPath, TERM: 'xterm-256color', FORCE_COLOR: '1' };
+      delete spawnEnv.CLAUDECODE;
+
       const ptyProcess = pty.spawn('/bin/bash', ['--norc', '--noprofile'], {
         name: 'xterm-256color',
         cols: 120,
         rows: 30,
         cwd: projectPath,
-        env: {
-          ...process.env,
-          PATH: fullPath,
-          TERM: 'xterm-256color',
-          FORCE_COLOR: '1',
-        },
+        env: spawnEnv,
       });
       console.log('[ClaudeCode.spawn] PTY spawned, pid:', ptyProcess.pid);
 
@@ -127,18 +126,16 @@ export class ClaudeCodeService {
       // Spawn interactive bash, then exec claude
       // Use smaller default dimensions - will be resized by terminal component
       // 80x24 is standard terminal size and closer to half-width layout
+      // Remove CLAUDECODE env var to avoid "nested session" error when launched from Claude Code
+      const interactiveEnv = { ...process.env, PATH: fullPath, TERM: 'xterm-256color', FORCE_COLOR: '1', BASH_SILENCE_DEPRECATION_WARNING: '1' };
+      delete interactiveEnv.CLAUDECODE;
+
       const ptyProcess = pty.spawn('/bin/bash', ['--norc', '--noprofile'], {
         name: 'xterm-256color',
         cols: 80,
         rows: 24,
         cwd: projectPath,
-        env: {
-          ...process.env,
-          PATH: fullPath,
-          TERM: 'xterm-256color',
-          FORCE_COLOR: '1',
-          BASH_SILENCE_DEPRECATION_WARNING: '1',
-        },
+        env: interactiveEnv,
       });
 
       const result = this.setupSession(sessionId, ptyProcess, projectPath, onOutput, onExit);
@@ -399,7 +396,8 @@ export class ClaudeCodeService {
     projectPath: string,
     prompt: string,
     onOutput?: (content: string) => void,
-    inactivityTimeoutMs: number = 5 * 60 * 1000 // 5 minutes of silence before killing
+    inactivityTimeoutMs: number = 10 * 60 * 1000, // 10 minutes of silence before killing
+    chatId: string = `chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   ): Promise<string> {
     console.log('[ClaudeCode.chat] Starting chat request');
     console.log('[ClaudeCode.chat] projectPath:', projectPath);
@@ -412,7 +410,7 @@ export class ClaudeCodeService {
 
     // Write prompt to a temp file to avoid shell escaping issues
     const tempDir = os.tmpdir();
-    const tempFile = path.join(tempDir, `kiln-prompt-${Date.now()}.txt`);
+    const tempFile = path.join(tempDir, `houston-prompt-${Date.now()}.txt`);
     fs.writeFileSync(tempFile, prompt, 'utf-8');
     console.log('[ClaudeCode.chat] Wrote prompt to temp file:', tempFile);
 
@@ -435,16 +433,17 @@ export class ClaudeCodeService {
       const { spawn } = require('child_process');
 
       // Run: cat tempfile | claude --print --dangerously-skip-permissions
+      // Remove CLAUDECODE env var to avoid "nested session" error when launched from Claude Code
+      const cleanEnv = { ...process.env, PATH: fullPath };
+      delete cleanEnv.CLAUDECODE;
+
       const child = spawn('bash', ['-c', `cat "${tempFile}" | claude --print --dangerously-skip-permissions`], {
         cwd: projectPath,
-        env: {
-          ...process.env,
-          PATH: fullPath,
-        },
+        env: cleanEnv,
       });
 
-      this.activeChatChild = child;
-      console.log('[ClaudeCode.chat] Spawned child process, pid:', child.pid);
+      this.activeChatChildren.set(chatId, child);
+      console.log('[ClaudeCode.chat] Spawned child process, pid:', child.pid, 'chatId:', chatId);
 
       // Activity-based timeout: resets every time stdout/stderr produces output.
       // Only kills the process if it goes silent for inactivityTimeoutMs.
@@ -485,7 +484,7 @@ export class ClaudeCodeService {
       });
 
       child.on('close', (code: number) => {
-        this.activeChatChild = null;
+        this.activeChatChildren.delete(chatId);
         console.log('[ClaudeCode.chat] Process closed with code:', code);
         console.log('[ClaudeCode.chat] stdout length:', stdout.length);
 
@@ -515,7 +514,7 @@ export class ClaudeCodeService {
       });
 
       child.on('error', (err: Error) => {
-        this.activeChatChild = null;
+        this.activeChatChildren.delete(chatId);
         console.error('[ClaudeCode.chat] Process error:', err);
         // Clean up temp file
         try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
@@ -536,15 +535,20 @@ export class ClaudeCodeService {
    * Kill the active chat child process (if any).
    * Used when the user navigates away mid-build to prevent orphaned processes.
    */
-  cancelChat(): void {
-    if (this.activeChatChild) {
-      console.log('[ClaudeCode.cancelChat] Killing active chat process');
-      try {
-        this.activeChatChild.kill();
-      } catch (err) {
-        console.error('[ClaudeCode.cancelChat] Error killing chat process:', err);
+  cancelChat(chatId?: string): void {
+    if (chatId) {
+      const child = this.activeChatChildren.get(chatId);
+      if (child) {
+        console.log('[ClaudeCode.cancelChat] Killing chat:', chatId);
+        try { child.kill(); } catch {}
+        this.activeChatChildren.delete(chatId);
       }
-      this.activeChatChild = null;
+    } else {
+      console.log('[ClaudeCode.cancelChat] Killing all active chat processes:', this.activeChatChildren.size);
+      for (const [id, child] of this.activeChatChildren) {
+        try { child.kill(); } catch {}
+      }
+      this.activeChatChildren.clear();
     }
   }
 
@@ -598,7 +602,7 @@ export class ClaudeCodeService {
       /^exit\s*$/i,
       /^logout\s*$/i,
       /^ulogout\s*$/i,
-      /KILN_CHAT_EOF/,
+      /HOUSTON_CHAT_EOF/,
       // Shell errors
       /^date:\s+illegal/i,
       /^bash:\s+.*:\s+command not found/i,

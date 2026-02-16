@@ -6,7 +6,7 @@ import type { Screen } from '../types';
 const POLL_INTERVAL = 30_000; // 30 seconds
 
 // Screens where we don't need to poll (they handle their own CLI setup)
-const EXEMPT_SCREENS = new Set(['onboarding', 'setup-workspace', 'setup-deploy']);
+const EXEMPT_SCREENS = new Set(['onboarding']);
 
 // Screens that have their own PreflightGateOverlay — don't block globally
 const PREFLIGHT_GATE_SCREENS = new Set<Screen>(['building', 'deploying', 'prd-review']);
@@ -49,7 +49,7 @@ export function useCLIMonitor() {
 
   // Derive which services are required for the current screen
   const stepKey = SCREEN_TO_STEP[screen];
-  const requiredServices: ServiceKey[] = stepKey ? (STEP_REQUIREMENTS[stepKey] || []) : ['claude', 'github', 'vercel', 'supabase'];
+  const requiredServices: ServiceKey[] = stepKey ? (STEP_REQUIREMENTS[stepKey] || []) : ['claude', 'github'];
 
   // Check only required services
   const requiredConnected = cliStatus

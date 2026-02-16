@@ -6,7 +6,7 @@ interface CompletionToastProps {
 
 export default function CompletionToast({ countdown, onCancel, onAdvanceNow }: CompletionToastProps) {
   return (
-    <div className="absolute bottom-4 left-4 right-4 bg-surface-card border border-success/50 p-4 z-10">
+    <div className="absolute bottom-4 left-4 right-4 bg-surface-card border-l-4 border-l-success border border-border p-4 z-10">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <svg className="w-5 h-5 text-success flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">

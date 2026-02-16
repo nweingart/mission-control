@@ -2,6 +2,9 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import Chat from './Chat';
 import { useAppStore } from '../store/useAppStore';
 import { extractBacklogSuggestions } from '../utils/planning';
+import { deriveHoustonMood, getMoodButtonClasses } from '../utils/houstonMood';
+import { buildErrorDiagnostic } from '../utils/houstonGreeting';
+import { resilientChat, isCancelError } from '../utils/resilient-chat';
 import type { ChatMessage } from '../types';
 import houstonAvatar from '../assets/houston-avatar.webp';
 
@@ -16,11 +19,26 @@ function makeWelcomeMessage(): ChatMessage {
   };
 }
 
-// Module-level state — survives unmount/remount across screens
-let _messages: ChatMessage[] = [];
+// Per-project chat state — survives unmount/remount, scoped by project slug
+interface HoustonProjectChat {
+  messages: ChatMessage[];
+  hasOpened: boolean;
+}
+
+const _chatsByProject = new Map<string, HoustonProjectChat>();
+
+function getProjectChat(slug: string): HoustonProjectChat {
+  let chat = _chatsByProject.get(slug);
+  if (!chat) {
+    chat = { messages: [], hasOpened: false };
+    _chatsByProject.set(slug, chat);
+  }
+  return chat;
+}
+
+// UI-chrome state stays global (panel open/expanded is not per-project)
 let _isOpen = false;
 let _isExpanded = false;
-let _hasOpened = false;
 
 const PRD_CHAR_LIMIT = 4000;
 
@@ -115,12 +133,27 @@ ${conversationLines ? `CONVERSATION:\n${conversationLines}\n` : ''}User: ${userM
 }
 
 export default function Houston() {
+  // Read currentProject first — slug drives per-project state lookup
+  const currentProject = useAppStore((s) => s.currentProject);
+  const gamificationEvent = useAppStore((s) => s.gamificationEvent);
+
+  const slug = currentProject?.slug ?? null;
+  const projectChat = slug ? getProjectChat(slug) : null;
+
   const [isOpen, _setIsOpen] = useState(_isOpen);
   const [isExpanded, _setIsExpanded] = useState(_isExpanded);
-  const [messages, _setMessages] = useState<ChatMessage[]>(_messages);
+  const [messages, _setMessages] = useState<ChatMessage[]>(projectChat?.messages ?? []);
   const [isLoading, setIsLoading] = useState(false);
   const messagesRef = useRef<ChatMessage[]>(messages);
   messagesRef.current = messages;
+
+  // Swap messages when the project slug changes (useState initializer only runs on mount)
+  const prevSlugRef = useRef<string | null>(slug);
+  useEffect(() => {
+    if (slug === prevSlugRef.current) return;
+    prevSlugRef.current = slug;
+    _setMessages(slug ? getProjectChat(slug).messages : []);
+  }, [slug]);
 
   // Wrapped setters that sync back to module-level state
   const setIsOpen = useCallback((updater: boolean | ((prev: boolean) => boolean)) => {
@@ -142,38 +175,103 @@ export default function Houston() {
   const setMessages = useCallback((updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
     _setMessages((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      _messages = next;
+      if (slug) {
+        getProjectChat(slug).messages = next;
+      }
       return next;
     });
-  }, []);
+  }, [slug]);
+  const buildTaskPhase = useAppStore((s) => s.buildTaskPhase);
+  const buildSessionActive = useAppStore((s) => s.buildSessionActive);
 
-  const currentProject = useAppStore((s) => s.currentProject);
+  // Greeting flag: true for 3s when project loads
+  const [isGreeting, setIsGreeting] = useState(false);
+  const prevProjectRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const slug = currentProject?.slug ?? null;
+    if (slug && prevProjectRef.current !== slug) {
+      setIsGreeting(true);
+      const timer = setTimeout(() => setIsGreeting(false), 3000);
+      prevProjectRef.current = slug;
+      return () => clearTimeout(timer);
+    }
+    if (!slug) prevProjectRef.current = null;
+  }, [currentProject?.slug]);
+
+  // Derive mood
+  const mood = deriveHoustonMood({
+    gamificationEvent,
+    buildTaskPhase,
+    buildSessionActive,
+    isLoading,
+    isGreeting,
+  });
+  const moodClasses = getMoodButtonClasses(mood);
+
+  // Auto-open Houston when a build error occurs with a diagnostic message
+  const houstonErrorContext = useAppStore((s) => s.houstonErrorContext);
+  const clearHoustonErrorContext = useAppStore((s) => s.clearHoustonErrorContext);
+
+  useEffect(() => {
+    if (!houstonErrorContext || !slug) return;
+
+    // Ensure project chat is initialized
+    const chat = getProjectChat(slug);
+    if (!chat.hasOpened) {
+      chat.hasOpened = true;
+      setMessages([makeWelcomeMessage()]);
+    }
+
+    // Inject diagnostic message
+    const diagnosticMsg: ChatMessage = {
+      id: `houston-diag-${houstonErrorContext.timestamp}`,
+      role: 'assistant',
+      content: buildErrorDiagnostic(houstonErrorContext.taskTitle, houstonErrorContext.errorHint),
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, diagnosticMsg]);
+
+    // Open the panel
+    setIsOpen(true);
+
+    // Clear the error context so it doesn't re-trigger
+    clearHoustonErrorContext();
+  }, [houstonErrorContext, slug, setIsOpen, setMessages, clearHoustonErrorContext]);
 
   // Expose window.openHouston() so other screens can open it
   useEffect(() => {
     (window as unknown as { openHouston?: () => void }).openHouston = () => {
-      if (!_hasOpened) {
-        _hasOpened = true;
-        setMessages([makeWelcomeMessage()]);
+      if (slug) {
+        const chat = getProjectChat(slug);
+        if (!chat.hasOpened) {
+          chat.hasOpened = true;
+          setMessages([makeWelcomeMessage()]);
+        }
       }
       setIsOpen(true);
     };
     return () => {
       delete (window as unknown as { openHouston?: () => void }).openHouston;
     };
-  }, [setIsOpen, setMessages]);
+  }, [slug, setIsOpen, setMessages]);
 
   const handleToggle = useCallback(() => {
     setIsOpen((prev) => {
       const next = !prev;
-      // Add welcome message on first open
-      if (next && !_hasOpened) {
-        _hasOpened = true;
-        setMessages([makeWelcomeMessage()]);
+      // Add welcome message on first open per project
+      if (next && slug) {
+        const chat = getProjectChat(slug);
+        if (!chat.hasOpened) {
+          chat.hasOpened = true;
+          setMessages([makeWelcomeMessage()]);
+        }
       }
       return next;
     });
-  }, [setIsOpen, setMessages]);
+  }, [slug, setIsOpen, setMessages]);
+
+  const cancelRef = useRef<(() => void) | null>(null);
 
   const handleSend = useCallback(async (content: string) => {
     if (!currentProject) return;
@@ -190,7 +288,10 @@ export default function Houston() {
 
     try {
       const prompt = await buildPrompt(content, [...messagesRef.current, userMsg]);
-      const response = await window.api.claude.chat(currentProject.projectPath, prompt);
+      const { promise, cancel } = resilientChat.standard(currentProject.projectPath, prompt);
+      cancelRef.current = cancel;
+      const response = await promise;
+      cancelRef.current = null;
 
       const assistantMsg: ChatMessage = {
         id: `houston-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -221,6 +322,9 @@ export default function Houston() {
         setMessages((prev) => [...prev, confirmMsg]);
       }
     } catch (err) {
+      cancelRef.current = null;
+      if (isCancelError(err)) return;
+
       const errorMsg: ChatMessage = {
         id: `houston-err-${Date.now()}`,
         role: 'assistant',
@@ -234,7 +338,8 @@ export default function Houston() {
   }, [currentProject, setMessages]);
 
   const handleCancel = useCallback(() => {
-    window.api.claude.cancelChat().catch(() => {});
+    cancelRef.current?.();
+    cancelRef.current = null;
     setIsLoading(false);
   }, []);
 
@@ -308,7 +413,7 @@ export default function Houston() {
       {/* Floating button (always visible) */}
       <button
         onClick={handleToggle}
-        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 overflow-hidden border-[3px] border-spectrum-blue hover:shadow-[0_0_14px_rgba(82,158,214,0.6)]"
+        className={`fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 overflow-hidden border-[3px] ${moodClasses} hover:shadow-[0_0_14px_rgba(82,158,214,0.6)]`}
         title="Ask Houston"
       >
         <img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />

@@ -173,7 +173,7 @@ describe('GitHubService', () => {
 
       expect(mockWriteFileSync).toHaveBeenCalledTimes(1);
       const written: string = mockWriteFileSync.mock.calls[0][1];
-      expect(written).toContain('# Added by Kiln');
+      expect(written).toContain('# Added by Houston');
       expect(written).toContain('.next/');
       expect(written).toContain('.env');
       expect(written).toContain('.vercel/');

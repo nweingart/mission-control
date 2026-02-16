@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import type { ProjectStatus, Screen } from '../types';
+import StreakDisplay from './StreakDisplay';
+import GamificationToast from './GamificationToast';
+import HoustonGreetingToast from './HoustonGreetingToast';
+import ToastNotification from './ToastNotification';
 
 type Tab = 'plan' | 'docs' | 'ship' | 'data' | 'settings';
 
@@ -124,6 +128,12 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           {currentProject.name}
         </span>
 
+        {/* Divider */}
+        <div className="w-px h-5 bg-border" />
+
+        {/* Gamification stats */}
+        <StreakDisplay />
+
         {/* Spacer */}
         <div className="flex-1" />
 
@@ -144,13 +154,18 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         </button>
       </nav>
 
+      {/* Toasts */}
+      <GamificationToast />
+      <HoustonGreetingToast />
+      <ToastNotification />
+
       {/* Child screen */}
-      <div className="flex-1 overflow-hidden flex flex-col">
+      <div className="flex-1 overflow-hidden flex flex-col pb-20">
         {children}
       </div>
 
-      {/* Bottom Dock */}
-      <nav className="flex-shrink-0 border-t-2 border-border bg-surface-light">
+      {/* Floating Bottom Dock */}
+      <nav className="dock-bar">
         <div className="flex items-center justify-center gap-3 px-6 py-2">
           {dockItems.map((item) => {
             const isBuildItem = item.isBuild;
@@ -167,7 +182,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
                     handleDockClick(item.key as Tab);
                   }
                 }}
-                className={`group relative flex items-center justify-center w-10 h-10 rounded-lg transition-all duration-150 ${
+                className={`group relative flex flex-col items-center justify-center w-12 h-12 rounded-lg transition-all duration-150 ${
                   isActive
                     ? `${item.activeColor} scale-110`
                     : `${item.color} opacity-60 hover:opacity-100 hover:bg-surface-hover`
@@ -176,12 +191,12 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
                 <div className="w-5 h-5 flex items-center justify-center [&>svg]:w-5 [&>svg]:h-5">
                   {item.icon}
                 </div>
+                <span className="text-[10px] font-mono font-medium mt-0.5 leading-none">
+                  {item.label}
+                </span>
                 {isActive && (
                   <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-current" />
                 )}
-                <div className="absolute bottom-full mb-2 px-2.5 py-1 bg-ink text-surface-light text-[13px] font-mono font-semibold whitespace-nowrap rounded opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
-                  {item.label}
-                </div>
               </button>
             );
           })}

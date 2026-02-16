@@ -1,5 +1,5 @@
 {
-  "name": "kiln",
+  "name": "houston",
   "version": "1.0.0",
   "description": "Desktop app that takes users from idea to deployed MVP using Claude Code",
   "type": "module",
@@ -46,8 +46,8 @@
     "vitest": "^4.0.18"
   },
   "build": {
-    "appId": "com.kiln.app",
-    "productName": "Kiln",
+    "appId": "com.houston.app",
+    "productName": "Houston",
     "directories": {
       "output": "release"
     },

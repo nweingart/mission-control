@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import type { DeploymentRecord } from '../types';
+import HoustonCallout from '../components/HoustonCallout';
 
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
@@ -19,6 +20,7 @@ function StatusBadge({ status }: { status: DeploymentRecord['status'] }) {
     success: 'bg-success/15 text-success',
     failed: 'bg-error/15 text-error',
     deploying: 'bg-accent/15 text-accent',
+    watching: 'bg-accent/15 text-accent',
     pushing: 'bg-spectrum-blue/15 text-spectrum-blue',
   };
 
@@ -30,7 +32,7 @@ function StatusBadge({ status }: { status: DeploymentRecord['status'] }) {
 }
 
 export default function DeploymentsScreen() {
-  const { deployments, loadDeployments } = useAppStore();
+  const { deployments, loadDeployments, setScreen } = useAppStore();
 
   useEffect(() => {
     loadDeployments();
@@ -48,18 +50,11 @@ export default function DeploymentsScreen() {
             <h2 className="text-xl font-bold text-ink">Deployments</h2>
             <p className="text-xs text-ink-muted mt-0.5">No deployments yet</p>
           </div>
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 bg-surface flex items-center justify-center">
-              <svg className="w-8 h-8 text-ink-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-              </svg>
-            </div>
-            <h3 className="text-base font-sans font-semibold text-ink mb-2">No deployments yet</h3>
-            <p className="text-ink-muted text-sm max-w-sm">
-              Deployment history will appear here once your project is deployed to Vercel.
-            </p>
-          </div>
+          <HoustonCallout
+            message="Nothing launched yet."
+            ctaLabel="View Build"
+            onCtaClick={() => setScreen('building')}
+          />
         </div>
       </div>
     );
@@ -115,18 +110,6 @@ function DeploymentCard({ deployment }: { deployment: DeploymentRecord }) {
               </span>
             )}
           </div>
-        )}
-
-        {deployment.vercelUrl && (
-          <button
-            onClick={() => window.api.shell.openExternal(deployment.vercelUrl!)}
-            className="flex items-center gap-1.5 text-sm text-accent hover:text-accent transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-            <span className="text-xs font-mono truncate">{deployment.vercelUrl}</span>
-          </button>
         )}
 
         {deployment.githubRepoUrl && (

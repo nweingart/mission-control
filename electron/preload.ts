@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('api', {
     saveDeployments: (slug: string, deployments: unknown) => ipcRenderer.invoke('storage:saveDeployments', slug, deployments),
     getGapAnalysis: (slug: string) => ipcRenderer.invoke('storage:getGapAnalysis', slug),
     saveGapAnalysis: (slug: string, analyses: unknown) => ipcRenderer.invoke('storage:saveGapAnalysis', slug, analyses),
+    getGamification: (slug: string) => ipcRenderer.invoke('storage:getGamification', slug),
+    saveGamification: (slug: string, stats: unknown) => ipcRenderer.invoke('storage:saveGamification', slug, stats),
   },
 
   // CLI Check
@@ -84,9 +86,6 @@ contextBridge.exposeInMainWorld('api', {
     checkClaude: () => ipcRenderer.invoke('cli:checkClaude'),
     checkClaudeDeep: () => ipcRenderer.invoke('cli:checkClaudeDeep'),
     checkGitHub: () => ipcRenderer.invoke('cli:checkGitHub'),
-    checkVercel: () => ipcRenderer.invoke('cli:checkVercel'),
-    checkSupabase: () => ipcRenderer.invoke('cli:checkSupabase'),
-    saveVercelToken: (token: string) => ipcRenderer.invoke('cli:saveVercelToken', token),
   },
 
   // Claude Code
@@ -99,44 +98,21 @@ contextBridge.exposeInMainWorld('api', {
       console.log('[preload] claude.spawnInteractive called, projectPath:', projectPath);
       return ipcRenderer.invoke('claude:spawnInteractive', projectPath);
     },
-    chat: (projectPath: string, prompt: string) => {
-      console.log('[preload] claude.chat called');
-      console.log('[preload] projectPath:', projectPath);
-      console.log('[preload] prompt length:', prompt?.length);
-      const result = ipcRenderer.invoke('claude:chat', projectPath, prompt) as Promise<string>;
-      result.then(
-        (response) => console.log('[preload] claude.chat resolved, response length:', response?.length),
-        (error) => console.error('[preload] claude.chat rejected:', error)
-      );
-      return result;
-    },
+    chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) =>
+      ipcRenderer.invoke('claude:chat', projectPath, prompt, inactivityTimeoutMs, chatId) as Promise<string>,
     onOutput: (callback: OutputCallback) => createListener('claude:output', callback),
     onChatOutput: (callback: (content: string) => void) => createListener('claude:chatOutput', callback),
     onExit: (callback: ExitCallback) => createListener('claude:exit', callback),
     sendInput: (sessionId: string, input: string) => ipcRenderer.invoke('claude:sendInput', sessionId, input),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('claude:resize', sessionId, cols, rows),
     kill: (sessionId: string) => ipcRenderer.invoke('claude:kill', sessionId),
-    cancelChat: () => ipcRenderer.invoke('claude:cancelChat'),
+    cancelChat: (chatId?: string) => ipcRenderer.invoke('claude:cancelChat', chatId),
     enableCompletionDetection: (sessionId: string) => ipcRenderer.invoke('claude:enableCompletionDetection', sessionId),
     resetCompletionDetection: (sessionId: string) => ipcRenderer.invoke('claude:resetCompletionDetection', sessionId),
     confirmCompletion: (sessionId: string) => ipcRenderer.invoke('claude:confirmCompletion', sessionId),
     onCompletionDetected: (callback: (data: { sessionId: string }) => void) =>
       createListener('claude:completionDetected', callback),
     removeListeners: () => removeAllListeners('claude:'),
-  },
-
-  // Vercel
-  vercel: {
-    deploy: (projectPath: string, envVars?: Record<string, string>) =>
-      ipcRenderer.invoke('vercel:deploy', projectPath, envVars),
-    getProjectConfig: (projectPath: string) =>
-      ipcRenderer.invoke('vercel:getProjectConfig', projectPath),
-    getToken: () =>
-      ipcRenderer.invoke('vercel:getToken'),
-    addEnvVars: (projectPath: string, envVars: Record<string, string>) =>
-      ipcRenderer.invoke('vercel:addEnvVars', projectPath, envVars),
-    onOutput: (callback: OutputCallback) => createListener('vercel:output', callback),
-    removeListeners: () => removeAllListeners('vercel:'),
   },
 
   // GitHub
@@ -187,28 +163,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('github:getWorkflowRuns', projectPath, limit),
     writeWorkflowFile: (projectPath: string, content: string) =>
       ipcRenderer.invoke('github:writeWorkflowFile', projectPath, content),
+    deleteRepo: (repoUrl: string) => ipcRenderer.invoke('github:deleteRepo', repoUrl),
     onOutput: (callback: OutputCallback) => createListener('github:output', callback),
     removeListeners: () => removeAllListeners('github:'),
-  },
-
-  // Supabase
-  supabase: {
-    getOrganizations: () => ipcRenderer.invoke('supabase:getOrganizations'),
-    getProjects: () => ipcRenderer.invoke('supabase:getProjects'),
-    getProjectKeys: (ref: string) => ipcRenderer.invoke('supabase:getProjectKeys', ref),
-    createProject: (name: string, orgId: string) => ipcRenderer.invoke('supabase:createProject', name, orgId),
-    runMigrations: (projectPath: string, supabaseRef: string) =>
-      ipcRenderer.invoke('supabase:runMigrations', projectPath, supabaseRef),
-    fetchOpenApiSpec: (supabaseUrl: string, serviceKey: string) =>
-      ipcRenderer.invoke('supabase:fetchOpenApiSpec', supabaseUrl, serviceKey),
-    getSchemaTableInfo: (ref: string, schema?: string) =>
-      ipcRenderer.invoke('supabase:getSchemaTableInfo', ref, schema),
-    dropSchema: (ref: string, schema: string) =>
-      ipcRenderer.invoke('supabase:dropSchema', ref, schema),
-    deleteSupabaseProject: (ref: string) =>
-      ipcRenderer.invoke('supabase:deleteSupabaseProject', ref),
-    onOutput: (callback: OutputCallback) => createListener('supabase:output', callback),
-    removeListeners: () => removeAllListeners('supabase:'),
   },
 
   // Dialog
@@ -242,6 +199,9 @@ contextBridge.exposeInMainWorld('api', {
       createListener('devServer:exit', callback),
     removeListeners: () => removeAllListeners('devServer:'),
   },
+
+  // Deep Links
+  onDeepLink: (callback: (url: string) => void) => createListener('deep-link', callback),
 
   // Setup (for running install/auth commands)
   setup: {

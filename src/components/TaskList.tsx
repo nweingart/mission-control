@@ -81,6 +81,7 @@ export default function TaskList({
   const completedCount = tasks.filter((t) => t.completed).length;
   const progress = tasks.length > 0 ? (completedCount / tasks.length) * 100 : 0;
   const filledSegments = Math.round(progress / 10);
+  const totalEstimatedMinutes = tasks.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
 
   return (
     <div className="space-y-4">
@@ -89,7 +90,7 @@ export default function TaskList({
         <div className="mb-4">
           <div className="flex justify-between text-sm font-sans font-medium text-ink-secondary mb-1">
             <span>Progress</span>
-            <span>{completedCount} / {tasks.length} tasks</span>
+            <span>{completedCount} / {tasks.length} tasks{totalEstimatedMinutes > 0 ? ` (~${totalEstimatedMinutes}m)` : ''}</span>
           </div>
           <div className="w-full flex gap-1 h-2">
             {Array.from({ length: 10 }, (_, i) => (
@@ -134,7 +135,7 @@ export default function TaskList({
               className="w-5 h-5 text-accent border-border focus:ring-accent"
             />
 
-            {/* Title */}
+            {/* Title + description + time estimate */}
             {editingId === task.id ? (
               <input
                 type="text"
@@ -146,12 +147,22 @@ export default function TaskList({
                 className="input-inset flex-1 px-2 py-1 border border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent"
               />
             ) : (
-              <span
-                className={`flex-1 ${task.completed ? 'line-through text-ink-muted' : ''}`}
+              <div
+                className={`flex-1 min-w-0 ${task.completed ? 'line-through text-ink-muted' : ''}`}
                 onDoubleClick={() => editable && onTaskEdit && handleEditStart(task)}
               >
-                {task.title}
-              </span>
+                <div className="flex items-center gap-2">
+                  <span>{task.title}</span>
+                  {task.estimatedMinutes && (
+                    <span className="flex-shrink-0 text-xs text-ink-muted bg-surface-hover px-1.5 py-0.5 rounded">
+                      ~{task.estimatedMinutes}m
+                    </span>
+                  )}
+                </div>
+                {task.description && (
+                  <p className="text-xs text-ink-muted mt-0.5 truncate">{task.description}</p>
+                )}
+              </div>
             )}
 
             {/* Remove button */}

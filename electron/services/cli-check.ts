@@ -33,8 +33,6 @@ interface CLIStatusItem {
 interface CLIStatus {
   claude: CLIStatusItem;
   github: CLIStatusItem;
-  vercel: CLIStatusItem;
-  supabase: CLIStatusItem;
 }
 
 export class CLICheckService {
@@ -129,78 +127,12 @@ export class CLICheckService {
     }
   }
 
-  async checkVercel(): Promise<CLIStatusItem> {
-    const installed = await this.commandExists('vercel');
-    console.log('[CLICheck] Vercel installed:', installed);
-    if (!installed) {
-      return { installed: false, authenticated: false };
-    }
-
-    // Primary: run `vercel whoami` — this actually validates the token against the API
-    try {
-      console.log('[CLICheck] Running vercel whoami...');
-      const { stdout } = await execAsync('vercel whoami 2>&1', { timeout: 10000, env: enhancedEnv });
-      const result = stdout.trim();
-      console.log('[CLICheck] Vercel whoami result:', result);
-      // A valid response returns the username. Empty or error means not authenticated.
-      if (result.length > 0 && !result.includes('not logged in') && !result.includes('Error')) {
-        return { installed: true, authenticated: true };
-      }
-      return { installed: true, authenticated: false };
-    } catch (err) {
-      console.log('[CLICheck] Vercel whoami failed:', (err as Error).message);
-      return { installed: true, authenticated: false };
-    }
-  }
-
-  async checkSupabase(): Promise<CLIStatusItem> {
-    const installed = await this.commandExists('supabase');
-    console.log('[CLICheck] Supabase installed:', installed);
-    if (!installed) {
-      return { installed: false, authenticated: false };
-    }
-
-    // Primary: run `supabase projects list` — this actually validates the token against the API
-    try {
-      console.log('[CLICheck] Running supabase projects list...');
-      const { stdout, stderr } = await execAsync('supabase projects list 2>&1', { timeout: 15000, env: enhancedEnv });
-      const output = stdout + stderr;
-      console.log('[CLICheck] Supabase projects list output:', output.substring(0, 200));
-      // Check for auth error messages — these mean token is missing or expired
-      if (output.includes('Access token not provided') ||
-          output.includes('not logged in') ||
-          output.includes('Unauthorized') ||
-          output.includes('invalid token') ||
-          output.includes('token is expired') ||
-          output.includes('login')) {
-        return { installed: true, authenticated: false };
-      }
-      // Command succeeded without auth errors — user is actually authenticated
-      return { installed: true, authenticated: true };
-    } catch (error) {
-      const errorMessage = (error as Error).message || '';
-      console.log('[CLICheck] Supabase projects list error:', errorMessage.substring(0, 200));
-      if (errorMessage.includes('Access token') ||
-          errorMessage.includes('not logged in') ||
-          errorMessage.includes('Unauthorized') ||
-          errorMessage.includes('invalid token') ||
-          errorMessage.includes('token is expired') ||
-          errorMessage.includes('login')) {
-        return { installed: true, authenticated: false };
-      }
-      // Other errors (network timeout, etc.) — assume not authenticated to be safe
-      return { installed: true, authenticated: false };
-    }
-  }
-
   async checkAll(): Promise<CLIStatus> {
-    const [claude, github, vercel, supabase] = await Promise.all([
+    const [claude, github] = await Promise.all([
       this.checkClaude(),
       this.checkGitHub(),
-      this.checkVercel(),
-      this.checkSupabase(),
     ]);
 
-    return { claude, github, vercel, supabase };
+    return { claude, github };
   }
 }

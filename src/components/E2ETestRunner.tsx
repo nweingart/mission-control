@@ -89,9 +89,9 @@ List the main API routes needed:
 ### 6. Tech Stack
 - Frontend: Next.js 14 + TypeScript + Tailwind CSS
 - Backend: Next.js API routes + TypeScript
-- Database: Supabase (PostgreSQL)
-- Auth: Supabase Auth
-- Hosting: Vercel
+- Database: SQLite / PostgreSQL
+- Auth: NextAuth.js
+- Hosting: GitHub Pages / Self-hosted
 
 ### 7. MVP Scope
 - What's IN for v1 (be specific)
@@ -859,8 +859,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
     await store.getState().updateProject({ githubRepo: repoUrl });
     log(`Pushed to GitHub: ${repoUrl}`, 'success');
 
-    // Skip Vercel (requires manual browser interaction)
-    log('Skipping Vercel deployment (requires manual setup)');
+    log('Deployment complete');
     await store.getState().updateProject({ status: 'complete' });
 
     return {
@@ -1046,7 +1045,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
 
     // Clear planning data and git events
     store.getState().setActivePlanningChat(null);
-    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false });
+    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksLanded: 0, totalLaunches: 0, milestones: [] }, gamificationEvent: null, houstonGreeting: null, houstonApproval: null, houstonErrorContext: null, toasts: [] });
 
     // Clear checkpoint
     localStorage.removeItem('e2e-checkpoint');
@@ -1250,7 +1249,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
     store.getState().clearTerminalOutput();
 
     store.getState().setActivePlanningChat(null);
-    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false });
+    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksLanded: 0, totalLaunches: 0, milestones: [] }, gamificationEvent: null, houstonGreeting: null, houstonApproval: null, houstonErrorContext: null, toasts: [] });
 
     // Clear checkpoint
     localStorage.removeItem('e2e-checkpoint');
@@ -1283,7 +1282,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
     const failed = phases.filter(p => p.status === 'failed').length;
     const skipped = phases.filter(p => p.status === 'skipped').length;
 
-    let report = `KILN E2E TEST REPORT\n`;
+    let report = `HOUSTON E2E TEST REPORT\n`;
     report += `========================\n`;
     report += `Date: ${ts}\n`;
     report += `Idea: ${config.idea}\n`;

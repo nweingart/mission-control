@@ -28,27 +28,6 @@ export default function ToolDisconnectedOverlay() {
         </svg>
       ),
     },
-    {
-      name: 'Vercel',
-      installed: cliStatus.vercel.installed,
-      authenticated: cliStatus.vercel.authenticated,
-      icon: (
-        <svg className="w-5 h-5" viewBox="0 0 76 65" fill="currentColor">
-          <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
-        </svg>
-      ),
-    },
-    {
-      name: 'Supabase',
-      installed: cliStatus.supabase.installed,
-      authenticated: cliStatus.supabase.authenticated,
-      icon: (
-        <svg className="w-5 h-5" viewBox="0 0 109 113" fill="currentColor">
-          <path d="M63.7076 110.284C60.8481 113.885 55.0502 111.912 54.9813 107.314L53.9738 40.0627L99.1935 40.0627C107.384 40.0627 111.952 49.5228 106.859 55.9374L63.7076 110.284Z" fillOpacity="0.7" />
-          <path d="M45.317 2.07103C48.1765 -1.53037 53.9745 0.442937 54.0434 5.041L54.4849 72.2922H9.83113C1.64038 72.2922 -2.92775 62.8321 2.1655 56.4175L45.317 2.07103Z" />
-        </svg>
-      ),
-    },
   ];
 
   const getStatus = (tool: typeof tools[number]) => {
@@ -77,9 +56,7 @@ export default function ToolDisconnectedOverlay() {
   };
 
   const handleReconnect = () => {
-    // Route to the appropriate setup screen
-    const claudeReady = cliStatus.claude.installed && cliStatus.claude.authenticated;
-    setScreen(claudeReady ? 'setup-deploy' : 'setup-claude');
+    setScreen('onboarding');
   };
 
   return (

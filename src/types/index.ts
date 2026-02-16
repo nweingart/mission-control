@@ -4,9 +4,6 @@ export interface Project {
   status: ProjectStatus;
   createdAt: string;
   projectPath: string;
-  vercelUrl?: string;
-  supabaseRef?: string;
-  supabaseSchema?: string;
   githubRepo?: string;
   idea?: string;
   prd?: string;
@@ -26,6 +23,8 @@ export type ProjectStatus =
 export interface Task {
   id: string;
   title: string;
+  description?: string;
+  estimatedMinutes?: number;
   completed: boolean;
   buildPhase?: 'branched' | 'built' | 'reviewed' | 'merged';
   branchName?: string;
@@ -35,15 +34,10 @@ export interface Task {
 export interface CLIStatus {
   claude: { installed: boolean; authenticated: boolean };
   github: { installed: boolean; authenticated: boolean };
-  vercel: { installed: boolean; authenticated: boolean };
-  supabase: { installed: boolean; authenticated: boolean };
 }
 
 export type Screen =
   | 'onboarding'
-  | 'setup-workspace'
-  | 'setup-deploy'
-  | 'setup-ready'
   | 'home'
   | 'project-home'
   | 'idea'
@@ -60,15 +54,6 @@ export type Screen =
   | 'gap-analysis'
   | 'settings';
 
-export interface AppState {
-  screen: Screen;
-  currentProject: Project | null;
-  projects: Project[];
-  cliStatus: CLIStatus | null;
-  isLoading: boolean;
-  error: string | null;
-}
-
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -81,6 +66,8 @@ export interface Config {
   theme?: 'light' | 'dark';
   hasCompletedOnboarding?: boolean;
   hasSetWorkspace?: boolean;
+  freeProjectUsed?: boolean;
+  devMode?: boolean;
 }
 
 export interface ReviewFinding {
@@ -117,6 +104,8 @@ export type TaskPhase =
 
 export type PlanningType = 'bug_fix' | 'feature_refactor' | 'new_feature';
 
+export type SprintStatus = 'planning' | 'active' | 'completed';
+
 export interface BacklogItem {
   id: string;
   title: string;
@@ -129,7 +118,6 @@ export interface BacklogItem {
   prdStatus?: 'pending' | 'generating' | 'complete' | 'failed';
   estimatedTasks?: number;
   storyPoints?: number;
-  status?: 'todo' | 'in_progress' | 'done';
   sprintId?: string;
   notes?: string;
 }
@@ -139,7 +127,8 @@ export interface Sprint {
   name: string;
   order: number;
   createdAt: string;
-  archived?: boolean;
+  status: SprintStatus;
+  deadline?: string;
 }
 
 export interface GitEvent {
@@ -160,9 +149,7 @@ export interface DeploymentRecord {
   commitHash: string;
   commitMessage?: string;
   githubRepoUrl?: string;
-  vercelUrl?: string;
-  vercelProjectId?: string;
-  status: 'pushing' | 'deploying' | 'watching' | 'success' | 'failed';
+  status: 'pushing' | 'success' | 'failed';
   workflowRunId?: number;
   error?: string;
   timestamp: string;
@@ -187,6 +174,18 @@ export interface GapAnalysis {
   fixCommitHash?: string;
   remainingItems: string[];
   timestamp: string;
+}
+
+export type MissionRank = 'Cadet' | 'Flight Controller' | 'Mission Specialist' | 'Mission Commander' | 'Houston Actual';
+
+export interface GamificationStats {
+  streakCount: number;
+  lastActivityDate: string | null;
+  streakFreezeUsedThisWeek: boolean;
+  lastFreezeWeek: string | null;
+  totalTasksLanded: number;
+  totalLaunches: number;
+  milestones: string[];
 }
 
 export interface PlanningChat {

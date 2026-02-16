@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import Chat from './Chat';
 import { extractBacklogSuggestions } from '../utils/planning';
+import { resilientChat, isCancelError } from '../utils/resilient-chat';
 import type { Task, TaskPhase, PlanningType } from '../types';
 
 interface PlanningViewProps {
@@ -162,6 +163,7 @@ export default function PlanningView({
   const isMountedRef = useRef(true);
   const hasInitializedRef = useRef(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const cancelRef = useRef<(() => void) | null>(null);
 
   // Track mounted state
   useEffect(() => {
@@ -258,7 +260,10 @@ User: ${content}
 
 Respond as the assistant. Be helpful and conversational.`;
 
-        const response = await window.api.claude.chat(currentProject.projectPath, fullPrompt);
+        const { promise, cancel } = resilientChat.standard(currentProject.projectPath, fullPrompt);
+        cancelRef.current = cancel;
+        const response = await promise;
+        cancelRef.current = null;
 
         if (!isMountedRef.current) return;
 
@@ -281,6 +286,8 @@ Respond as the assistant. Be helpful and conversational.`;
           }, 4000);
         }
       } catch (err) {
+        cancelRef.current = null;
+        if (isCancelError(err)) return;
         console.error('Planning chat error:', err);
         if (isMountedRef.current) {
           addPlanningMessage({
@@ -515,6 +522,7 @@ Respond as the assistant. Be helpful and conversational.`;
               ? 'Which feature needs improvement?'
               : 'Describe your feature idea...'
           }
+          onCancel={isLoading ? () => { cancelRef.current?.(); cancelRef.current = null; setIsLoading(false); } : undefined}
         />
       </div>
 

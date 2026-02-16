@@ -1,4 +1,4 @@
-import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapAnalysis } from './index';
+import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapAnalysis, GamificationStats } from './index';
 
 export interface ElectronAPI {
   // Storage
@@ -28,6 +28,8 @@ export interface ElectronAPI {
     saveDeployments: (slug: string, deployments: DeploymentRecord[]) => Promise<void>;
     getGapAnalysis: (slug: string) => Promise<GapAnalysis[]>;
     saveGapAnalysis: (slug: string, analyses: GapAnalysis[]) => Promise<void>;
+    getGamification: (slug: string) => Promise<GamificationStats | null>;
+    saveGamification: (slug: string, stats: GamificationStats) => Promise<void>;
   };
 
   // CLI Check
@@ -36,37 +38,24 @@ export interface ElectronAPI {
     checkClaude: () => Promise<{ installed: boolean; authenticated: boolean }>;
     checkClaudeDeep: () => Promise<{ installed: boolean; authenticated: boolean }>;
     checkGitHub: () => Promise<{ installed: boolean; authenticated: boolean }>;
-    checkVercel: () => Promise<{ installed: boolean; authenticated: boolean }>;
-    checkSupabase: () => Promise<{ installed: boolean; authenticated: boolean }>;
-    saveVercelToken: (token: string) => Promise<{ success: boolean }>;
   };
 
   // Claude Code
   claude: {
     spawn: (projectPath: string, prompt: string) => Promise<string>;
     spawnInteractive: (projectPath: string) => Promise<string>;
-    chat: (projectPath: string, prompt: string) => Promise<string>;
+    chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) => Promise<string>;
     onOutput: (callback: (data: { sessionId: string; type: 'stdout' | 'stderr'; content: string }) => void) => void;
     onChatOutput: (callback: (content: string) => void) => void;
     onExit: (callback: (data: { sessionId: string; code: number }) => void) => void;
     sendInput: (sessionId: string, input: string) => Promise<void>;
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>;
     kill: (sessionId: string) => Promise<void>;
-    cancelChat: () => Promise<void>;
+    cancelChat: (chatId?: string) => Promise<void>;
     enableCompletionDetection: (sessionId: string) => Promise<void>;
     resetCompletionDetection: (sessionId: string) => Promise<void>;
     confirmCompletion: (sessionId: string) => Promise<void>;
     onCompletionDetected: (callback: (data: { sessionId: string }) => void) => void;
-    removeListeners: () => void;
-  };
-
-  // Vercel
-  vercel: {
-    deploy: (projectPath: string, envVars?: Record<string, string>) => Promise<{ url: string; projectId: string }>;
-    getProjectConfig: (projectPath: string) => Promise<{ orgId: string; projectId: string }>;
-    getToken: () => Promise<string>;
-    addEnvVars: (projectPath: string, envVars: Record<string, string>) => Promise<void>;
-    onOutput: (callback: (data: { type: 'stdout' | 'stderr'; content: string }) => void) => void;
     removeListeners: () => void;
   };
 
@@ -98,21 +87,7 @@ export interface ElectronAPI {
       headSha: string; createdAt: string; event: string;
     }>>;
     writeWorkflowFile: (projectPath: string, content: string) => Promise<void>;
-    onOutput: (callback: (data: { type: 'stdout' | 'stderr'; content: string }) => void) => void;
-    removeListeners: () => void;
-  };
-
-  // Supabase
-  supabase: {
-    getOrganizations: () => Promise<Array<{ id: string; name: string }>>;
-    getProjects: () => Promise<Array<{ ref: string; name: string; orgId: string; region: string }>>;
-    getProjectKeys: (ref: string) => Promise<{ ref: string; url: string; anonKey: string; serviceKey: string }>;
-    createProject: (name: string, orgId: string) => Promise<{ ref: string; url: string; anonKey: string; serviceKey: string }>;
-    runMigrations: (projectPath: string, supabaseRef: string) => Promise<void>;
-    fetchOpenApiSpec: (supabaseUrl: string, serviceKey: string) => Promise<any>;
-    getSchemaTableInfo: (ref: string, schema?: string) => Promise<any[]>;
-    dropSchema: (ref: string, schema: string) => Promise<void>;
-    deleteSupabaseProject: (ref: string) => Promise<void>;
+    deleteRepo: (repoUrl: string) => Promise<void>;
     onOutput: (callback: (data: { type: 'stdout' | 'stderr'; content: string }) => void) => void;
     removeListeners: () => void;
   };
@@ -146,6 +121,9 @@ export interface ElectronAPI {
     onExit: (callback: (data: { sessionId: string; code: number }) => void) => void;
     removeListeners: () => void;
   };
+
+  // Deep Links
+  onDeepLink: (callback: (url: string) => void) => void;
 
   // Setup (for running install/auth commands)
   setup: {

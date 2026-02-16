@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import Chat from '../components/Chat';
 import { extractBacklogSuggestions } from '../utils/planning';
+import { resilientChat, isCancelError } from '../utils/resilient-chat';
 import type { PlanningChat, PlanningType } from '../types';
 
 const PLANNING_TYPE_OPTIONS: Array<{
@@ -143,6 +144,7 @@ export default function PlanningChatsScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [planningType, setPlanningType] = useState<PlanningType | null>(null);
   const [autoAddedItems, setAutoAddedItems] = useState<string[]>([]);
+  const cancelRef = useRef<(() => void) | null>(null);
 
   // Load planning chats and backlog on mount
   useEffect(() => {
@@ -214,7 +216,10 @@ User: ${content}
 
 Respond as the assistant. Be helpful and conversational.`;
 
-      const response = await window.api.claude.chat(currentProject.projectPath, fullPrompt);
+      const { promise, cancel } = resilientChat.standard(currentProject.projectPath, fullPrompt);
+      cancelRef.current = cancel;
+      const response = await promise;
+      cancelRef.current = null;
       addPlanningMessage({ role: 'assistant', content: response });
 
       // Auto-add: extract and immediately add to backlog
@@ -234,6 +239,8 @@ Respond as the assistant. Be helpful and conversational.`;
         setTimeout(() => setAutoAddedItems([]), 4000);
       }
     } catch (err) {
+      cancelRef.current = null;
+      if (isCancelError(err)) return;
       console.error('Planning chat error:', err);
       addPlanningMessage({
         role: 'assistant',
@@ -378,6 +385,7 @@ Respond as the assistant. Be helpful and conversational.`;
                       ? 'Which feature needs improvement?'
                       : 'Describe your feature idea...'
                   }
+                  onCancel={isLoading ? () => { cancelRef.current?.(); cancelRef.current = null; setIsLoading(false); } : undefined}
                 />
               </div>
               {/* Auto-added confirmation banner */}

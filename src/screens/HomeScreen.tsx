@@ -1,12 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import ProjectCard from '../components/ProjectCard';
+import PaywallModal from '../components/PaywallModal';
 
 export default function HomeScreen() {
   const { projects, startNewProject, loadProject, refreshProjects, setScreen, setCLIStatus, cliStatus } = useAppStore();
   const [loadingSlug, setLoadingSlug] = useState<string | null>(null);
+  const [showPaywall, setShowPaywall] = useState(false);
 
-  const handleNewProject = () => {
+  const handleNewProject = async () => {
+    const config = await window.api.storage.getConfig();
+    if (config.freeProjectUsed && !config.devMode) {
+      setShowPaywall(true);
+      return;
+    }
     startNewProject();
   };
 
@@ -36,23 +43,19 @@ export default function HomeScreen() {
     const project = projects.find(p => p.slug === slug);
     if (!project) return;
 
-    let cleanupMsg = 'This will delete all local files.';
-    if (project.supabaseRef && project.supabaseSchema) {
-      const sharesRef = projects.some(p => p.slug !== slug && p.supabaseRef === project.supabaseRef);
-      cleanupMsg = sharesRef
-        ? `This will delete local files and drop the Supabase schema "${project.supabaseSchema}" (shared DB \u2014 other projects are unaffected).`
-        : `This will delete local files and drop the Supabase schema "${project.supabaseSchema}".`;
-    } else if (project.supabaseRef && !project.supabaseSchema) {
-      cleanupMsg = `This will delete local files. You can also delete the dedicated Supabase project "${project.supabaseRef}" from the Supabase dashboard.`;
+    let cleanupMsg = 'This will move the project folder to Trash.';
+    if (project.githubRepo) {
+      cleanupMsg += ' The GitHub repo will also be deleted.';
     }
 
     if (!confirm(`Delete "${project.name}"?\n\n${cleanupMsg}`)) return;
 
-    if (project.supabaseRef && project.supabaseSchema) {
+    // Delete GitHub repo (non-blocking — failure shouldn't prevent local cleanup)
+    if (project.githubRepo) {
       try {
-        await window.api.supabase.dropSchema(project.supabaseRef, project.supabaseSchema);
+        await window.api.github.deleteRepo(project.githubRepo);
       } catch (err) {
-        console.error('Failed to drop schema:', err);
+        console.error('Failed to delete GitHub repo:', err);
       }
     }
 
@@ -62,8 +65,6 @@ export default function HomeScreen() {
 
   const claudeReady = cliStatus?.claude?.installed && cliStatus?.claude?.authenticated;
   const githubReady = cliStatus?.github?.installed && cliStatus?.github?.authenticated;
-  const vercelReady = cliStatus?.vercel?.installed && cliStatus?.vercel?.authenticated;
-  const supabaseReady = cliStatus?.supabase?.installed && cliStatus?.supabase?.authenticated;
 
   const services = [
     {
@@ -84,25 +85,6 @@ export default function HomeScreen() {
         </svg>
       ),
     },
-    {
-      name: 'Vercel',
-      ready: vercelReady,
-      icon: (
-        <svg className="w-[18px] h-[18px]" viewBox="0 0 76 65" fill="currentColor">
-          <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
-        </svg>
-      ),
-    },
-    {
-      name: 'Supabase',
-      ready: supabaseReady,
-      icon: (
-        <svg className="w-[18px] h-[18px]" viewBox="0 0 109 113" fill="currentColor">
-          <path d="M63.7076 110.284C60.8481 113.885 55.0502 111.912 54.9813 107.314L53.9738 40.0627L99.1935 40.0627C107.384 40.0627 111.952 49.5228 106.859 55.9374L63.7076 110.284Z" fillOpacity="0.7" />
-          <path d="M45.317 2.07103C48.1765 -1.53037 53.9745 0.442937 54.0434 5.041L54.4849 72.2922H9.83113C1.64038 72.2922 -2.92775 62.8321 2.1655 56.4175L45.317 2.07103Z" />
-        </svg>
-      ),
-    },
   ];
 
   return (
@@ -120,7 +102,7 @@ export default function HomeScreen() {
           {services.map((service) => (
             <button
               key={service.name}
-              onClick={() => setScreen('setup-deploy')}
+              onClick={() => setScreen('onboarding')}
               className="group relative no-drag"
               title={`${service.name}: ${service.ready ? 'Connected' : 'Not connected'}`}
             >
@@ -164,7 +146,7 @@ export default function HomeScreen() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Header */}
         <header className="border-b border-border px-4 py-3 drag-region">
           <div className="flex items-center justify-between">
@@ -237,6 +219,16 @@ export default function HomeScreen() {
             </div>
           )}
         </main>
+
+        {showPaywall && (
+          <PaywallModal
+            onDismiss={() => setShowPaywall(false)}
+            onUpgradeComplete={() => {
+              setShowPaywall(false);
+              startNewProject();
+            }}
+          />
+        )}
       </div>
     </div>
   );

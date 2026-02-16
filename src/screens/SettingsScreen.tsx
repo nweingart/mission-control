@@ -1,11 +1,28 @@
+import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 
 export default function SettingsScreen() {
-  const { setScreen, resetOnboarding } = useAppStore();
+  const { setScreen, resetOnboarding, authUser, subscriptionStatus, signOut } = useAppStore();
+  const [isManaging, setIsManaging] = useState(false);
 
   const handleResetOnboarding = () => {
     if (window.confirm('Reset onboarding walkthrough? You will see the intro screens again.')) {
       resetOnboarding();
+    }
+  };
+
+  const handleManageSubscription = async () => {
+    setIsManaging(true);
+    try {
+      console.log('Subscription management not available in this version');
+    } finally {
+      setIsManaging(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (window.confirm('Sign out of Houston Pro?')) {
+      await signOut();
     }
   };
 
@@ -28,11 +45,52 @@ export default function SettingsScreen() {
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-6">
         <div className="max-w-lg mx-auto space-y-6">
+          {/* Account & Subscription */}
+          <section className="card-panel p-5 space-y-1">
+            <h2 className="text-sm font-semibold text-ink mb-3">Account</h2>
+            {authUser ? (
+              <>
+                <div className="px-3 py-2.5 text-sm text-ink flex items-center justify-between">
+                  <span>{authUser.username || authUser.email}</span>
+                  <span className={`text-xs font-medium px-2 py-0.5 ${
+                    subscriptionStatus === 'active'
+                      ? 'bg-success/15 text-success'
+                      : 'bg-ink-muted/15 text-ink-muted'
+                  }`}>
+                    {subscriptionStatus === 'active' ? 'Pro' : 'Free'}
+                  </span>
+                </div>
+                {subscriptionStatus === 'active' && (
+                  <button
+                    onClick={handleManageSubscription}
+                    disabled={isManaging}
+                    className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink hover:bg-surface-hover transition-colors flex items-center justify-between disabled:opacity-50"
+                  >
+                    {isManaging ? 'Opening...' : 'Manage Subscription'}
+                    <svg className="w-4 h-4 text-ink-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </button>
+                )}
+                <button
+                  onClick={handleSignOut}
+                  className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink-muted hover:text-error hover:bg-surface-hover transition-colors"
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <div className="px-3 py-2.5 text-sm text-ink-muted">
+                Not signed in
+              </div>
+            )}
+          </section>
+
           {/* Navigation shortcuts */}
           <section className="card-panel p-5 space-y-1">
             <h2 className="text-sm font-semibold text-ink mb-3">Configuration</h2>
             <button
-              onClick={() => setScreen('setup-deploy')}
+              onClick={() => setScreen('onboarding')}
               className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink hover:bg-surface-hover transition-colors flex items-center justify-between"
             >
               Manage Tools
@@ -41,7 +99,7 @@ export default function SettingsScreen() {
               </svg>
             </button>
             <button
-              onClick={() => setScreen('setup-workspace')}
+              onClick={() => setScreen('onboarding')}
               className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink hover:bg-surface-hover transition-colors flex items-center justify-between"
             >
               Workspace Directory

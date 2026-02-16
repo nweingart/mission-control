@@ -103,10 +103,10 @@ export function classifyError(rawMessage: string): ClassifiedError {
   if (msg.includes('no output for') || msg.includes('timed out')) {
     return {
       category: 'claude_timeout',
-      severity: 'needs_user_action',
+      severity: 'auto_recoverable',
       title: 'Claude Timed Out',
       message: rawMessage,
-      userAction: 'Claude took too long to respond. This is usually temporary — retrying often works.',
+      userAction: 'Auto-retrying...',
       canSkipTask: true,
       canRetry: true,
     };

@@ -9,6 +9,7 @@ interface ChatProps {
   isLoading?: boolean;
   placeholder?: string;
   hideInput?: boolean;
+  onCancel?: () => void;
 }
 
 const MAX_MESSAGE_LENGTH = 10000;
@@ -98,7 +99,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-export default function Chat({ messages, onSendMessage, isLoading = false, placeholder = 'Type a message...', hideInput = false }: ChatProps) {
+export default function Chat({ messages, onSendMessage, isLoading = false, placeholder = 'Type a message...', hideInput = false, onCancel }: ChatProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -151,6 +152,14 @@ export default function Chat({ messages, onSendMessage, isLoading = false, place
             <div className="bg-surface-light">
               <TypingIndicator />
             </div>
+            {onCancel && (
+              <button
+                onClick={onCancel}
+                className="ml-3 self-center text-xs text-ink-muted hover:text-error px-2 py-1 transition-colors"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         )}
         <div ref={messagesEndRef} />

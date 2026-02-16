@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import TaskList from '../components/TaskList';
+import { resilientChat } from '../utils/resilient-chat';
 
 const DEFAULT_TASKS = [
   'Set up Next.js project with TypeScript and Tailwind CSS',
-  'Configure Supabase client and authentication',
+  'Configure database client and authentication',
   'Create database schema and migrations',
   'Build authentication UI (login/signup pages)',
   'Implement main feature components',
-  'Add CRUD operations with Supabase',
+  'Add CRUD operations',
   'Style the application with Tailwind',
   'Add error handling and loading states',
   'Test the complete flow',
@@ -73,17 +74,24 @@ export default function TasksScreen() {
 ## PRD:
 ${prd}
 
-Please generate a list of 8-12 specific, actionable development tasks to build this project. Each task should:
-1. Be completable in a single coding session
-2. Build on previous tasks logically
-3. Be specific enough for an AI to implement
+Break this into the smallest reasonable development tasks. Guidelines:
+- Simple projects (landing page, CRUD app): 5-8 tasks
+- Medium projects (auth + multiple features): 10-15 tasks
+- Complex projects (multi-role, integrations, real-time): 15-25 tasks
+- Each task should be ONE focused unit that an AI can complete in under 4 minutes — no compound tasks
+- BAD: "Build auth flow with signup, login, logout and onboarding screen"
+- GOOD: "Set up auth client", "Build signup page", "Build login page", "Add logout to navbar", "Create onboarding screen"
+- Tasks must build on each other logically
 
-Return ONLY a JSON array of task titles, like this:
-["Task 1 title", "Task 2 title", ...]
+Return a JSON array of objects with title, description, and estimatedMinutes:
+[{"title": "...", "description": "1-2 sentence detail", "estimatedMinutes": 3}, ...]
+
+estimatedMinutes should be 1-4 for each task (aim for under 4 minutes each).
 
 Do not include any other text, just the JSON array.`;
 
-        const response = await window.api.claude.chat(currentProject.projectPath, prompt);
+        const { promise } = resilientChat.standard(currentProject.projectPath, prompt);
+        const response = await promise;
 
         // Check if still mounted
         if (!isMountedRef.current) return;
@@ -95,25 +103,37 @@ Do not include any other text, just the JSON array.`;
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
 
-            // Validate parsed result is an array of strings
+            // Validate parsed result is an array
             if (!Array.isArray(parsed)) {
               throw new Error('Parsed result is not an array');
             }
 
-            // Filter to valid strings and limit to 20 tasks max
-            const taskTitles = parsed
-              .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-              .slice(0, 20);
+            // Handle both {title, description, estimatedMinutes} objects and plain strings
+            const generatedTasks = parsed
+              .map((item: unknown, index: number) => {
+                if (typeof item === 'string' && item.trim().length > 0) {
+                  return { id: `task-${Date.now()}-${index}`, title: item.trim(), completed: false };
+                }
+                if (item && typeof item === 'object' && 'title' in item) {
+                  const obj = item as { title: string; description?: string; estimatedMinutes?: number };
+                  if (typeof obj.title === 'string' && obj.title.trim().length > 0) {
+                    return {
+                      id: `task-${Date.now()}-${index}`,
+                      title: obj.title.trim(),
+                      description: typeof obj.description === 'string' ? obj.description.trim() : undefined,
+                      estimatedMinutes: typeof obj.estimatedMinutes === 'number' ? obj.estimatedMinutes : undefined,
+                      completed: false,
+                    };
+                  }
+                }
+                return null;
+              })
+              .filter((t: unknown): t is NonNullable<typeof t> => t !== null)
+              .slice(0, 30);
 
-            if (taskTitles.length === 0) {
+            if (generatedTasks.length === 0) {
               throw new Error('No valid tasks found in response');
             }
-
-            const generatedTasks = taskTitles.map((title, index) => ({
-              id: `task-${Date.now()}-${index}`,
-              title: title.trim(),
-              completed: false,
-            }));
 
             setTasks(generatedTasks);
             if (isMountedRef.current) {
@@ -155,6 +175,10 @@ Do not include any other text, just the JSON array.`;
 
       setTasks(generatedTasks);
       setUsedDefaultTasks(true);
+      useAppStore.getState().addToast({
+        type: 'warning',
+        message: 'Could not generate custom tasks. Using defaults — you can edit them below.',
+      });
     } finally {
       if (isMountedRef.current) {
         setIsGenerating(false);

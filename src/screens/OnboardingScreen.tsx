@@ -1,20 +1,24 @@
 import { useState } from 'react';
-import { useAppStore } from '../store/useAppStore';
-import OnboardingWelcome from '../components/onboarding/OnboardingWelcome';
-import OnboardingWorkflow from '../components/onboarding/OnboardingWorkflow';
+import StageIntro from '../components/onboarding/StageIntro';
+import StageHouston from '../components/onboarding/StageHouston';
+import StageWorkspace from '../components/onboarding/StageWorkspace';
+import StageLaunch from '../components/onboarding/StageLaunch';
 
-function StepDots({ current, total }: { current: number; total: number }) {
+type Stage = 0 | 1 | 2 | 3;
+
+// Always start at the beginning — the full flow has value even if tools are already set up
+function deriveInitialStage(): Stage {
+  return 0;
+}
+
+function ProgressBar({ current, total }: { current: number; total: number }) {
   return (
-    <div className="flex items-center space-x-2">
+    <div className="flex gap-1 w-48">
       {Array.from({ length: total }, (_, i) => (
         <div
           key={i}
-          className={`transition-all duration-300 ${
-            i + 1 === current
-              ? 'w-6 h-2 bg-ink'
-              : i + 1 < current
-                ? 'w-2 h-2 bg-ink/50'
-                : 'w-2 h-2 bg-border'
+          className={`h-1.5 flex-1 transition-all duration-300 ${
+            i + 1 <= current ? 'bg-accent' : 'bg-border'
           }`}
         />
       ))}
@@ -23,20 +27,21 @@ function StepDots({ current, total }: { current: number; total: number }) {
 }
 
 export default function OnboardingScreen() {
-  const [step, setStep] = useState<1 | 2>(1);
-  const { completeOnboarding } = useAppStore();
+  const [stage, setStage] = useState<Stage>(0);
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
-      {/* Drag region + step indicator */}
+      {/* Drag region + progress bar (hidden on intro splash) */}
       <div className="h-14 drag-region flex items-end justify-center pb-2">
-        <StepDots current={step} total={2} />
+        {stage > 0 && <ProgressBar current={stage} total={3} />}
       </div>
 
-      {/* Step content */}
+      {/* Stage content */}
       <main className="flex-1 overflow-y-auto flex items-center justify-center p-8">
-        {step === 1 && <OnboardingWelcome onNext={() => setStep(2)} />}
-        {step === 2 && <OnboardingWorkflow onNext={completeOnboarding} onBack={() => setStep(1)} />}
+        {stage === 0 && <StageIntro onComplete={() => setStage(1)} />}
+        {stage === 1 && <StageHouston onComplete={() => setStage(2)} />}
+        {stage === 2 && <StageWorkspace onComplete={() => setStage(3)} />}
+        {stage === 3 && <StageLaunch />}
       </main>
     </div>
   );

@@ -5,7 +5,7 @@ vi.mock('electron', () => ({
   app: {
     getPath: (name: string) => {
       if (name === 'home') return '/mock-home';
-      if (name === 'userData') return '/mock-home/.kiln';
+      if (name === 'userData') return '/mock-home/.houston';
       return `/mock-${name}`;
     },
   },

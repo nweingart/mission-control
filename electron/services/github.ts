@@ -211,7 +211,7 @@ export class GitHubService {
       }
 
       if (entriesToAdd.length > 0) {
-        const appendContent = '\n# Added by Kiln\n' + entriesToAdd.join('\n') + '\n';
+        const appendContent = '\n# Added by Houston\n' + entriesToAdd.join('\n') + '\n';
         writeFileSync(gitignorePath, existing + appendContent, 'utf-8');
       }
     }
@@ -577,5 +577,16 @@ export class GitHubService {
     const workflowDir = join(projectPath, '.github', 'workflows');
     mkdirSync(workflowDir, { recursive: true });
     writeFileSync(join(workflowDir, 'deploy.yml'), content, 'utf-8');
+  }
+
+  async deleteRepo(repoUrl: string): Promise<void> {
+    const fullName = repoUrl.replace('https://github.com/', '').replace(/\.git$/, '').replace(/\/$/, '');
+    if (!fullName || !fullName.includes('/')) {
+      throw new Error(`Invalid GitHub repo URL: ${repoUrl}`);
+    }
+    const { code, stderr } = await runCommand('gh', ['repo', 'delete', fullName, '--yes'], process.cwd());
+    if (code !== 0) {
+      throw new Error(`Failed to delete GitHub repo: ${stderr.slice(0, 500)}`);
+    }
   }
 }

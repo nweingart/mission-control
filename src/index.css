@@ -12,6 +12,7 @@
   --color-surface-light: 254 251 244;    /* bright instrument panels / cards */
   --color-surface-hover: 238 233 222;    /* subtle lift */
   --color-surface-sidebar: 212 205 190;  /* recessed console housing */
+  --color-surface-bright: 254 251 244;  /* brightest panel highlight */
   /* Text */
   --color-ink: 38 33 28;                 /* near-black warm ink */
   --color-ink-secondary: 92 84 72;
@@ -65,50 +66,51 @@
 }
 
 .dark {
-  /* Surfaces — deep warm charcoal, like mission control at night */
-  --color-surface: 28 26 24;
-  --color-surface-light: 38 36 33;
-  --color-surface-hover: 48 45 40;
-  --color-surface-sidebar: 22 20 18;
+  /* Surfaces — deep blue-black, like mission control at night */
+  --color-surface: 13 17 23;
+  --color-surface-light: 28 35 51;
+  --color-surface-hover: 35 43 58;
+  --color-surface-sidebar: 21 27 35;
+  --color-surface-bright: 42 52 68;
   /* Text */
-  --color-ink: 232 228 220;
-  --color-ink-secondary: 172 166 156;
-  --color-ink-muted: 118 112 104;
-  --color-ink-inverse: 28 26 24;
-  /* Accent — Houston blue glows brighter on dark */
-  --color-accent: 82 158 214;
-  --color-accent-hover: 108 178 228;
+  --color-ink: 232 226 217;
+  --color-ink-secondary: 156 163 175;
+  --color-ink-muted: 92 99 112;
+  --color-ink-inverse: 13 17 23;
+  /* Accent — Houston blue */
+  --color-accent: 91 158 201;
+  --color-accent-hover: 123 180 216;
   /* Secondary */
-  --color-secondary: 82 158 214;
-  --color-secondary-hover: 108 178 228;
-  /* Border */
-  --color-border: 58 54 48;
-  --color-border-subtle: 44 42 38;
-  --color-border-strong: 78 72 64;
+  --color-secondary: 91 158 201;
+  --color-secondary-hover: 123 180 216;
+  /* Border — blue-tinted */
+  --color-border: 42 52 68;
+  --color-border-subtle: 32 40 54;
+  --color-border-strong: 58 69 86;
   /* Functional — vivid on dark */
-  --color-error: 228 88 72;
-  --color-success: 88 178 108;
-  --color-success-hover: 72 158 92;
-  --color-info: 82 158 214;
-  --color-warning: 218 158 62;
+  --color-error: 224 90 79;
+  --color-success: 74 222 128;
+  --color-success-hover: 60 200 112;
+  --color-info: 91 158 201;
+  --color-warning: 224 160 48;
   /* Spectrum */
-  --color-spectrum-red: 228 88 72;
-  --color-spectrum-orange: 218 158 62;
-  --color-spectrum-yellow: 218 158 62;
-  --color-spectrum-green: 88 178 108;
-  --color-spectrum-blue: 82 158 214;
-  --color-spectrum-purple: 108 178 228;
+  --color-spectrum-red: 224 90 79;
+  --color-spectrum-orange: 224 160 48;
+  --color-spectrum-yellow: 224 160 48;
+  --color-spectrum-green: 74 222 128;
+  --color-spectrum-blue: 91 158 201;
+  --color-spectrum-purple: 123 180 216;
   /* Houston accent palette — bright instrument glow */
-  --color-houston-blue: 82 158 214;
-  --color-houston-blue-soft: 30 52 72;
-  --color-houston-blue-deep: 108 178 228;
-  --color-houston-red: 228 88 72;
-  --color-houston-red-soft: 58 28 24;
-  --color-houston-red-deep: 248 108 92;
-  --color-houston-amber: 218 158 62;
-  --color-houston-amber-soft: 52 42 24;
-  --color-houston-green: 88 178 108;
-  --color-houston-green-soft: 28 48 32;
+  --color-houston-blue: 91 158 201;
+  --color-houston-blue-soft: 22 38 56;
+  --color-houston-blue-deep: 123 180 216;
+  --color-houston-red: 224 90 79;
+  --color-houston-red-soft: 48 24 22;
+  --color-houston-red-deep: 248 110 98;
+  --color-houston-amber: 224 160 48;
+  --color-houston-amber-soft: 46 38 20;
+  --color-houston-green: 74 222 128;
+  --color-houston-green-soft: 20 44 28;
 }
 
 body {
@@ -141,62 +143,62 @@ body {
 /* Nebula glow */
 .dark body::before {
   background:
-    radial-gradient(ellipse 80% 50% at 25% 65%, rgba(82, 158, 214, 0.08), transparent),
-    radial-gradient(ellipse 60% 40% at 75% 25%, rgba(218, 158, 62, 0.06), transparent);
+    radial-gradient(ellipse 80% 50% at 25% 65%, rgba(91, 158, 201, 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 75% 25%, rgba(224, 160, 48, 0.06), transparent);
 }
 
 /* Stars */
 .dark body::after {
   background:
     /* Houston blue accent stars */
-    radial-gradient(circle 2px at 15% 20%, rgba(82, 158, 214, 0.9), transparent 3px),
-    radial-gradient(circle 1.5px at 67% 11%, rgba(82, 158, 214, 0.7), transparent 2.5px),
-    radial-gradient(circle 2px at 38% 84%, rgba(82, 158, 214, 0.6), transparent 3px),
+    radial-gradient(circle 2px at 15% 20%, rgba(91, 158, 201, 0.9), transparent 3px),
+    radial-gradient(circle 1.5px at 67% 11%, rgba(91, 158, 201, 0.7), transparent 2.5px),
+    radial-gradient(circle 2px at 38% 84%, rgba(91, 158, 201, 0.6), transparent 3px),
     /* Amber accent stars */
-    radial-gradient(circle 2px at 78% 65%, rgba(218, 158, 62, 0.8), transparent 3px),
-    radial-gradient(circle 1.5px at 24% 92%, rgba(218, 158, 62, 0.6), transparent 2.5px),
-    radial-gradient(circle 1.5px at 91% 28%, rgba(218, 158, 62, 0.5), transparent 2.5px),
+    radial-gradient(circle 2px at 78% 65%, rgba(224, 160, 48, 0.8), transparent 3px),
+    radial-gradient(circle 1.5px at 24% 92%, rgba(224, 160, 48, 0.6), transparent 2.5px),
+    radial-gradient(circle 1.5px at 91% 28%, rgba(224, 160, 48, 0.5), transparent 2.5px),
     /* Bright stars */
-    radial-gradient(circle 2px at 8% 12%, rgba(232, 228, 220, 0.8), transparent 3px),
-    radial-gradient(circle 2.5px at 42% 72%, rgba(232, 228, 220, 0.7), transparent 3.5px),
-    radial-gradient(circle 2px at 55% 18%, rgba(232, 228, 220, 0.75), transparent 3px),
-    radial-gradient(circle 2px at 85% 15%, rgba(232, 228, 220, 0.7), transparent 3px),
-    radial-gradient(circle 2.5px at 18% 48%, rgba(232, 228, 220, 0.65), transparent 3.5px),
-    radial-gradient(circle 2px at 73% 42%, rgba(232, 228, 220, 0.7), transparent 3px),
+    radial-gradient(circle 2px at 8% 12%, rgba(232, 226, 217, 0.8), transparent 3px),
+    radial-gradient(circle 2.5px at 42% 72%, rgba(232, 226, 217, 0.7), transparent 3.5px),
+    radial-gradient(circle 2px at 55% 18%, rgba(232, 226, 217, 0.75), transparent 3px),
+    radial-gradient(circle 2px at 85% 15%, rgba(232, 226, 217, 0.7), transparent 3px),
+    radial-gradient(circle 2.5px at 18% 48%, rgba(232, 226, 217, 0.65), transparent 3.5px),
+    radial-gradient(circle 2px at 73% 42%, rgba(232, 226, 217, 0.7), transparent 3px),
     /* Medium stars */
-    radial-gradient(circle 1.5px at 22% 45%, rgba(232, 228, 220, 0.6), transparent 2.5px),
-    radial-gradient(circle 1.5px at 35% 8%, rgba(232, 228, 220, 0.55), transparent 2.5px),
-    radial-gradient(circle 1.5px at 62% 88%, rgba(232, 228, 220, 0.5), transparent 2.5px),
-    radial-gradient(circle 1.5px at 70% 35%, rgba(232, 228, 220, 0.55), transparent 2.5px),
-    radial-gradient(circle 1.5px at 90% 52%, rgba(232, 228, 220, 0.5), transparent 2.5px),
-    radial-gradient(circle 1.5px at 18% 78%, rgba(232, 228, 220, 0.6), transparent 2.5px),
-    radial-gradient(circle 1.5px at 75% 82%, rgba(232, 228, 220, 0.55), transparent 2.5px),
-    radial-gradient(circle 1.5px at 30% 55%, rgba(232, 228, 220, 0.5), transparent 2.5px),
-    radial-gradient(circle 1.5px at 95% 90%, rgba(232, 228, 220, 0.5), transparent 2.5px),
-    radial-gradient(circle 1.5px at 5% 95%, rgba(232, 228, 220, 0.55), transparent 2.5px),
-    radial-gradient(circle 1.5px at 50% 5%, rgba(232, 228, 220, 0.6), transparent 2.5px),
-    radial-gradient(circle 1.5px at 83% 73%, rgba(232, 228, 220, 0.5), transparent 2.5px),
-    radial-gradient(circle 1.5px at 12% 33%, rgba(232, 228, 220, 0.55), transparent 2.5px),
-    radial-gradient(circle 1.5px at 60% 58%, rgba(232, 228, 220, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 22% 45%, rgba(232, 226, 217, 0.6), transparent 2.5px),
+    radial-gradient(circle 1.5px at 35% 8%, rgba(232, 226, 217, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 62% 88%, rgba(232, 226, 217, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 70% 35%, rgba(232, 226, 217, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 90% 52%, rgba(232, 226, 217, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 18% 78%, rgba(232, 226, 217, 0.6), transparent 2.5px),
+    radial-gradient(circle 1.5px at 75% 82%, rgba(232, 226, 217, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 30% 55%, rgba(232, 226, 217, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 95% 90%, rgba(232, 226, 217, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 5% 95%, rgba(232, 226, 217, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 50% 5%, rgba(232, 226, 217, 0.6), transparent 2.5px),
+    radial-gradient(circle 1.5px at 83% 73%, rgba(232, 226, 217, 0.5), transparent 2.5px),
+    radial-gradient(circle 1.5px at 12% 33%, rgba(232, 226, 217, 0.55), transparent 2.5px),
+    radial-gradient(circle 1.5px at 60% 58%, rgba(232, 226, 217, 0.5), transparent 2.5px),
     /* Dim stars */
-    radial-gradient(circle 1px at 48% 38%, rgba(232, 228, 220, 0.4), transparent 2px),
-    radial-gradient(circle 1px at 3% 67%, rgba(232, 228, 220, 0.35), transparent 2px),
-    radial-gradient(circle 1px at 27% 17%, rgba(232, 228, 220, 0.4), transparent 2px),
-    radial-gradient(circle 1px at 58% 76%, rgba(232, 228, 220, 0.35), transparent 2px),
-    radial-gradient(circle 1px at 88% 41%, rgba(232, 228, 220, 0.3), transparent 2px),
-    radial-gradient(circle 1px at 44% 22%, rgba(232, 228, 220, 0.35), transparent 2px),
-    radial-gradient(circle 1px at 16% 62%, rgba(232, 228, 220, 0.4), transparent 2px),
-    radial-gradient(circle 1px at 97% 8%, rgba(232, 228, 220, 0.35), transparent 2px),
-    radial-gradient(circle 1px at 33% 96%, rgba(232, 228, 220, 0.3), transparent 2px),
-    radial-gradient(circle 1px at 79% 53%, rgba(232, 228, 220, 0.35), transparent 2px),
-    radial-gradient(circle 1px at 52% 47%, rgba(232, 228, 220, 0.3), transparent 2px),
-    radial-gradient(circle 1px at 7% 85%, rgba(232, 228, 220, 0.35), transparent 2px),
-    radial-gradient(circle 1px at 65% 3%, rgba(232, 228, 220, 0.4), transparent 2px),
-    radial-gradient(circle 1px at 40% 63%, rgba(232, 228, 220, 0.3), transparent 2px),
-    radial-gradient(circle 1px at 93% 77%, rgba(232, 228, 220, 0.35), transparent 2px),
-    radial-gradient(circle 1px at 21% 4%, rgba(232, 228, 220, 0.3), transparent 2px),
-    radial-gradient(circle 1px at 72% 91%, rgba(232, 228, 220, 0.35), transparent 2px),
-    radial-gradient(circle 1px at 46% 51%, rgba(232, 228, 220, 0.3), transparent 2px);
+    radial-gradient(circle 1px at 48% 38%, rgba(232, 226, 217, 0.4), transparent 2px),
+    radial-gradient(circle 1px at 3% 67%, rgba(232, 226, 217, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 27% 17%, rgba(232, 226, 217, 0.4), transparent 2px),
+    radial-gradient(circle 1px at 58% 76%, rgba(232, 226, 217, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 88% 41%, rgba(232, 226, 217, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 44% 22%, rgba(232, 226, 217, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 16% 62%, rgba(232, 226, 217, 0.4), transparent 2px),
+    radial-gradient(circle 1px at 97% 8%, rgba(232, 226, 217, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 33% 96%, rgba(232, 226, 217, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 79% 53%, rgba(232, 226, 217, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 52% 47%, rgba(232, 226, 217, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 7% 85%, rgba(232, 226, 217, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 65% 3%, rgba(232, 226, 217, 0.4), transparent 2px),
+    radial-gradient(circle 1px at 40% 63%, rgba(232, 226, 217, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 93% 77%, rgba(232, 226, 217, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 21% 4%, rgba(232, 226, 217, 0.3), transparent 2px),
+    radial-gradient(circle 1px at 72% 91%, rgba(232, 226, 217, 0.35), transparent 2px),
+    radial-gradient(circle 1px at 46% 51%, rgba(232, 226, 217, 0.3), transparent 2px);
   animation: twinkle 4s ease-in-out infinite alternate;
 }
 
@@ -263,13 +265,13 @@ body {
     cursor: pointer;
     border: 1.5px solid rgb(var(--color-border));
     border-radius: 10px;
-    background: rgb(var(--color-surface-light));
+    background: transparent;
     color: rgb(var(--color-ink));
     transition: all 0.15s ease;
   }
   .btn-solid:hover {
     background: rgb(var(--color-surface-hover));
-    border-color: rgb(var(--color-border-strong));
+    border-color: rgb(var(--color-accent));
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   }
   .btn-solid:active {
@@ -294,20 +296,20 @@ body {
     background: rgb(var(--color-houston-blue));
     color: #FEFBF4;
     box-shadow:
-      0 2px 16px rgba(62, 138, 194, 0.35),
-      0 0 40px rgba(62, 138, 194, 0.08);
+      0 2px 16px rgba(91, 158, 201, 0.35),
+      0 0 40px rgba(91, 158, 201, 0.08);
     transition: all 0.2s ease;
   }
   .btn-solid-primary:hover {
     background: rgb(var(--color-houston-blue-deep));
     box-shadow:
-      0 4px 24px rgba(62, 138, 194, 0.45),
-      0 0 60px rgba(62, 138, 194, 0.12);
+      0 4px 24px rgba(91, 158, 201, 0.45),
+      0 0 60px rgba(91, 158, 201, 0.12);
     transform: translateY(-1px);
   }
   .btn-solid-primary:active {
     transform: translateY(1px);
-    box-shadow: 0 1px 8px rgba(62, 138, 194, 0.3);
+    box-shadow: 0 1px 8px rgba(91, 158, 201, 0.3);
   }
   .btn-solid-primary:disabled {
     opacity: 0.5;
@@ -327,12 +329,12 @@ body {
     border-radius: 10px;
     background: rgb(var(--color-houston-red));
     color: #FEFBF4;
-    box-shadow: 0 2px 12px rgba(204, 68, 52, 0.25);
+    box-shadow: 0 2px 12px rgba(224, 90, 79, 0.25);
     transition: all 0.2s ease;
   }
   .btn-solid-danger:hover {
     background: rgb(var(--color-houston-red-deep));
-    box-shadow: 0 4px 20px rgba(204, 68, 52, 0.35);
+    box-shadow: 0 4px 20px rgba(224, 90, 79, 0.35);
     transform: translateY(-1px);
   }
   .btn-solid-danger:active {
@@ -356,12 +358,12 @@ body {
     border-radius: 10px;
     background: rgb(var(--color-houston-green));
     color: #FEFBF4;
-    box-shadow: 0 2px 12px rgba(68, 146, 86, 0.25);
+    box-shadow: 0 2px 12px rgba(74, 222, 128, 0.25);
     transition: all 0.2s ease;
   }
   .btn-solid-success:hover {
     background: rgb(var(--color-success-hover));
-    box-shadow: 0 4px 20px rgba(68, 146, 86, 0.35);
+    box-shadow: 0 4px 20px rgba(74, 222, 128, 0.35);
     transform: translateY(-1px);
   }
   .btn-solid-success:active {
@@ -380,16 +382,33 @@ body {
     border: 1.5px solid rgb(var(--color-border));
     border-radius: 12px;
     box-shadow:
-      0 2px 12px rgba(62, 138, 194, 0.05),
+      0 2px 12px rgba(91, 158, 201, 0.05),
       0 1px 4px rgba(0,0,0,0.04);
     transition: all 0.2s ease;
   }
   .card-panel:hover {
     border-color: rgb(var(--color-border-strong));
     box-shadow:
-      0 4px 20px rgba(62, 138, 194, 0.1),
+      0 4px 20px rgba(91, 158, 201, 0.1),
       0 2px 8px rgba(0,0,0,0.06);
     transform: translateY(-1px);
+  }
+
+  /* ---- Readout — data badge ---- */
+  .readout {
+    background: rgb(var(--color-surface));
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    font-size: 12px;
+    color: rgb(var(--color-ink-secondary));
+  }
+  .readout-success {
+    color: rgb(var(--color-spectrum-green));
+  }
+  .readout-warning {
+    color: rgb(var(--color-houston-amber));
   }
 
   /* ---- Input — console input ---- */
@@ -407,8 +426,8 @@ body {
   .input-inset:focus {
     border-color: rgb(var(--color-houston-blue));
     box-shadow:
-      0 0 0 3px rgba(62, 138, 194, 0.15),
-      0 0 20px rgba(62, 138, 194, 0.06);
+      0 0 0 3px rgba(91, 158, 201, 0.15),
+      0 0 20px rgba(91, 158, 201, 0.06);
   }
 
   /* ---- Warm divider ---- */
@@ -430,5 +449,66 @@ body {
   }
   .sidebar-icon:hover {
     background: rgb(var(--color-houston-blue) / 0.08) !important;
+  }
+
+  /* ---- Segmented Control ---- */
+  .segmented-control {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border));
+    border-radius: 10px;
+  }
+  .segmented-control-item {
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: rgb(var(--color-ink-muted));
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: none;
+    background: transparent;
+  }
+  .segmented-control-item:hover {
+    color: rgb(var(--color-ink-secondary));
+  }
+  .segmented-control-item-active {
+    background: rgb(var(--color-surface-bright));
+    color: rgb(var(--color-ink));
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  }
+
+  /* ---- Dock Bar ---- */
+  .dock-bar {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgb(var(--color-surface-light) / 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgb(var(--color-border));
+    border-radius: 16px;
+    z-index: 40;
+  }
+
+  /* ---- Status Indicators ---- */
+  .status-light {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .badge-led {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 2px 8px;
+    border-radius: 4px;
   }
 }

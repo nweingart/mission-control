@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { useCLIMonitor } from './hooks/useCLIMonitor';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -8,9 +8,6 @@ import FlowTestRunner from './components/FlowTestRunner';
 import E2ETestRunner from './components/E2ETestRunner';
 import CICDTestRunner from './components/CICDTestRunner';
 import HomeScreen from './screens/HomeScreen';
-import SetupWorkspaceScreen from './screens/SetupWorkspaceScreen';
-import SetupDeployScreen from './screens/SetupDeployScreen';
-import SetupReadyScreen from './screens/SetupReadyScreen';
 import IdeaScreen from './screens/IdeaScreen';
 import DiscoveryScreen from './screens/DiscoveryScreen';
 import PRDReviewScreen from './screens/PRDReviewScreen';
@@ -75,6 +72,15 @@ function App() {
       delete (window as unknown as { openCICDTest?: () => void }).openCICDTest;
     };
   }, []);
+
+  // Handle houston:// deep links
+  const handleDeepLink = useCallback(async (_url: string) => {
+    // Deep link handling placeholder
+  }, []);
+
+  useEffect(() => {
+    window.api.onDeepLink(handleDeepLink);
+  }, [handleDeepLink]);
 
   if (isLoading) {
     return (
@@ -157,12 +163,6 @@ function App() {
     switch (screen) {
       case 'onboarding':
         return <OnboardingScreen />;
-      case 'setup-workspace':
-        return <SetupWorkspaceScreen />;
-      case 'setup-deploy':
-        return <SetupDeployScreen />;
-      case 'setup-ready':
-        return <SetupReadyScreen />;
       case 'home':
         return <HomeScreen />;
       case 'settings':

@@ -25,9 +25,9 @@ A habit tracking application that helps users build and maintain positive daily 
 
 ## Tech Stack
 - **Framework:** Next.js 14 (App Router)
-- **Database:** Supabase (PostgreSQL + Auth)
+- **Database:** SQLite / PostgreSQL
 - **Styling:** Tailwind CSS
-- **Deployment:** Vercel
+- **Deployment:** GitHub Pages
 
 ## User Stories
 1. As a user, I can create habits with custom names and daily goals
@@ -44,7 +44,7 @@ A habit tracking application that helps users build and maintain positive daily 
 
 const TEST_TASKS = [
   { id: 'task-1', title: 'Set up Next.js 14 project with Tailwind CSS', completed: false },
-  { id: 'task-2', title: 'Configure Supabase auth and database schema', completed: false },
+  { id: 'task-2', title: 'Configure database and auth schema', completed: false },
   { id: 'task-3', title: 'Create habit CRUD API routes', completed: false },
   { id: 'task-4', title: 'Build streak tracking logic', completed: false },
   { id: 'task-5', title: 'Add calendar view component', completed: false },
@@ -277,7 +277,6 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
           ...TEST_PROJECT,
           status: 'complete' as const,
           githubRepo: 'https://github.com/testuser/habit-tracker',
-          vercelUrl: 'https://habit-tracker.vercel.app',
         };
         store.getState().setCurrentProject(project as any);
         store.getState().setScreen('complete');
@@ -346,7 +345,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
 
       // Clear planning data and git events
       store.getState().setActivePlanningChat(null);
-      store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false });
+      store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksLanded: 0, totalLaunches: 0, milestones: [] }, gamificationEvent: null, houstonGreeting: null, houstonApproval: null, houstonErrorContext: null, toasts: [] });
 
       store.getState().setScreen('home');
 
@@ -376,7 +375,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
     const skipped = stepStatuses.filter(s => s === 'skipped').length;
     const total = steps.length;
 
-    let report = `KILN FLOW TEST REPORT\n`;
+    let report = `HOUSTON FLOW TEST REPORT\n`;
     report += `========================\n`;
     report += `Date: ${timestamp}\n`;
     report += `Result: ${failed === 0 ? 'ALL PASSED' : `${failed} FAILED`}\n`;

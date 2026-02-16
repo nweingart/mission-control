@@ -28,13 +28,13 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
 
   const getStatusLeftBorder = (status: string) => {
     switch (status) {
-      case 'idea': return '#3E8AC2';
-      case 'discovery': return '#3E8AC2';
-      case 'planning': return '#C0822A';
-      case 'building': return '#3E8AC2';
-      case 'deploying': return '#C0822A';
-      case 'complete': return '#449256';
-      default: return '#C0B8A8';
+      case 'idea': return '#5B9EC9';
+      case 'discovery': return '#5B9EC9';
+      case 'planning': return '#E0A030';
+      case 'building': return '#5B9EC9';
+      case 'deploying': return '#E0A030';
+      case 'complete': return '#4ADE80';
+      default: return '#2A3444';
     }
   };
 
@@ -120,30 +120,6 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
         <span className="text-xs text-ink-muted">{formatDate(project.createdAt)}</span>
       </div>
 
-      {/* URLs if deployed */}
-      {project.vercelUrl && (
-        <div className="mt-3 pt-3 relative">
-          <div className="divider-warm absolute top-0 left-0 right-0" />
-          <a
-            href={project.vercelUrl}
-            onClick={(e) => {
-              e.stopPropagation();
-              window.api.shell.openExternal(project.vercelUrl!);
-            }}
-            className="text-xs text-accent hover:text-accent flex items-center"
-          >
-            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-              />
-            </svg>
-            {project.vercelUrl.replace('https://', '')}
-          </a>
-        </div>
-      )}
     </div>
   );
 }

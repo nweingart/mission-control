@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import Chat from '../components/Chat';
+import { resilientChat, isCancelError } from '../utils/resilient-chat';
 
 const DISCOVERY_SYSTEM_PROMPT = `You are helping a user plan their software project through a natural conversation.
 
@@ -50,9 +51,9 @@ List the main API routes needed:
 ### 6. Tech Stack
 - Frontend: Next.js 14 + TypeScript + Tailwind CSS
 - Backend: Next.js API routes + TypeScript
-- Database: Supabase (PostgreSQL)
-- Auth: Supabase Auth
-- Hosting: Vercel
+- Database: SQLite / PostgreSQL
+- Auth: NextAuth.js
+- Hosting: GitHub Pages / Self-hosted
 
 ### 7. MVP Scope
 - What's IN for v1 (be specific)
@@ -78,6 +79,7 @@ export default function DiscoveryScreen() {
   const [error, setError] = useState<string | null>(null);
   const hasInitialized = useRef(false);
   const isMountedRef = useRef(true);
+  const cancelRef = useRef<(() => void) | null>(null);
 
   // Detect if Claude's last message signals PRD readiness
   const lastAssistantMessage = [...chatMessages].reverse().find(m => m.role === 'assistant');
@@ -151,7 +153,10 @@ export default function DiscoveryScreen() {
         console.log('[DiscoveryScreen] projectPath:', currentProject.projectPath);
 
         const startTime = Date.now();
-        const response = await window.api.claude.chat(currentProject.projectPath, prompt);
+        const { promise, cancel } = resilientChat.standard(currentProject.projectPath, prompt);
+        cancelRef.current = cancel;
+        const response = await promise;
+        cancelRef.current = null;
         const elapsed = Date.now() - startTime;
 
         console.log('[DiscoveryScreen] Got response in', elapsed, 'ms');
@@ -171,24 +176,18 @@ export default function DiscoveryScreen() {
       } catch (err) {
         // Check if still mounted before updating state
         if (!isMountedRef.current) return;
+        cancelRef.current = null;
+        if (isCancelError(err)) return;
 
         console.error('[DiscoveryScreen] Failed to initialize chat:', err);
         console.error('[DiscoveryScreen] Error details:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
 
-        // Add a fallback message first, then set error so UI shows consistently
-        // Don't show error banner when we have a fallback - it's confusing
+        // Show connection error — no offline fallback
         addChatMessage({
           role: 'assistant',
-          content: `I'd love to help you build "${currentProject?.name || 'your project'}"! Let me ask a few questions:
-
-1. **Target Users**: Who will be using this app?
-2. **Core Features**: What are the 2-3 most important features for the MVP?
-3. **Tech Preferences**: Any preferences for the tech stack?
-
-(Note: Running in offline mode - Claude connection unavailable)`,
+          content: `Unable to connect to Claude. Houston requires an internet connection to work.\n\nPlease check your connection and try again.`,
         });
-        // Don't set error state - the fallback message handles the user experience
-        // setError would show a redundant error banner above the chat
+        setError('Claude connection unavailable. Please check your internet connection.');
       } finally {
         if (isMountedRef.current) {
           console.log('[DiscoveryScreen] Setting isLoading to false');
@@ -217,7 +216,10 @@ export default function DiscoveryScreen() {
     try {
       // Continue conversation
       const prompt = buildConversationContext(chatMessages, content);
-      const response = await window.api.claude.chat(projectPath, prompt);
+      const { promise, cancel } = resilientChat.standard(projectPath, prompt);
+      cancelRef.current = cancel;
+      const response = await promise;
+      cancelRef.current = null;
 
       // Check if still mounted before updating state
       if (!isMountedRef.current) return;
@@ -230,6 +232,8 @@ export default function DiscoveryScreen() {
     } catch (err) {
       // Check if still mounted before updating state
       if (!isMountedRef.current) return;
+      cancelRef.current = null;
+      if (isCancelError(err)) return;
 
       console.error('Failed to get Claude response:', err);
       setError('Failed to get response from Claude. Please try again.');
@@ -258,7 +262,10 @@ export default function DiscoveryScreen() {
 
     try {
       const prdPrompt = `${buildConversationContext(chatMessages)}\n\n${PRD_GENERATION_PROMPT}`;
-      const prdResponse = await window.api.claude.chat(projectPath, prdPrompt);
+      const { promise, cancel } = resilientChat.long(projectPath, prdPrompt);
+      cancelRef.current = cancel;
+      const prdResponse = await promise;
+      cancelRef.current = null;
 
       if (!isMountedRef.current) return;
 
@@ -292,6 +299,11 @@ export default function DiscoveryScreen() {
       goToPRDReview();
     } catch (err) {
       if (!isMountedRef.current) return;
+      cancelRef.current = null;
+      if (isCancelError(err)) {
+        setIsGeneratingPRD(false);
+        return;
+      }
 
       console.error('Failed to generate PRD:', err);
       setError('Failed to generate PRD. Please try again.');
@@ -312,6 +324,12 @@ export default function DiscoveryScreen() {
             Creating a comprehensive Product Requirements Document based on our conversation...
           </p>
           <p className="text-ink-muted text-sm mt-4">This usually takes 15-30 seconds</p>
+          <button
+            onClick={() => { cancelRef.current?.(); setIsGeneratingPRD(false); }}
+            className="mt-6 text-sm text-ink-muted hover:text-error transition-colors"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     );
@@ -370,6 +388,7 @@ export default function DiscoveryScreen() {
             isLoading={isLoading}
             placeholder="Describe your requirements or ask questions..."
             hideInput={readyForPRD}
+            onCancel={isLoading ? () => { cancelRef.current?.(); setIsLoading(false); } : undefined}
           />
         </div>
 

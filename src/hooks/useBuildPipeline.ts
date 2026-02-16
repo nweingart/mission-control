@@ -55,6 +55,22 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3, baseMs 
   throw new Error('unreachable');
 }
 
+async function retryOnTimeout<T>(
+  fn: () => Promise<T>, maxRetries = 2, label = ''
+): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try { return await fn(); }
+    catch (err) {
+      const msg = err instanceof Error ? err.message.toLowerCase() : '';
+      const isTimeout = msg.includes('no output for') || msg.includes('timed out');
+      if (!isTimeout || attempt === maxRetries) throw err;
+      console.log(`[BuildPipeline] Timeout on ${label}, retry ${attempt + 1}/${maxRetries}`);
+      await new Promise(r => setTimeout(r, 5000 * (attempt + 1)));
+    }
+  }
+  throw new Error('unreachable');
+}
+
 export function useBuildPipeline() {
   const {
     currentProject,
@@ -68,6 +84,8 @@ export function useBuildPipeline() {
     setBuildTaskPhase,
     setBuildCurrentTaskId,
     setBuildSessionActive,
+    notifyHoustonBuildComplete,
+    notifyHoustonBuildError,
   } = useAppStore();
 
   const isMountedRef = useIsMounted();
@@ -110,6 +128,9 @@ export function useBuildPipeline() {
   const pauseRequestedRef = useRef(false);
   const pauseResolverRef = useRef<(() => void) | null>(null);
   const [paused, setPaused] = useState(false);
+
+  // Auto-approve: when false (default), pipeline pauses after every task for user review
+  const autoApproveRef = useRef(false);
 
   // Keep refs in sync
   useEffect(() => {
@@ -155,7 +176,7 @@ export function useBuildPipeline() {
         const username = await window.api.github.getUsername();
         await window.api.github.ensureGitConfig(projectPath, username);
       } catch {
-        await window.api.github.ensureGitConfig(projectPath, 'kiln');
+        await window.api.github.ensureGitConfig(projectPath, 'houston');
       }
       await window.api.github.gitAddAndCommit(projectPath, 'Initial commit');
     }
@@ -210,6 +231,7 @@ export function useBuildPipeline() {
 
           updateTask(task.id, { buildPhase: 'branched', branchName });
           level = 1;
+          await checkPause();
         } else {
           // Resuming a task with level >= 1 — validate branch still exists
           if (level < 4) {
@@ -240,45 +262,18 @@ export function useBuildPipeline() {
           const prd = await window.api.storage.getPRD(currentProject!.slug);
           const totalTasks = tasks.length;
           const context = prd || currentProject!.idea || '';
-          let supabaseEnv = '';
-          if (currentProject!.supabaseRef && currentProject!.envVars) {
-            if (currentProject!.supabaseSchema) {
-              // Schema-isolated project — read the guide file and inject it
-              try {
-                const guide = await window.api.fs.readFile(
-                  `${projectPath}/SUPABASE_GUIDE.md`
-                );
-                supabaseEnv = `\n\n${guide}`;
-              } catch {
-                // Fallback if guide file missing
-                supabaseEnv = `\n\n## Supabase Database\nUse schema \`${currentProject!.supabaseSchema}\` for all database operations. Configure the client with \`{ db: { schema: '${currentProject!.supabaseSchema}' } }\`.`;
-              }
-            } else {
-              // Standard 1:1 project (current behavior)
-              supabaseEnv = `
-
-## Supabase Database
-A Supabase project has been provisioned for this app. Use these environment variables to connect:
-- \`NEXT_PUBLIC_SUPABASE_URL\` = \`${currentProject!.envVars.NEXT_PUBLIC_SUPABASE_URL}\`
-- \`NEXT_PUBLIC_SUPABASE_ANON_KEY\` = \`${currentProject!.envVars.NEXT_PUBLIC_SUPABASE_ANON_KEY}\`
-- \`SUPABASE_SERVICE_ROLE_KEY\` = \`${currentProject!.envVars.SUPABASE_SERVICE_ROLE_KEY}\`
-
-Create a \`.env.local\` file with these values if one doesn't exist. Use \`@supabase/supabase-js\` for all database access.`;
-            }
-          }
           const buildPrompt = `I'm building "${currentProject!.name}".
 
 ## Context
 ${context}
-${supabaseEnv}
 
 ## Your Task
-Task ${idx + 1} of ${totalTasks}: ${task.title}
+Task ${idx + 1} of ${totalTasks}: ${task.title}${task.description ? `\nDetails: ${task.description}` : ''}
 
 Build this task completely. Do not work on anything else.`;
 
           console.log('[BuildPipeline] Sending build prompt via chat API, length:', buildPrompt.length);
-          await window.api.claude.chat(projectPath, buildPrompt);
+          await retryOnTimeout(() => window.api.claude.chat(projectPath, buildPrompt, 10 * 60 * 1000), 2, `build:${task.title}`);
           console.log('[BuildPipeline] Chat completed for task:', task.title);
 
           setSessionActive(false);
@@ -291,6 +286,7 @@ Build this task completely. Do not work on anything else.`;
 
           updateTask(task.id, { buildPhase: 'built' });
           level = 2;
+          await checkPause();
         }
 
         // ── REVIEWING + FIXING (level < 3) ───────────────────
@@ -332,9 +328,9 @@ Build this task completely. Do not work on anything else.`;
               setReviewOutput((prev) => prev + content);
             });
 
-            const reviewResponse = await window.api.claude.chat(
-              projectPath,
-              buildReviewPrompt(task, diff)
+            const reviewResponse = await retryOnTimeout(
+              () => window.api.claude.chat(projectPath, buildReviewPrompt(task, diff), 10 * 60 * 1000),
+              1, `review:${task.title}`
             );
 
             artifact = parseReviewResponse(reviewResponse, task, branchName, diffStat);
@@ -347,7 +343,10 @@ Build this task completely. Do not work on anything else.`;
               setTaskPhase('fixing');
 
               setReviewOutput('');
-              await window.api.claude.chat(projectPath, buildFixPrompt(artifact));
+              await retryOnTimeout(
+                () => window.api.claude.chat(projectPath, buildFixPrompt(artifact), 10 * 60 * 1000),
+                1, `fix:${task.title}`
+              );
 
               // Mark findings as fixed based on what the reviewer said is auto-fixable
               artifact.findings = artifact.findings.map((f) => {
@@ -378,6 +377,7 @@ Build this task completely. Do not work on anything else.`;
 
           updateTask(task.id, { buildPhase: 'reviewed', lastReviewArtifact: artifact });
           level = 3;
+          await checkPause();
         }
 
         // ── MERGING + PUSHING (level < 4) ────────────────────
@@ -407,6 +407,7 @@ Build this task completely. Do not work on anything else.`;
           if (!isMountedRef.current || isStale()) return;
           setTaskPhase('complete');
           updateTask(task.id, { buildPhase: 'merged', completed: true });
+          notifyHoustonBuildComplete(task.title);
         }
       } catch (err) {
         if (!isMountedRef.current || isStale()) return;
@@ -414,7 +415,9 @@ Build this task completely. Do not work on anything else.`;
         pipelineErrorRef.current = true;
         setTaskPhase('error');
         const rawMsg = err instanceof Error ? err.message : 'Pipeline failed';
-        setError(classifyError(rawMsg));
+        const classified = classifyError(rawMsg);
+        setError(classified);
+        notifyHoustonBuildError(task.title, classified.userAction || classified.title);
 
         // Best-effort recovery to main — but don't destroy feature branch work
         try {
@@ -436,6 +439,9 @@ Build this task completely. Do not work on anything else.`;
       setTaskPhase,
       setCurrentTaskId,
       setSessionActive,
+      notifyHoustonBuildComplete,
+      notifyHoustonBuildError,
+      checkPause,
     ]
   );
 
@@ -495,6 +501,18 @@ Build this task completely. Do not work on anything else.`;
       if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
 
       completedCount++;
+
+      // Auto-pause for user approval between tasks (unless auto-approve is on)
+      const remainingCount = tasks.filter((t) => !t.completed).length - completedCount;
+      if (!autoApproveRef.current && remainingCount > 0) {
+        pauseRequestedRef.current = true;
+        useAppStore.getState().notifyHoustonTaskApproval(
+          task.title,
+          completedCount,
+          tasks.length,
+          remainingCount
+        );
+      }
 
       // Mid-operation health check between tasks
       try {
@@ -559,14 +577,20 @@ Build this task completely. Do not work on anything else.`;
     runAllTasks();
   }, [currentTaskId, updateTask, runAllTasks]);
 
+  // Set auto-approve mode (skip pausing between tasks)
+  const setAutoApprove = useCallback((value: boolean) => {
+    autoApproveRef.current = value;
+  }, []);
+
   // Cleanup: stop the loop, kill orphaned processes, preserve branch state for resume
   const cleanupAndRestoreMain = useCallback(async () => {
     setSessionActive(false);
     pipelineErrorRef.current = true; // stop the loop if still running
     pipelineStartedRef.current = false;
     runIdRef.current++; // invalidate any in-flight loop iterations
-    // Clear any pending pause
+    // Clear any pending pause and reset auto-approve
     pauseRequestedRef.current = false;
+    autoApproveRef.current = false;
     setPaused(false);
     if (pauseResolverRef.current) {
       pauseResolverRef.current();
@@ -636,5 +660,6 @@ Build this task completely. Do not work on anything else.`;
     handleSkipTask,
     handleEndBuild,
     handleNavigateBack,
+    setAutoApprove,
   };
 }

@@ -76,12 +76,12 @@ describe('StorageService', () => {
   // 1. Constructor creates directories
   // -----------------------------------------------------------------------
   describe('constructor', () => {
-    it('creates .kiln and projects directories when they do not exist', () => {
+    it('creates .houston and projects directories when they do not exist', () => {
       mockedExistsSync.mockReturnValue(false);
       createService();
 
-      expect(mockedMkdirSync).toHaveBeenCalledWith('/mock-home/.kiln', { recursive: true });
-      expect(mockedMkdirSync).toHaveBeenCalledWith('/mock-home/.kiln/projects', { recursive: true });
+      expect(mockedMkdirSync).toHaveBeenCalledWith('/mock-home/.houston', { recursive: true });
+      expect(mockedMkdirSync).toHaveBeenCalledWith('/mock-home/.houston/projects', { recursive: true });
     });
 
     it('does not create directories when they already exist', () => {
@@ -97,14 +97,14 @@ describe('StorageService', () => {
   // -----------------------------------------------------------------------
   describe('getConfig', () => {
     it('returns defaults and saves config when no file exists', () => {
-      // existsSync: false for kiln dirs (constructor), false for configPath
+      // existsSync: false for houston dirs (constructor), false for configPath
       mockedExistsSync.mockReturnValue(false);
       const service = createService();
 
       const config = service.getConfig();
 
       expect(config).toEqual({
-        developmentPath: '/mock-home/development/kiln',
+        developmentPath: '/mock-home/development/houston',
         theme: 'light',
       });
       // saveConfig should have been called (atomicWriteFile writes + renames)
@@ -146,7 +146,7 @@ describe('StorageService', () => {
       const config = service.getConfig();
 
       expect(config).toEqual({
-        developmentPath: '/mock-home/development/kiln',
+        developmentPath: '/mock-home/development/houston',
         theme: 'light',
       });
       consoleSpy.mockRestore();
@@ -221,7 +221,7 @@ describe('StorageService', () => {
       // Then rename the temp file to the config path
       expect(mockedRenameSync).toHaveBeenCalledWith(
         expect.stringContaining('.tmp.'),
-        '/mock-home/.kiln/config.json',
+        '/mock-home/.houston/config.json',
       );
     });
   });
@@ -346,9 +346,9 @@ describe('StorageService', () => {
       expect(project.status).toBe('idea');
       expect(project.idea).toBe('An idea');
 
-      // Should create kiln project dir and development dir
+      // Should create houston project dir and development dir
       expect(mockedMkdirSync).toHaveBeenCalledWith(
-        '/mock-home/.kiln/projects/my-cool-project',
+        '/mock-home/.houston/projects/my-cool-project',
         { recursive: true },
       );
       expect(mockedMkdirSync).toHaveBeenCalledWith(
@@ -422,7 +422,7 @@ describe('StorageService', () => {
   // 15-17. deleteProject
   // -----------------------------------------------------------------------
   describe('deleteProject', () => {
-    it('removes kiln metadata directory', () => {
+    it('removes houston metadata directory', () => {
       const service = createService();
       const projectData = {
         slug: 'my-project',
@@ -437,9 +437,9 @@ describe('StorageService', () => {
 
       service.deleteProject('my-project', false);
 
-      // Should remove the kiln metadata dir
+      // Should remove the houston metadata dir
       expect(mockedRmSync).toHaveBeenCalledWith(
-        '/mock-home/.kiln/projects/my-project',
+        '/mock-home/.houston/projects/my-project',
         { recursive: true, force: true },
       );
     });
@@ -459,13 +459,13 @@ describe('StorageService', () => {
 
       service.deleteProject('my-project', true);
 
-      // Should remove both the generated code and kiln metadata
+      // Should remove both the generated code and houston metadata
       expect(mockedRmSync).toHaveBeenCalledWith(
         '/dev/my-project',
         { recursive: true, force: true },
       );
       expect(mockedRmSync).toHaveBeenCalledWith(
-        '/mock-home/.kiln/projects/my-project',
+        '/mock-home/.houston/projects/my-project',
         { recursive: true, force: true },
       );
     });
@@ -488,7 +488,7 @@ describe('StorageService', () => {
       // rmSync should only be called for the metadata directory, not the project path
       const rmCalls = mockedRmSync.mock.calls.map((c) => String(c[0]));
       expect(rmCalls).not.toContain('/dev/my-project');
-      expect(rmCalls).toContain('/mock-home/.kiln/projects/my-project');
+      expect(rmCalls).toContain('/mock-home/.houston/projects/my-project');
     });
   });
 

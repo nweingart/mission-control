@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import type { GitEvent, ReviewFinding } from '../types';
+import HoustonCallout from '../components/HoustonCallout';
 import { parseUnifiedDiff } from '../utils/diff-parser';
 import type { DiffFile } from '../utils/diff-parser';
 import DiffViewer from '../components/DiffViewer';
@@ -56,21 +57,17 @@ export default function GitHistoryScreen() {
   const mergedCount = gitEvents.filter(e => e.type === 'merged').length;
   const fixedCount = gitEvents.filter(e => e.type === 'auto_fixed').length;
 
+  const setScreen = useAppStore((s) => s.setScreen);
+
   if (gitEvents.length === 0) {
     return (
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center p-8">
-            <div className="w-16 h-16 mx-auto mb-4 bg-surface flex items-center justify-center">
-              <svg className="w-8 h-8 text-ink-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h3 className="text-base font-sans font-semibold text-ink mb-2">No git history yet</h3>
-            <p className="text-ink-muted text-sm max-w-sm">
-              History will appear once building begins. Each task will show branches, commits, reviews, and merges.
-            </p>
-          </div>
+          <HoustonCallout
+            message="No flight records yet."
+            ctaLabel="Start Building"
+            onCtaClick={() => setScreen('building')}
+          />
         </div>
       </div>
     );
@@ -422,7 +419,7 @@ function getEventDisplay(event: GitEvent): { icon: JSX.Element; color: string; d
           </svg>
         ),
         color: 'text-success',
-        description: event.commitMessage || 'Deployed to Vercel',
+        description: event.commitMessage || 'Deployed',
       };
     default:
       return {

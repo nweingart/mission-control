@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useBuildPipeline } from '../hooks/useBuildPipeline';
 import { usePreflightCheck } from '../hooks/usePreflightCheck';
@@ -7,9 +7,10 @@ import KanbanBoard from '../components/KanbanBoard';
 import BuildProgressBadge from '../components/BuildProgressBadge';
 import PreflightGateOverlay from '../components/PreflightGateOverlay';
 import type { ServiceKey } from '../constants/preflight-requirements';
+import houstonAvatar from '../assets/houston-avatar.webp';
 
 export default function BuildScreen() {
-  const { currentProject, tasks, flowTestMode, goToProjectHome } = useAppStore();
+  const { currentProject, tasks, houstonApproval, clearHoustonApproval } = useAppStore();
 
 
 
@@ -34,41 +35,25 @@ export default function BuildScreen() {
     handleSkipTask,
     handleEndBuild,
     handleNavigateBack,
+    setAutoApprove,
   } = pipeline;
 
   // ─── Smart progress computation ─────────────────────────────
-  const inProgressCount = tasks.filter(t => !t.completed && t.buildPhase).length;
-  const remainingCount = tasks.length - completedTasks - inProgressCount;
-  const hasPartialProgress = completedTasks > 0 || inProgressCount > 0;
   const allDone = completedTasks === tasks.length && tasks.length > 0;
-
-  // Show start/resume modal only if not all done
-  const [showStartModal, setShowStartModal] = useState(!allDone);
-
-  // Update modal state if allDone changes (e.g. tasks loaded async)
-  useEffect(() => {
-    if (allDone) setShowStartModal(false);
-  }, [allDone]);
 
   // Count completed + the currently active task for display
   const activeTasks = completedTasks + (currentTaskId ? 1 : 0);
   const progress = tasks.length > 0 ? (activeTasks / tasks.length) * 100 : 0;
 
-  // In flow test mode, auto-start pipeline (skip modal)
+  // Auto-start build on mount (replaces the old modal)
   useEffect(() => {
-    if (!flowTestMode || buildStartedRef.current) return;
+    if (buildStartedRef.current) return;
     if (!currentProject || tasks.length === 0) return;
+    if (allDone) return;
     buildStartedRef.current = true;
-    setShowStartModal(false);
     preflight.runGuarded(() => runAllTasks());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentProject, tasks.length, flowTestMode]);
-
-  // Start build from modal confirmation
-  const handleStartBuild = () => {
-    setShowStartModal(false);
-    preflight.runGuarded(() => runAllTasks());
-  };
+  }, [currentProject, tasks.length, allDone]);
 
   // For mid-operation preflight, use the preflight hook to get fresh failures
   const midOpPreflight = usePreflightCheck(requiredServices);
@@ -101,6 +86,18 @@ export default function BuildScreen() {
       // Initial: retry the preflight check
       preflight.retry();
     }
+  };
+
+  // ─── Approval gate handlers ─────────────────────────────────
+  const handleContinueOne = () => {
+    clearHoustonApproval();
+    togglePause(); // resume pipeline for one task
+  };
+
+  const handleAutoContinueAll = () => {
+    clearHoustonApproval();
+    setAutoApprove(true);
+    togglePause(); // resume pipeline — won't pause again
   };
 
   // ─── Progress bar label ─────────────────────────────────────
@@ -177,6 +174,40 @@ export default function BuildScreen() {
               </div>
 
             </div>
+
+            {/* Houston approval banner — pause between tasks */}
+            {paused && houstonApproval && (
+              <div className="mb-4 bg-spectrum-blue/10 border border-spectrum-blue/30 p-4">
+                <div className="flex items-start">
+                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-spectrum-blue mr-3 flex-shrink-0">
+                    <img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-ink">
+                      <span className="font-medium">"{houstonApproval.taskTitle}"</span> landed successfully.{' '}
+                      {houstonApproval.remaining} {houstonApproval.remaining === 1 ? 'task' : 'tasks'} remaining.
+                    </p>
+                    <p className="text-xs text-ink-muted mt-1">
+                      Review the changes above, then continue when ready.
+                    </p>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0 ml-4">
+                    <button
+                      onClick={handleContinueOne}
+                      className="btn-solid-primary px-4 py-1.5 text-sm"
+                    >
+                      Continue
+                    </button>
+                    <button
+                      onClick={handleAutoContinueAll}
+                      className="btn-solid px-4 py-1.5 text-sm text-ink-muted"
+                    >
+                      Auto-continue all
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Three-tier error display */}
             {error && error.severity === 'auto_recoverable' && (
@@ -352,47 +383,6 @@ export default function BuildScreen() {
         </div>
 
       </main>
-
-      {/* Start / Resume Build Modal */}
-      {showStartModal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="card-panel p-8 max-w-md w-full mx-4 text-center">
-            <div className="w-14 h-14 bg-spectrum-green/10 flex items-center justify-center mx-auto mb-5">
-              <svg className="w-7 h-7 text-spectrum-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            {hasPartialProgress ? (
-              <>
-                <h2 className="text-base font-sans font-semibold text-ink mb-2">Resume building?</h2>
-                <p className="text-ink-muted text-sm mb-6">
-                  {completedTasks} done{inProgressCount > 0 ? `, ${inProgressCount} in progress` : ''}, {remainingCount} remaining
-                </p>
-                <button
-                  onClick={handleStartBuild}
-                  className="btn-solid-primary px-8 py-3 font-medium text-base"
-                >
-                  Resume Building
-                </button>
-              </>
-            ) : (
-              <>
-                <h2 className="text-base font-sans font-semibold text-ink mb-2">Ready to execute tasks?</h2>
-                <p className="text-ink-muted text-sm mb-6">
-                  {tasks.length} task{tasks.length !== 1 ? 's' : ''} to build
-                </p>
-                <button
-                  onClick={handleStartBuild}
-                  className="btn-solid-primary px-8 py-3 font-medium text-base"
-                >
-                  Start Building
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
     </div>
   );
