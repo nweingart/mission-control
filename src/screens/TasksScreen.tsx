@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import TaskList from '../components/TaskList';
 import { resilientChat } from '../utils/resilient-chat';
+import type { HumanTask } from '../types';
 
 const DEFAULT_TASKS = [
   'Set up Next.js project with TypeScript and Tailwind CSS',
@@ -34,6 +35,7 @@ export default function TasksScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [usedDefaultTasks, setUsedDefaultTasks] = useState(false);
+  const [humanTasks, setHumanTasks] = useState<HumanTask[]>(currentProject?.humanTasks ?? []);
   const hasAttemptedGenerate = useRef(false);
   const isMountedRef = useRef(true);
 
@@ -83,12 +85,30 @@ Break this into the smallest reasonable development tasks. Guidelines:
 - GOOD: "Set up auth client", "Build signup page", "Build login page", "Add logout to navbar", "Create onboarding screen"
 - Tasks must build on each other logically
 
-Return a JSON array of objects with title, description, and estimatedMinutes:
-[{"title": "...", "description": "1-2 sentence detail", "estimatedMinutes": 3}, ...]
+Additionally, identify any setup tasks that require HUMAN action outside the codebase
+(creating accounts, enabling auth providers, getting API keys, configuring OAuth, etc.).
 
+Return your response as a JSON object with two arrays:
+{
+  "tasks": [{"title": "...", "description": "1-2 sentence detail", "estimatedMinutes": 3}, ...],
+  "humanTasks": [
+    {
+      "title": "Add Supabase credentials",
+      "description": "Get the Project URL and anon key from your Supabase dashboard and add them to .env.local",
+      "service": "supabase",
+      "blocksPreview": true,
+      "links": [
+        {"label": "Supabase API Settings", "url": "https://supabase.com/dashboard/project/_/settings/api"}
+      ],
+      "verification": {"type": "env_var_check", "envVars": ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"]}
+    }
+  ]
+}
+
+If there are no human tasks needed, return an empty humanTasks array.
 estimatedMinutes should be 1-4 for each task (aim for under 4 minutes each).
 
-Do not include any other text, just the JSON array.`;
+Do not include any other text, just the JSON object.`;
 
         const { promise } = resilientChat.standard(currentProject.projectPath, prompt);
         const response = await promise;
@@ -98,18 +118,38 @@ Do not include any other text, just the JSON array.`;
 
         // Parse the JSON response
         try {
-          // Find JSON array in response (Claude might include extra text)
-          const jsonMatch = response.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
+          // Try to parse as { tasks, humanTasks } object first
+          const objMatch = response.match(/\{[\s\S]*\}/);
+          const arrMatch = response.match(/\[[\s\S]*\]/);
 
-            // Validate parsed result is an array
-            if (!Array.isArray(parsed)) {
-              throw new Error('Parsed result is not an array');
+          let taskArray: unknown[] | null = null;
+          let humanTaskArray: unknown[] | null = null;
+
+          if (objMatch) {
+            try {
+              const obj = JSON.parse(objMatch[0]);
+              if (obj && typeof obj === 'object' && Array.isArray(obj.tasks)) {
+                taskArray = obj.tasks;
+                if (Array.isArray(obj.humanTasks)) {
+                  humanTaskArray = obj.humanTasks;
+                }
+              }
+            } catch {
+              // Not a valid object — fall through to array parse
             }
+          }
 
+          // Fallback: plain JSON array (backward compat)
+          if (!taskArray && arrMatch) {
+            const parsed = JSON.parse(arrMatch[0]);
+            if (Array.isArray(parsed)) {
+              taskArray = parsed;
+            }
+          }
+
+          if (taskArray) {
             // Handle both {title, description, estimatedMinutes} objects and plain strings
-            const generatedTasks = parsed
+            const generatedTasks = taskArray
               .map((item: unknown, index: number) => {
                 if (typeof item === 'string' && item.trim().length > 0) {
                   return { id: `task-${Date.now()}-${index}`, title: item.trim(), completed: false };
@@ -136,6 +176,43 @@ Do not include any other text, just the JSON array.`;
             }
 
             setTasks(generatedTasks);
+
+            // Parse and save human tasks
+            if (humanTaskArray && humanTaskArray.length > 0) {
+              const now = Date.now();
+              const parsedHumanTasks: HumanTask[] = humanTaskArray
+                .map((item: unknown, index: number) => {
+                  if (!item || typeof item !== 'object' || !('title' in item)) return null;
+                  const ht = item as Record<string, unknown>;
+                  return {
+                    id: `human-task-${now}-${index}`,
+                    title: String(ht.title || ''),
+                    description: String(ht.description || ''),
+                    service: typeof ht.service === 'string' ? ht.service : undefined,
+                    status: 'pending' as const,
+                    blocksPreview: Boolean(ht.blocksPreview),
+                    links: Array.isArray(ht.links) ? ht.links.filter(
+                      (l: unknown): l is { label: string; url: string } =>
+                        !!l && typeof l === 'object' && 'label' in l && 'url' in l
+                    ) : undefined,
+                    verification: ht.verification && typeof ht.verification === 'object' && 'type' in (ht.verification as Record<string, unknown>)
+                      ? {
+                          type: 'env_var_check' as const,
+                          envVars: Array.isArray((ht.verification as Record<string, unknown>).envVars)
+                            ? ((ht.verification as Record<string, unknown>).envVars as string[])
+                            : [],
+                        }
+                      : undefined,
+                  };
+                })
+                .filter((t): t is HumanTask => t !== null && t.title.length > 0);
+
+              if (parsedHumanTasks.length > 0) {
+                setHumanTasks(parsedHumanTasks);
+                updateProject({ humanTasks: parsedHumanTasks });
+              }
+            }
+
             if (isMountedRef.current) {
               setIsGenerating(false);
             }
@@ -335,6 +412,35 @@ Do not include any other text, just the JSON array.`;
                 editable={true}
                 showAddButton={true}
               />
+
+              {/* Setup Tasks (human tasks) */}
+              {humanTasks.length > 0 && (
+                <div className="mt-8">
+                  <h3 className="text-sm font-sans font-semibold text-ink-muted uppercase tracking-wider mb-3">
+                    Setup Tasks — things you'll do while Houston builds
+                  </h3>
+                  <div className="space-y-2">
+                    {humanTasks.map((ht) => (
+                      <div key={ht.id} className="card-panel p-3 flex items-start gap-3">
+                        {ht.service && (
+                          <span className="px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent flex-shrink-0 mt-0.5">
+                            {ht.service}
+                          </span>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-ink">{ht.title}</p>
+                          <p className="text-xs text-ink-muted mt-0.5">{ht.description}</p>
+                        </div>
+                        {ht.blocksPreview && (
+                          <span className="px-2 py-0.5 text-xs font-medium bg-houston-amber/10 text-houston-amber flex-shrink-0 mt-0.5">
+                            Required for preview
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Actions */}
               <div className="mt-8 flex justify-between items-center">

@@ -9,6 +9,7 @@ import {
   extractJsonObject,
 } from '../utils/gap-helpers';
 import { resilientChat } from '../utils/resilient-chat';
+import { parseEnvFile, isPlaceholder } from '../utils/env-helpers';
 
 type PreviewStatus = 'starting' | 'running' | 'stopped' | 'error';
 type SidebarTab = 'preview' | 'env' | 'files' | 'planning' | 'settings';
@@ -51,6 +52,7 @@ export default function PreviewScreen() {
     );
   }
 
+  const [showDemoDataBanner, setShowDemoDataBanner] = useState(true);
   const [status, setStatus] = useState<PreviewStatus>('starting');
   const [output, setOutput] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +70,10 @@ export default function PreviewScreen() {
   const [envSaveStatus, setEnvSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [qualitySidebarCollapsed, setQualitySidebarCollapsed] = useState(false);
   const [isFixingGaps, setIsFixingGaps] = useState(false);
+
+  // Human task setup gate state
+  const [setupStatus, setSetupStatus] = useState<'checking' | 'blocked' | 'ready'>('checking');
+  const [setupSkipped, setSetupSkipped] = useState(false);
 
   const outputRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
@@ -93,8 +99,61 @@ export default function PreviewScreen() {
     }
   }, [output]);
 
-  // Start dev server on mount (skip in flow test mode)
+  // Phase 1: Check human tasks that block preview
   useEffect(() => {
+    if (flowTestMode) {
+      setSetupStatus('ready');
+      return;
+    }
+    if (!currentProject?.projectPath) return;
+
+    const checkHumanTasks = async () => {
+      const humanTasks = currentProject.humanTasks ?? [];
+      const blockingTasks = humanTasks.filter((t) => t.blocksPreview && t.status === 'pending');
+
+      if (blockingTasks.length === 0) {
+        setSetupStatus('ready');
+        return;
+      }
+
+      // Auto-verify env var tasks by reading .env.local
+      let anyAutoCompleted = false;
+      try {
+        const envContent = await window.api.fs.readFile(`${currentProject.projectPath}/.env.local`);
+        const envVars = parseEnvFile(envContent);
+
+        const updatedTasks = humanTasks.map((task) => {
+          if (task.status !== 'pending' || !task.blocksPreview) return task;
+          if (task.verification?.type === 'env_var_check') {
+            const allPresent = task.verification.envVars.every(
+              (key) => envVars[key] !== undefined && !isPlaceholder(envVars[key])
+            );
+            if (allPresent) {
+              anyAutoCompleted = true;
+              return { ...task, status: 'completed' as const, completedAt: new Date().toISOString() };
+            }
+          }
+          return task;
+        });
+
+        if (anyAutoCompleted) {
+          await updateProject({ humanTasks: updatedTasks });
+        }
+
+        // Recheck after auto-completion
+        const stillBlocking = updatedTasks.filter((t) => t.blocksPreview && t.status === 'pending');
+        setSetupStatus(stillBlocking.length > 0 ? 'blocked' : 'ready');
+      } catch {
+        // No .env.local file — tasks still pending
+        setSetupStatus('blocked');
+      }
+    };
+    checkHumanTasks();
+  }, [currentProject?.projectPath, currentProject?.humanTasks, flowTestMode, updateProject]);
+
+  // Phase 2: Start dev server only when setup check is done
+  useEffect(() => {
+    if (setupStatus !== 'ready') return;
     if (flowTestMode) return;
     if (!currentProject?.projectPath) return;
 
@@ -157,7 +216,7 @@ export default function PreviewScreen() {
       window.api.devServer.stop();
       window.api.devServer.removeListeners();
     };
-  }, [currentProject?.projectPath]);
+  }, [setupStatus, currentProject?.projectPath, flowTestMode]);
 
   const openInBrowser = () => {
     if (serverUrl) {
@@ -361,6 +420,70 @@ export default function PreviewScreen() {
     )},
   ];
 
+  // Render gate: checking setup
+  if (setupStatus === 'checking') {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-surface-card">
+        <div className="flex flex-col items-center space-y-4">
+          <svg className="w-8 h-8 text-accent animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <p className="text-sm text-ink-muted">Checking project setup...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render gate: blocked by incomplete human tasks
+  if (setupStatus === 'blocked') {
+    const blockingTasks = (currentProject.humanTasks ?? []).filter(
+      (t) => t.blocksPreview && t.status === 'pending'
+    );
+    return (
+      <div className="flex-1 flex items-center justify-center bg-surface-card">
+        <div className="max-w-md w-full p-6">
+          <h2 className="text-lg font-sans font-bold text-ink mb-2">Setup required before preview</h2>
+          <p className="text-sm text-ink-muted mb-4">
+            Complete these tasks to start the preview. Houston can guide you through them.
+          </p>
+          <div className="space-y-2 mb-6">
+            {blockingTasks.map((task) => (
+              <div key={task.id} className="card-panel p-3 flex items-center gap-3">
+                {task.service && (
+                  <span className="px-2 py-0.5 text-xs font-medium bg-accent/10 text-accent flex-shrink-0">
+                    {task.service}
+                  </span>
+                )}
+                <span className="text-sm text-ink">{task.title}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-col items-center gap-3">
+            <button
+              onClick={() => (window as unknown as { openHouston?: () => void }).openHouston?.()}
+              className="btn-solid-primary flex items-center space-x-2 px-6 py-3"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span>Open Houston</span>
+            </button>
+            <button
+              onClick={() => {
+                setSetupSkipped(true);
+                setSetupStatus('ready');
+              }}
+              className="text-sm text-ink-muted hover:text-ink transition-colors"
+            >
+              Skip — start without completing setup
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Header */}
@@ -439,6 +562,25 @@ export default function PreviewScreen() {
 
         {/* Content Area */}
         <main className="flex-1 overflow-y-auto p-6">
+          {showDemoDataBanner && setupSkipped && (
+            <div className="mx-0 mb-4 p-4 bg-houston-amber/10 border border-houston-amber/30 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-houston-amber flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-ink">
+                  <span className="font-semibold">You're viewing your app with demo data.</span>{' '}
+                  Set up your database to use real data.
+                </p>
+              </div>
+              <button onClick={() => setShowDemoDataBanner(false)}
+                className="text-ink-muted hover:text-ink transition-colors p-1 flex-shrink-0" title="Dismiss">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
           {/* Preview Tab */}
           {activeTab === 'preview' && (
             <div className="space-y-4">

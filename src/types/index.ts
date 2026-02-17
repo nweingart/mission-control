@@ -1,3 +1,31 @@
+export interface DesignPreferences {
+  colorTemp: 'warm' | 'cool';
+  saturation: 'vibrant' | 'muted';
+  typography: 'modern' | 'classic';
+  spacing: 'spacious' | 'compact';
+  corners: 'rounded' | 'sharp';
+  depth: 'flat' | 'elevated';
+  contrast: 'soft' | 'bold';
+  style: 'minimal' | 'rich';
+  theme: 'light' | 'dark';
+  vibe: 'professional' | 'playful';
+}
+
+export interface HumanTask {
+  id: string;
+  title: string;
+  description: string;
+  service?: string;
+  status: 'pending' | 'completed';
+  completedAt?: string;
+  blocksPreview: boolean;
+  links?: { label: string; url: string }[];
+  verification?: {
+    type: 'env_var_check';
+    envVars: string[];
+  };
+}
+
 export interface Project {
   slug: string;
   name: string;
@@ -8,6 +36,9 @@ export interface Project {
   idea?: string;
   prd?: string;
   envVars?: Record<string, string>;
+  hasBuiltOnce?: boolean;
+  humanTasks?: HumanTask[];
+  designPreferences?: DesignPreferences;
 }
 
 export type ProjectStatus =

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import type { GapFinding, GapAnalysis } from '../types';
-import { resilientChat } from '../utils/resilient-chat';
+import { resilientChat, isTimeoutError } from '../utils/resilient-chat';
 
 type GapPhase =
   | 'analyzing'
@@ -33,6 +33,31 @@ function extractJsonObject(text: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Chat wrapper that falls back to accumulated stream output on timeout.
+ * Claude may output the full response but hang without exiting — the stream
+ * output is captured via onChatOutput and stored in the accumulator ref.
+ * If the chat times out but valid JSON is in the accumulated output, use it.
+ */
+async function chatWithStreamFallback(
+  chatCall: { promise: Promise<string>; cancel: () => void },
+  streamAccumulatorRef: React.MutableRefObject<string>,
+): Promise<string> {
+  try {
+    return await chatCall.promise;
+  } catch (err) {
+    if (isTimeoutError(err)) {
+      const accumulated = streamAccumulatorRef.current;
+      const fallbackJson = extractJsonObject(accumulated);
+      if (fallbackJson) {
+        console.log('[GapAnalysis] Chat timed out but found valid JSON in stream output — using fallback');
+        return accumulated;
+      }
+    }
+    throw err;
+  }
 }
 
 function buildAnalysisPrompt(prd: string): string {
@@ -135,6 +160,7 @@ export default function GapAnalysisScreen() {
   const pipelineStartedRef = useRef(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamOutputRef = useRef<HTMLDivElement>(null);
+  const streamAccumulatorRef = useRef('');
   const fixConfirmResolverRef = useRef<((proceed: boolean) => void) | null>(null);
   const cancelRef = useRef<(() => void) | null>(null);
 
@@ -208,15 +234,17 @@ export default function GapAnalysisScreen() {
         if (!isMountedRef.current) return;
         setPhase('analyzing');
         setStreamOutput('');
+        streamAccumulatorRef.current = '';
 
         window.api.claude.onChatOutput((content: string) => {
           if (!isMountedRef.current) return;
+          streamAccumulatorRef.current += content;
           setStreamOutput(prev => prev + content);
         });
 
         const analysis1 = resilientChat.long(projectPath, buildAnalysisPrompt(prd));
         cancelRef.current = analysis1.cancel;
-        const analysisResponse = await analysis1.promise;
+        const analysisResponse = await chatWithStreamFallback(analysis1, streamAccumulatorRef);
         cancelRef.current = null;
         if (!isMountedRef.current) return;
 
@@ -275,11 +303,12 @@ export default function GapAnalysisScreen() {
         if (!isMountedRef.current) return;
         setPhase('meta-reviewing');
         setStreamOutput('');
+        streamAccumulatorRef.current = '';
 
         const meta1 = resilientChat.standard(projectPath,
           buildMetaReviewPrompt(prd, analysisJson || analysisResponse));
         cancelRef.current = meta1.cancel;
-        const metaResponse = await meta1.promise;
+        const metaResponse = await chatWithStreamFallback(meta1, streamAccumulatorRef);
         cancelRef.current = null;
         if (!isMountedRef.current) return;
 
@@ -385,6 +414,7 @@ export default function GapAnalysisScreen() {
         if (!isMountedRef.current) return;
         setPhase('fixing');
         setStreamOutput('');
+        streamAccumulatorRef.current = '';
 
         const fixFindings = parsedMeta.adjustedFindings || parsedAnalysis.findings || [];
         const fix1 = resilientChat.long(projectPath, buildFixPrompt(fixFindings));
@@ -414,10 +444,11 @@ export default function GapAnalysisScreen() {
         if (!isMountedRef.current) return;
         setPhase('re-analyzing');
         setStreamOutput('');
+        streamAccumulatorRef.current = '';
 
         const reAnalysis = resilientChat.long(projectPath, buildAnalysisPrompt(prd));
         cancelRef.current = reAnalysis.cancel;
-        const reResponse = await reAnalysis.promise;
+        const reResponse = await chatWithStreamFallback(reAnalysis, streamAccumulatorRef);
         cancelRef.current = null;
         if (!isMountedRef.current) return;
 
@@ -437,10 +468,11 @@ export default function GapAnalysisScreen() {
         setGrade(reParsed.grade);
 
         // Meta-review pass 2 to validate findings after fixes
+        streamAccumulatorRef.current = '';
         const reMeta = resilientChat.standard(projectPath,
           buildMetaReviewPrompt(prd, reJson || reResponse));
         cancelRef.current = reMeta.cancel;
-        const reMetaResponse = await reMeta.promise;
+        const reMetaResponse = await chatWithStreamFallback(reMeta, streamAccumulatorRef);
         cancelRef.current = null;
         if (!isMountedRef.current) return;
 
@@ -525,14 +557,16 @@ export default function GapAnalysisScreen() {
 
       try {
         setStreamOutput('');
+        streamAccumulatorRef.current = '';
         window.api.claude.onChatOutput((content: string) => {
           if (!isMountedRef.current) return;
+          streamAccumulatorRef.current += content;
           setStreamOutput(prev => prev + content);
         });
 
         const retryAnalysis = resilientChat.long(projectPath, buildAnalysisPrompt(prd));
         cancelRef.current = retryAnalysis.cancel;
-        const response = await retryAnalysis.promise;
+        const response = await chatWithStreamFallback(retryAnalysis, streamAccumulatorRef);
         cancelRef.current = null;
         if (!isMountedRef.current) return;
         const json = extractJsonObject(response);

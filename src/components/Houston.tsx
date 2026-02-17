@@ -5,7 +5,7 @@ import { extractBacklogSuggestions } from '../utils/planning';
 import { deriveHoustonMood, getMoodButtonClasses } from '../utils/houstonMood';
 import { buildErrorDiagnostic } from '../utils/houstonGreeting';
 import { resilientChat, isCancelError } from '../utils/resilient-chat';
-import type { ChatMessage } from '../types';
+import type { ChatMessage, HumanTask } from '../types';
 import houstonAvatar from '../assets/houston-avatar.webp';
 
 const WELCOME_CONTENT = "Hey! I'm Houston, your project assistant. Ask me anything about your code, tasks, or architecture.";
@@ -48,6 +48,8 @@ async function buildPrompt(
 ): Promise<string> {
   const { currentProject, tasks, backlog, sprints } = useAppStore.getState();
   if (!currentProject) return userMessage;
+
+  const humanTasks = currentProject.humanTasks ?? [];
 
   // Fetch PRD (async)
   let prd: string | null = null;
@@ -109,7 +111,18 @@ Priority: [high/medium/low]
 Type: [bug_fix/feature_refactor/new_feature]
 
 - Only use this format when you have enough detail. Confirm what was added.
+${humanTasks.length > 0 ? `
+HUMAN TASKS GUIDANCE:
+- When the user is working on human tasks, guide them step by step conversationally.
+- For each task, explain what to do, provide the relevant links, and wait for confirmation.
+- When the user confirms they completed a task, mark it done using EXACTLY this format:
 
+[TASK_COMPLETE]
+TaskId: [the task id]
+
+- Only mark a task complete when the user explicitly confirms they've done it.
+- If all tasks are done, congratulate them and let them know the preview will be ready.
+` : ''}
 PROJECT: ${currentProject.name}
 Path: ${currentProject.projectPath}
 Status: ${currentProject.status}
@@ -127,6 +140,9 @@ ${sprintLines}
 
 PRD:
 ${prdSection}
+${humanTasks.length > 0 ? `
+HUMAN TASKS (setup the user needs to do):
+${humanTasks.map(t => `- [${t.status === 'completed' ? 'x' : ' '}] ${t.title} (id: ${t.id}, ${t.service || 'general'})${t.blocksPreview ? ' [BLOCKS PREVIEW]' : ''}\n  ${t.description}${t.links?.map(l => `\n  Link: ${l.label} — ${l.url}`).join('') || ''}`).join('\n')}` : ''}
 </reference_data>
 
 ${conversationLines ? `CONVERSATION:\n${conversationLines}\n` : ''}User: ${userMessage}`;
@@ -239,6 +255,39 @@ export default function Houston() {
     clearHoustonErrorContext();
   }, [houstonErrorContext, slug, setIsOpen, setMessages, clearHoustonErrorContext]);
 
+  // Auto-open Houston when human tasks are pending
+  const houstonHumanTaskContext = useAppStore((s) => s.houstonHumanTaskContext);
+  const clearHoustonHumanTaskContext = useAppStore((s) => s.clearHoustonHumanTaskContext);
+
+  useEffect(() => {
+    if (!houstonHumanTaskContext || !slug) return;
+
+    const { tasks: htTasks } = houstonHumanTaskContext;
+    if (htTasks.length === 0) {
+      clearHoustonHumanTaskContext();
+      return;
+    }
+
+    // Ensure project chat is initialized
+    const chat = getProjectChat(slug);
+    if (!chat.hasOpened) {
+      chat.hasOpened = true;
+      setMessages([makeWelcomeMessage()]);
+    }
+
+    const projectName = currentProject?.name || 'your project';
+    const firstTask = htTasks[0];
+    const openingMsg: ChatMessage = {
+      id: `houston-human-tasks-${houstonHumanTaskContext.timestamp}`,
+      role: 'assistant',
+      content: `Hey! While I build ${projectName}, there ${htTasks.length === 1 ? 'is 1 thing' : `are ${htTasks.length} things`} you'll need to set up. Ready to start with "${firstTask.title}"?`,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, openingMsg]);
+    setIsOpen(true);
+    clearHoustonHumanTaskContext();
+  }, [houstonHumanTaskContext, slug, currentProject?.name, setIsOpen, setMessages, clearHoustonHumanTaskContext]);
+
   // Expose window.openHouston() so other screens can open it
   useEffect(() => {
     (window as unknown as { openHouston?: () => void }).openHouston = () => {
@@ -320,6 +369,28 @@ export default function Houston() {
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, confirmMsg]);
+      }
+
+      // Extract [TASK_COMPLETE] blocks and mark human tasks done
+      const taskCompleteRegex = /\[TASK_COMPLETE\]\s*\nTaskId:\s*(.+)/g;
+      let tcMatch;
+      while ((tcMatch = taskCompleteRegex.exec(response)) !== null) {
+        const taskId = tcMatch[1].trim();
+        const { currentProject: cp, updateProject: up } = useAppStore.getState();
+        const ht = cp?.humanTasks?.find((t) => t.id === taskId);
+        if (ht && cp?.humanTasks) {
+          const updatedTasks = cp.humanTasks.map((t) =>
+            t.id === taskId ? { ...t, status: 'completed' as const, completedAt: new Date().toISOString() } : t
+          );
+          up({ humanTasks: updatedTasks });
+          const completeMsg: ChatMessage = {
+            id: `houston-task-done-${Date.now()}-${taskId}`,
+            role: 'assistant',
+            content: `Marked "${ht.title}" as complete!`,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, completeMsg]);
+        }
       }
     } catch (err) {
       cancelRef.current = null;

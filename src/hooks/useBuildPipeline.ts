@@ -448,7 +448,7 @@ Build this task completely. Do not work on anything else.`;
   // Handle build completion
   const handleBuildComplete = useCallback(async () => {
     try {
-      await updateProject({ status: 'previewing' });
+      await updateProject({ status: 'previewing', hasBuiltOnce: true });
       if (!isMountedRef.current) return;
       goToPreview();
     } catch (err) {
@@ -529,20 +529,26 @@ Build this task completely. Do not work on anything else.`;
       await checkPause();
     }
 
+    // Drain tasks added during the build (e.g., Design Duel task)
+    if (!pipelineErrorRef.current && !isStale() && isMountedRef.current) {
+      const freshTasks = useAppStore.getState().tasks;
+      const newUncompleted = freshTasks.filter(t => !t.completed);
+      for (const task of newUncompleted) {
+        if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
+        setCurrentTaskId(task.id);
+        await runTaskPipeline(task, freshTasks.indexOf(task), false, myRunId);
+        if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
+        await checkPause();
+      }
+    }
+
     pipelineStartedRef.current = false;
 
-    // All tasks done — compare against count rather than stale closure
+    // All tasks done — check fresh store state
     if (!isMountedRef.current || pipelineErrorRef.current || isStale()) return;
-    if (completedCount === incompleteTasks.length) {
-      // Check if PRD exists — if so, go through gap analysis quality gate
-      const prdContent = await window.api.storage.getPRD(currentProject!.slug);
-      if (prdContent && prdContent.trim().length > 0) {
-        if (isMountedRef.current) {
-          useAppStore.getState().setScreen('gap-analysis');
-        }
-      } else {
-        handleBuildComplete();
-      }
+    const finalTasks = useAppStore.getState().tasks;
+    if (finalTasks.every(t => t.completed)) {
+      handleBuildComplete();
     }
   }, [currentProject, tasks, isMountedRef, ensureGitRepo, runTaskPipeline, handleBuildComplete, setTaskPhase, setCurrentTaskId, checkPause]);
 

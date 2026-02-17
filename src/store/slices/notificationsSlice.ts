@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import type { AppState } from '../useAppStore';
 import type { Toast } from '../storeTypes';
+import type { HumanTask } from '../../types';
 import { buildTaskCompleteMessage, buildErrorMessage } from '../../utils/houstonGreeting';
 
 export interface NotificationsSlice {
@@ -16,6 +17,10 @@ export interface NotificationsSlice {
     errorHint: string;
     timestamp: number;
   } | null;
+  houstonHumanTaskContext: {
+    tasks: HumanTask[];
+    timestamp: number;
+  } | null;
   toasts: Toast[];
 
   clearHoustonGreeting: () => void;
@@ -24,6 +29,8 @@ export interface NotificationsSlice {
   notifyHoustonTaskApproval: (taskTitle: string, completedCount: number, totalCount: number, remaining: number) => void;
   clearHoustonApproval: () => void;
   clearHoustonErrorContext: () => void;
+  notifyHoustonHumanTasks: (tasks: HumanTask[]) => void;
+  clearHoustonHumanTaskContext: () => void;
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
 }
@@ -32,6 +39,7 @@ export const NOTIFICATIONS_INITIAL_STATE = {
   houstonGreeting: null as string | null,
   houstonApproval: null as NotificationsSlice['houstonApproval'],
   houstonErrorContext: null as NotificationsSlice['houstonErrorContext'],
+  houstonHumanTaskContext: null as NotificationsSlice['houstonHumanTaskContext'],
   toasts: [] as Toast[],
 };
 
@@ -67,6 +75,17 @@ export const createNotificationsSlice: StateCreator<AppState, [], [], Notificati
 
   clearHoustonApproval: () => set({ houstonApproval: null }),
   clearHoustonErrorContext: () => set({ houstonErrorContext: null }),
+
+  notifyHoustonHumanTasks: (tasks) => {
+    set({
+      houstonHumanTaskContext: {
+        tasks,
+        timestamp: Date.now(),
+      },
+    });
+  },
+
+  clearHoustonHumanTaskContext: () => set({ houstonHumanTaskContext: null }),
 
   addToast: (toast) => {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);

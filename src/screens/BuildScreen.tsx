@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useBuildPipeline } from '../hooks/useBuildPipeline';
 import { usePreflightCheck } from '../hooks/usePreflightCheck';
@@ -6,11 +6,12 @@ import ProgressBar from '../components/ProgressBar';
 import KanbanBoard from '../components/KanbanBoard';
 import BuildProgressBadge from '../components/BuildProgressBadge';
 import PreflightGateOverlay from '../components/PreflightGateOverlay';
+import DesignDuel from '../components/DesignDuel';
 import type { ServiceKey } from '../constants/preflight-requirements';
 import houstonAvatar from '../assets/houston-avatar.webp';
 
 export default function BuildScreen() {
-  const { currentProject, tasks, houstonApproval, clearHoustonApproval } = useAppStore();
+  const { currentProject, tasks, houstonApproval, clearHoustonApproval, notifyHoustonHumanTasks } = useAppStore();
 
 
 
@@ -18,6 +19,9 @@ export default function BuildScreen() {
   const preflight = usePreflightCheck(requiredServices);
   const pipeline = useBuildPipeline();
   const buildStartedRef = useRef(false);
+  const humanTasksTriggeredRef = useRef(false);
+  const designDuelAutoShownRef = useRef(false);
+  const [showDesignDuel, setShowDesignDuel] = useState(false);
 
   const {
     taskPhase,
@@ -54,6 +58,42 @@ export default function BuildScreen() {
     preflight.runGuarded(() => runAllTasks());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject, tasks.length, allDone]);
+
+  // Auto-trigger Houston for pending human tasks
+  useEffect(() => {
+    if (humanTasksTriggeredRef.current) return;
+    const pendingHumanTasks = currentProject?.humanTasks?.filter((t) => t.status === 'pending');
+    if (pendingHumanTasks && pendingHumanTasks.length > 0) {
+      humanTasksTriggeredRef.current = true;
+      notifyHoustonHumanTasks(pendingHumanTasks);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.humanTasks]);
+
+  // Auto-show Design Duel on mount if no preferences exist
+  useEffect(() => {
+    if (designDuelAutoShownRef.current) return;
+    if (!currentProject?.designPreferences) {
+      designDuelAutoShownRef.current = true;
+      const timer = setTimeout(() => setShowDesignDuel(true), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentProject?.designPreferences]);
+
+  // Edge case: pipeline finished before Design Duel — re-trigger for new task
+  useEffect(() => {
+    if (!allDone) return;
+    const freshTasks = useAppStore.getState().tasks;
+    const hasUncompletedDesignTask = freshTasks.some(t => !t.completed && t.id.startsWith('task-design-'));
+    if (hasUncompletedDesignTask) {
+      handleRetry();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allDone, tasks]);
+
+  // Compute human task progress for badge
+  const humanTasks = currentProject?.humanTasks ?? [];
+  const completedHumanTasks = humanTasks.filter((t) => t.status === 'completed').length;
 
   // For mid-operation preflight, use the preflight hook to get fresh failures
   const midOpPreflight = usePreflightCheck(requiredServices);
@@ -123,6 +163,29 @@ export default function BuildScreen() {
           currentTaskId={currentTaskId}
           taskPhase={taskPhase}
         />
+        {humanTasks.length > 0 && (
+          <div className={`ml-4 flex items-center gap-1.5 px-3 py-1 text-xs font-medium ${
+            completedHumanTasks === humanTasks.length
+              ? 'bg-success/10 text-success'
+              : 'bg-houston-amber/10 text-houston-amber'
+          }`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            Setup: {completedHumanTasks}/{humanTasks.length} done
+          </div>
+        )}
+        {!currentProject?.designPreferences && (
+          <button
+            onClick={() => setShowDesignDuel(true)}
+            className="ml-3 flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+            </svg>
+            Design
+          </button>
+        )}
       </div>
 
       {/* Content — both tabs always mounted, visibility toggled via CSS */}
@@ -384,6 +447,9 @@ export default function BuildScreen() {
 
       </main>
 
+      {showDesignDuel && (
+        <DesignDuel onClose={() => setShowDesignDuel(false)} />
+      )}
     </div>
   );
 }
