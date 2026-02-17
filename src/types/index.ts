@@ -60,6 +60,27 @@ export interface Task {
   buildPhase?: 'branched' | 'built' | 'reviewed' | 'merged';
   branchName?: string;
   lastReviewArtifact?: ReviewArtifact;
+
+  // File manifest (predicted by Claude during task generation)
+  creates?: string[];
+  modifies?: string[];
+
+  // Dependency graph (computed deterministically from file manifests)
+  dependsOn?: string[];
+  tier?: number;
+}
+
+export interface TierGroup {
+  tier: number;
+  taskIds: string[];
+  estimatedMin: number;
+}
+
+export interface TierPlan {
+  tiers: TierGroup[];
+  criticalPathLength: number;
+  estimatedSequentialMin: number;
+  estimatedParallelMin: number;
 }
 
 export interface CLIStatus {
@@ -132,6 +153,14 @@ export type TaskPhase =
   | 'pushing'
   | 'complete'
   | 'error';
+
+export interface TaskPipelineStatus {
+  taskId: string;
+  phase: TaskPhase;
+  branchName: string;
+  worktreePath: string;
+  chatId: string;
+}
 
 export type PlanningType = 'bug_fix' | 'feature_refactor' | 'new_feature';
 

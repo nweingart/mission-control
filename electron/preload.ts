@@ -48,6 +48,25 @@ function removeAllListeners(prefix: string) {
   channelsToRemove.forEach(channel => listenerMap.delete(channel));
 }
 
+// Per-task chat output handler registry for parallel execution
+const chatOutputHandlers = new Map<string, (content: string) => void>();
+
+// Single raw listener that routes based on chatId
+ipcRenderer.on('claude:chatOutput', (_event, data: unknown) => {
+  if (typeof data === 'object' && data !== null && 'chatId' in data && 'content' in data) {
+    const { chatId, content } = data as { chatId: string; content: string };
+    const handler = chatOutputHandlers.get(chatId);
+    if (handler) handler(content);
+    // Also fire legacy handler if one exists
+    const legacy = chatOutputHandlers.get('__legacy__');
+    if (legacy && chatId !== '__legacy__') legacy(content);
+  } else if (typeof data === 'string') {
+    // Backward compat: old-format string message
+    const legacy = chatOutputHandlers.get('__legacy__');
+    if (legacy) legacy(data);
+  }
+});
+
 contextBridge.exposeInMainWorld('api', {
   // Storage
   storage: {
@@ -101,7 +120,15 @@ contextBridge.exposeInMainWorld('api', {
     chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) =>
       ipcRenderer.invoke('claude:chat', projectPath, prompt, inactivityTimeoutMs, chatId) as Promise<string>,
     onOutput: (callback: OutputCallback) => createListener('claude:output', callback),
-    onChatOutput: (callback: (content: string) => void) => createListener('claude:chatOutput', callback),
+    onChatOutput: (callback: (content: string) => void) => {
+      chatOutputHandlers.set('__legacy__', callback);
+    },
+    onChatOutputForTask: (chatId: string, callback: (content: string) => void) => {
+      chatOutputHandlers.set(chatId, callback);
+    },
+    offChatOutputForTask: (chatId: string) => {
+      chatOutputHandlers.delete(chatId);
+    },
     onExit: (callback: ExitCallback) => createListener('claude:exit', callback),
     sendInput: (sessionId: string, input: string) => ipcRenderer.invoke('claude:sendInput', sessionId, input),
     resize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('claude:resize', sessionId, cols, rows),
@@ -112,7 +139,10 @@ contextBridge.exposeInMainWorld('api', {
     confirmCompletion: (sessionId: string) => ipcRenderer.invoke('claude:confirmCompletion', sessionId),
     onCompletionDetected: (callback: (data: { sessionId: string }) => void) =>
       createListener('claude:completionDetected', callback),
-    removeListeners: () => removeAllListeners('claude:'),
+    removeListeners: () => {
+      removeAllListeners('claude:');
+      chatOutputHandlers.clear();
+    },
   },
 
   // GitHub
@@ -163,7 +193,13 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('github:getWorkflowRuns', projectPath, limit),
     writeWorkflowFile: (projectPath: string, content: string) =>
       ipcRenderer.invoke('github:writeWorkflowFile', projectPath, content),
+    runShellCommand: (cwd: string, command: string) =>
+      ipcRenderer.invoke('github:runShellCommand', cwd, command) as Promise<string>,
     deleteRepo: (repoUrl: string) => ipcRenderer.invoke('github:deleteRepo', repoUrl),
+    createWorktree: (repoPath: string, worktreePath: string, branchName: string, startPoint?: string) =>
+      ipcRenderer.invoke('github:createWorktree', repoPath, worktreePath, branchName, startPoint),
+    removeWorktree: (repoPath: string, worktreePath: string) =>
+      ipcRenderer.invoke('github:removeWorktree', repoPath, worktreePath),
     onOutput: (callback: OutputCallback) => createListener('github:output', callback),
     removeListeners: () => removeAllListeners('github:'),
   },

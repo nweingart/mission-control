@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useIsMounted } from './useIsMounted';
-import type { Task, TaskPhase, ReviewArtifact } from '../types';
+import type { Task, TaskPhase, ReviewArtifact, TaskPipelineStatus } from '../types';
 import {
   slugify,
   parseReviewResponse,
@@ -12,6 +12,7 @@ import {
 } from '../utils/build-helpers';
 import { classifyError } from '../utils/pipeline-errors';
 import type { ClassifiedError } from '../utils/pipeline-errors';
+import { computeTierPlan } from '../utils/dag-scheduler';
 
 // ─── Phase ordering for checkpoint logic ──────────────────────
 const PHASE_ORDER: Record<string, number> = {
@@ -35,6 +36,7 @@ export interface BuildPipelineState {
   sessionActive: boolean;
   currentTaskId: string | null;
   error: ClassifiedError | null;
+  activeTasksMap: Map<string, TaskPipelineStatus>;
 }
 
 export interface BuildPipelineActions {
@@ -119,6 +121,26 @@ export function useBuildPipeline() {
   const [preflightNeeded, setPreflightNeeded] = useState(false);
   const preflightResolveRef = useRef<(() => void) | null>(null);
 
+  // Per-task Map for concurrent tracking (Phase 3)
+  const [activeTasksMap, setActiveTasksMap] = useState<Map<string, TaskPipelineStatus>>(new Map());
+
+  const updateActiveTask = useCallback((taskId: string, updates: Partial<TaskPipelineStatus>) => {
+    setActiveTasksMap(prev => {
+      const next = new Map(prev);
+      const existing = next.get(taskId);
+      next.set(taskId, { taskId, phase: 'idle', branchName: '', worktreePath: '', chatId: '', ...existing, ...updates });
+      return next;
+    });
+  }, []);
+
+  const removeActiveTask = useCallback((taskId: string) => {
+    setActiveTasksMap(prev => {
+      const next = new Map(prev);
+      next.delete(taskId);
+      return next;
+    });
+  }, []);
+
   const pipelineStartedRef = useRef(false);
   const pipelineErrorRef = useRef(false);
   const taskPhaseRef = useRef<TaskPhase>('idle');
@@ -129,13 +151,34 @@ export function useBuildPipeline() {
   const pauseResolverRef = useRef<(() => void) | null>(null);
   const [paused, setPaused] = useState(false);
 
-  // Auto-approve: when false (default), pipeline pauses after every task for user review
+  // Auto-approve: when false (default), pipeline pauses after every tier for user review
   const autoApproveRef = useRef(false);
+
+  // Stop-after-tier mechanism
+  const stopAfterTierRef = useRef(false);
+  const [stopRequested, setStopRequested] = useState(false);
+
+  // Tier progress state
+  const [currentTier, setCurrentTier] = useState(0);
+  const [totalTiers, setTotalTiers] = useState(0);
+  const [tierTasksComplete, setTierTasksComplete] = useState(0);
+  const [tierTasksTotal, setTierTasksTotal] = useState(0);
+  const [failedTaskIds, setFailedTaskIds] = useState<string[]>([]);
 
   // Keep refs in sync
   useEffect(() => {
     taskPhaseRef.current = taskPhase;
   }, [taskPhase]);
+
+  // Sync activeTasksMap → single-value state for backward compat
+  useEffect(() => {
+    const entries = Array.from(activeTasksMap.values());
+    if (entries.length > 0) {
+      setCurrentTaskId(entries[0].taskId);
+      setTaskPhase(entries[0].phase);
+      setSessionActive(entries.some(e => e.phase === 'building'));
+    }
+  }, [activeTasksMap, setCurrentTaskId, setTaskPhase, setSessionActive]);
 
   const completedTasks = tasks.filter((t) => t.completed).length;
   const currentTask = tasks.find((t) => t.id === currentTaskId);
@@ -200,7 +243,149 @@ export function useBuildPipeline() {
     // Don't resetWorkingTree here — we may be resuming with committed work on feature branches
   }, [projectPath]);
 
-  // ─── CORE PIPELINE (checkpoint-aware) ───────────────────────
+  // ─── WORKTREE-BASED PARALLEL PIPELINE (Phase 3) ───────────────
+  const cleanupStaleWorktrees = useCallback(async () => {
+    const projectSlug = currentProject!.slug;
+    const worktreeDir = `/tmp/houston-worktrees/${projectSlug}`;
+    try {
+      const entries = await window.api.fs.readdir(worktreeDir);
+      for (const entry of entries) {
+        try { await window.api.github.removeWorktree(projectPath, `${worktreeDir}/${entry}`); } catch { /* best effort */ }
+      }
+    } catch { /* dir doesn't exist — that's fine */ }
+  }, [currentProject, projectPath]);
+
+  const cleanupFailedWorktree = useCallback(async (worktreePath: string, branchName: string) => {
+    try { await window.api.github.removeWorktree(projectPath, worktreePath); } catch { /* best effort */ }
+    try { await window.api.github.deleteBranch(projectPath, branchName); } catch { /* best effort */ }
+  }, [projectPath]);
+
+  const buildTaskInWorktree = useCallback(
+    async (task: Task, idx: number, myRunId: number): Promise<{ branchName: string; worktreePath: string }> => {
+      const isStale = () => myRunId !== runIdRef.current;
+      const branchName = task.branchName || `feature/task-${idx + 1}-${slugify(task.title)}`;
+      const projectSlug = currentProject!.slug;
+      const worktreePath = `/tmp/houston-worktrees/${projectSlug}/task-${task.id}`;
+      const chatId = `build-${task.id}-${Date.now()}`;
+
+      updateActiveTask(task.id, { phase: 'branching', branchName, worktreePath, chatId });
+
+      // Create worktree from main
+      await window.api.github.createWorktree(projectPath, worktreePath, branchName, 'main');
+      updateTask(task.id, { buildPhase: 'branched', branchName });
+      addGitEvent({ type: 'branch_created', taskId: task.id, taskTitle: task.title, branchName });
+
+      if (!isMountedRef.current || isStale()) throw new Error('Pipeline cancelled');
+
+      // BUILDING
+      updateActiveTask(task.id, { phase: 'building' });
+      const prd = await window.api.storage.getPRD(currentProject!.slug);
+      const context = prd || currentProject!.idea || '';
+      const buildPrompt = `I'm building "${currentProject!.name}".\n\n## Context\n${context}\n\n## Your Task\nTask ${idx + 1} of ${tasks.length}: ${task.title}${task.description ? `\nDetails: ${task.description}` : ''}\n\nBuild this task completely. Do not work on anything else.`;
+
+      // Register per-task output handler
+      window.api.claude.onChatOutputForTask(chatId, () => {
+        // Output tracking — could accumulate per-task output for detail view later
+      });
+
+      try {
+        await retryOnTimeout(() => window.api.claude.chat(worktreePath, buildPrompt, 10 * 60 * 1000, chatId), 2, `build:${task.title}`);
+      } finally {
+        window.api.claude.offChatOutputForTask(chatId);
+      }
+
+      if (!isMountedRef.current || isStale()) throw new Error('Pipeline cancelled');
+
+      // COMMITTING
+      updateActiveTask(task.id, { phase: 'committing' });
+      const commitResult = await retryWithBackoff(() => window.api.github.gitAddAndCommit(worktreePath, `feat: ${task.title}`));
+      addGitEvent({ type: 'committed', taskId: task.id, taskTitle: task.title, branchName, commitHash: commitResult.commitHash, commitMessage: `feat: ${task.title}` });
+      updateTask(task.id, { buildPhase: 'built' });
+
+      if (!isMountedRef.current || isStale()) throw new Error('Pipeline cancelled');
+
+      // REVIEWING
+      updateActiveTask(task.id, { phase: 'reviewing' });
+      const diff = await window.api.github.getDiff(worktreePath, 'main');
+
+      if (diff.trim().length > 0) {
+        let diffStat = '';
+        try { diffStat = await window.api.github.getDiffStat(worktreePath, 'main'); } catch { diffStat = 'unable to compute'; }
+
+        const reviewChatId = `review-${task.id}-${Date.now()}`;
+        window.api.claude.onChatOutputForTask(reviewChatId, () => {});
+        try {
+          const reviewResponse = await retryOnTimeout(
+            () => window.api.claude.chat(worktreePath, buildReviewPrompt(task, diff), 10 * 60 * 1000, reviewChatId), 1, `review:${task.title}`
+          );
+          const artifact = parseReviewResponse(reviewResponse, task, branchName, diffStat);
+          addGitEvent({ type: 'review_completed', taskId: task.id, taskTitle: task.title, branchName, reviewArtifact: artifact });
+
+          if (!isMountedRef.current || isStale()) throw new Error('Pipeline cancelled');
+
+          // FIXING
+          if (hasFixableIssues(artifact)) {
+            updateActiveTask(task.id, { phase: 'fixing' });
+            const fixChatId = `fix-${task.id}-${Date.now()}`;
+            window.api.claude.onChatOutputForTask(fixChatId, () => {});
+            try {
+              await retryOnTimeout(
+                () => window.api.claude.chat(worktreePath, buildFixPrompt(artifact), 10 * 60 * 1000, fixChatId), 1, `fix:${task.title}`
+              );
+            } finally {
+              window.api.claude.offChatOutputForTask(fixChatId);
+            }
+            artifact.findings = artifact.findings.map(f => {
+              if (f.severity === 'warning') return { ...f, fixed: true };
+              if (f.severity === 'critical' && artifact.canAutoFix) return { ...f, fixed: true };
+              return f;
+            });
+            artifact.autoFixApplied = true;
+            await window.api.github.gitAddAndCommit(worktreePath, `fix: review findings for ${task.title}`);
+            addGitEvent({ type: 'auto_fixed', taskId: task.id, taskTitle: task.title, branchName, commitHash: '', commitMessage: `fix: review findings for ${task.title}` });
+          }
+
+          updateTask(task.id, { buildPhase: 'reviewed', lastReviewArtifact: artifact });
+        } finally {
+          window.api.claude.offChatOutputForTask(reviewChatId);
+        }
+      } else {
+        updateTask(task.id, { buildPhase: 'reviewed' });
+      }
+
+      return { branchName, worktreePath };
+    },
+    [projectPath, currentProject, tasks, isMountedRef, updateTask, addGitEvent, updateActiveTask]
+  );
+
+  const mergeTaskFromWorktree = useCallback(
+    async (task: Task, branchName: string, worktreePath: string): Promise<void> => {
+      // Merge happens in main repo (projectPath), not the worktree
+      await retryWithBackoff(() => window.api.github.checkoutBranch(projectPath, 'main'));
+      await window.api.github.mergeBranch(projectPath, branchName);
+      addGitEvent({ type: 'merged', taskId: task.id, taskTitle: task.title, branchName });
+
+      // Cleanup worktree + branch
+      try { await window.api.github.removeWorktree(projectPath, worktreePath); } catch { /* best effort */ }
+      try { await window.api.github.deleteBranch(projectPath, branchName); } catch { /* best effort */ }
+
+      // Push (non-fatal)
+      try {
+        const gitStatus = await window.api.github.checkGitStatus(projectPath);
+        if (gitStatus.hasRemote) {
+          await window.api.github.gitPush(projectPath);
+          addGitEvent({ type: 'pushed', taskId: task.id, taskTitle: task.title });
+        }
+      } catch { /* push failure is non-fatal */ }
+
+      updateTask(task.id, { buildPhase: 'merged', completed: true });
+      notifyHoustonBuildComplete(task.title);
+      removeActiveTask(task.id);
+    },
+    [projectPath, addGitEvent, updateTask, notifyHoustonBuildComplete, removeActiveTask]
+  );
+
+  // ─── CORE PIPELINE (checkpoint-aware, used for single-task tiers) ───
   const runTaskPipeline = useCallback(
     async (task: Task, idx: number, retryFromScratch = false, myRunId?: number) => {
       const currentRunId = myRunId ?? runIdRef.current;
@@ -412,12 +597,6 @@ Build this task completely. Do not work on anything else.`;
       } catch (err) {
         if (!isMountedRef.current || isStale()) return;
         console.error(`[BuildPipeline] Pipeline error for task "${task.title}":`, err);
-        pipelineErrorRef.current = true;
-        setTaskPhase('error');
-        const rawMsg = err instanceof Error ? err.message : 'Pipeline failed';
-        const classified = classifyError(rawMsg);
-        setError(classified);
-        notifyHoustonBuildError(task.title, classified.userAction || classified.title);
 
         // Best-effort recovery to main — but don't destroy feature branch work
         try {
@@ -427,6 +606,9 @@ Build this task completely. Do not work on anything else.`;
         } catch {
           // Best effort recovery
         }
+
+        // Re-throw so the tier loop can decide whether to demote or stop
+        throw err;
       }
     },
     [
@@ -458,11 +640,34 @@ Build this task completely. Do not work on anything else.`;
     }
   }, [updateProject, goToPreview, isMountedRef]);
 
-  // ─── MAIN PIPELINE LOOP ───────────────────────────────────────
+  // ─── Tier boundary reconciliation ─────────────────────────────
+  const reconcileTierBoundary = useCallback(async (pp: string) => {
+    // Ensure we're on main
+    await window.api.github.checkoutBranch(pp, 'main');
+
+    // Run npm install to sync dependencies
+    try {
+      await window.api.github.runShellCommand(pp, 'npm install');
+    } catch {
+      // Non-fatal — dependencies might already be fine
+    }
+
+    // Commit any infrastructure file changes
+    try {
+      await window.api.github.gitAddAndCommit(pp, 'chore: reconcile dependencies after tier');
+    } catch {
+      // No changes to commit — that's fine
+    }
+  }, []);
+
+  // ─── MAIN PIPELINE LOOP (tier-based) ────────────────────────────
   const runAllTasks = useCallback(async () => {
     if (!currentProject || pipelineStartedRef.current) return;
     pipelineStartedRef.current = true;
     pipelineErrorRef.current = false;
+    stopAfterTierRef.current = false;
+    setStopRequested(false);
+    setFailedTaskIds([]);
 
     // Increment run ID — any previous loop checking this will see it's stale and bail
     const myRunId = ++runIdRef.current;
@@ -487,34 +692,169 @@ Build this task completely. Do not work on anything else.`;
       return;
     }
 
-    let completedCount = 0;
+    // Clean up any stale worktrees from previous runs
+    await cleanupStaleWorktrees();
 
-    for (let i = 0; i < tasks.length; i++) {
+    // Compute tier plan from current tasks
+    const tierPlan = computeTierPlan(tasks);
+    setTotalTiers(tierPlan.tiers.length);
+
+    interface DemotedTask {
+      task: Task;
+      attempts: number;
+      lastError: string;
+    }
+
+    let demotedTasks: DemotedTask[] = [];
+    const allFailedIds: string[] = [];
+
+    for (let tierIdx = 0; tierIdx < tierPlan.tiers.length; tierIdx++) {
       if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
-      const task = tasks[i];
-      if (task.completed) continue;
 
-      setCurrentTaskId(task.id);
-      await runTaskPipeline(task, i, false, myRunId);
+      const tierGroup = tierPlan.tiers[tierIdx];
+      setCurrentTier(tierIdx);
 
-      // Stop if an error occurred, component unmounted, or run superseded
+      // Build task list for this tier: scheduled tasks + any demoted from previous tier
+      const scheduledTasks = tierGroup.taskIds
+        .map(id => tasks.find(t => t.id === id))
+        .filter((t): t is Task => t !== undefined && !t.completed);
+
+      const tierTasks = [
+        ...demotedTasks.map(d => d.task),
+        ...scheduledTasks,
+      ];
+
+      // Track demoted tasks for this tier so we know their attempt count
+      const demotedMap = new Map(demotedTasks.map(d => [d.task.id, d]));
+      demotedTasks = []; // Reset for next tier
+
+      setTierTasksTotal(tierTasks.length);
+      setTierTasksComplete(0);
+
+      let tierCompletedCount = 0;
+
+      const handleTaskFailure = (task: Task, dMap: Map<string, DemotedTask>, reason: unknown) => {
+        const rawMsg = reason instanceof Error ? reason.message : String(reason);
+        const demoted = dMap.get(task.id);
+        const attempts = (demoted?.attempts ?? 0) + 1;
+
+        if (attempts >= 2) {
+          console.error(`[BuildPipeline] Task "${task.title}" failed twice, marking as failed`);
+          allFailedIds.push(task.id);
+          setFailedTaskIds(prev => [...prev, task.id]);
+          updateTask(task.id, { completed: true, buildPhase: 'merged' });
+        } else {
+          console.warn(`[BuildPipeline] Task "${task.title}" failed, demoting to next tier`);
+          demotedTasks.push({ task, attempts, lastError: rawMsg });
+        }
+      };
+
+      // Single-task tiers use the existing sequential pipeline (no worktree overhead)
+      if (tierTasks.length === 1) {
+        const task = tierTasks[0];
+        if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
+
+        const idx = tasks.findIndex(t => t.id === task.id);
+        setCurrentTaskId(task.id);
+
+        try {
+          await runTaskPipeline(task, idx >= 0 ? idx : tierIdx * 10, false, myRunId);
+          if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
+          tierCompletedCount++;
+          setTierTasksComplete(tierCompletedCount);
+        } catch (err) {
+          if (!isMountedRef.current || isStale()) break;
+          const prevFailedCount = allFailedIds.length;
+          handleTaskFailure(task, demotedMap, err);
+          // Only bump tier count if the task was permanently failed (not demoted)
+          if (allFailedIds.length > prevFailedCount) {
+            tierCompletedCount++;
+            setTierTasksComplete(tierCompletedCount);
+          }
+        }
+      } else {
+        // Multi-task tiers: execute in parallel batches using worktrees
+        const CONCURRENCY_CAP = 3;
+
+        for (let batchStart = 0; batchStart < tierTasks.length; batchStart += CONCURRENCY_CAP) {
+          if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
+
+          const batch = tierTasks.slice(batchStart, batchStart + CONCURRENCY_CAP);
+
+          // Launch all tasks in batch concurrently
+          const results = await Promise.allSettled(
+            batch.map((task) => {
+              const idx = tasks.findIndex(t => t.id === task.id);
+              return buildTaskInWorktree(task, idx >= 0 ? idx : tierIdx * 10, myRunId);
+            })
+          );
+
+          // Separate successes and failures
+          const successes: { task: Task; branchName: string; worktreePath: string }[] = [];
+
+          results.forEach((result, i) => {
+            if (result.status === 'fulfilled') {
+              successes.push({ task: batch[i], ...result.value });
+            } else {
+              // Clean up failed worktree
+              const failedSlug = currentProject!.slug;
+              const failedWorktree = `/tmp/houston-worktrees/${failedSlug}/task-${batch[i].id}`;
+              const globalIdx = tasks.findIndex(t => t.id === batch[i].id);
+              const failedBranch = batch[i].branchName || `feature/task-${(globalIdx >= 0 ? globalIdx : i) + 1}-${slugify(batch[i].title)}`;
+              cleanupFailedWorktree(failedWorktree, failedBranch);
+              removeActiveTask(batch[i].id);
+
+              handleTaskFailure(batch[i], demotedMap, result.reason);
+            }
+          });
+
+          // Merge successes sequentially in the main repo
+          for (const { task, branchName, worktreePath } of successes) {
+            if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
+            updateActiveTask(task.id, { phase: 'merging' });
+            try {
+              await mergeTaskFromWorktree(task, branchName, worktreePath);
+              tierCompletedCount++;
+              setTierTasksComplete(tierCompletedCount);
+            } catch {
+              // Merge conflict — demote this task
+              cleanupFailedWorktree(worktreePath, branchName);
+              removeActiveTask(task.id);
+              handleTaskFailure(task, demotedMap, 'merge conflict');
+            }
+          }
+        }
+      }
+
       if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
 
-      completedCount++;
+      // Tier boundary reconciliation
+      try {
+        await reconcileTierBoundary(projectPath);
+      } catch (err) {
+        console.warn('[BuildPipeline] Tier reconciliation error (non-fatal):', err);
+      }
 
-      // Auto-pause for user approval between tasks (unless auto-approve is on)
-      const remainingCount = tasks.filter((t) => !t.completed).length - completedCount;
-      if (!autoApproveRef.current && remainingCount > 0) {
+      // Check stop-after-tier flag
+      if (stopAfterTierRef.current) {
+        console.log('[BuildPipeline] Stop after tier requested, pausing');
+        break;
+      }
+
+      // User approval between tiers (if not auto-approve)
+      const remainingTiers = tierPlan.tiers.length - tierIdx - 1 + (demotedTasks.length > 0 ? 1 : 0);
+      if (!autoApproveRef.current && remainingTiers > 0) {
         pauseRequestedRef.current = true;
+        const completedSoFar = tasks.filter(t => t.completed).length;
         useAppStore.getState().notifyHoustonTaskApproval(
-          task.title,
-          completedCount,
+          `Tier ${tierIdx + 1}`,
+          completedSoFar,
           tasks.length,
-          remainingCount
+          tasks.length - completedSoFar
         );
       }
 
-      // Mid-operation health check between tasks
+      // Mid-operation health check between tiers
       try {
         const healthCheck = await window.api.cli.checkAll();
         if (!healthCheck.claude?.authenticated || !healthCheck.github?.authenticated) {
@@ -525,8 +865,27 @@ Build this task completely. Do not work on anything else.`;
         // Health check failure is non-fatal
       }
 
-      // Check if user requested a pause between tasks
+      // Check if user requested a pause between tiers
       await checkPause();
+    }
+
+    // Handle any demoted tasks that couldn't be placed in a next tier
+    // (failed in the final tier — give them one more try)
+    if (demotedTasks.length > 0 && !pipelineErrorRef.current && !isStale() && isMountedRef.current) {
+      for (const { task, attempts } of demotedTasks) {
+        if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
+        const idx = tasks.findIndex(t => t.id === task.id);
+        setCurrentTaskId(task.id);
+
+        try {
+          await runTaskPipeline(task, idx >= 0 ? idx : 0, false, myRunId);
+        } catch {
+          // Final attempt failed — mark permanently failed
+          allFailedIds.push(task.id);
+          setFailedTaskIds(prev => [...prev, task.id]);
+          updateTask(task.id, { completed: true, buildPhase: 'merged' });
+        }
+      }
     }
 
     // Drain tasks added during the build (e.g., Design Duel task)
@@ -536,10 +895,21 @@ Build this task completely. Do not work on anything else.`;
       for (const task of newUncompleted) {
         if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
         setCurrentTaskId(task.id);
-        await runTaskPipeline(task, freshTasks.indexOf(task), false, myRunId);
+        try {
+          await runTaskPipeline(task, freshTasks.indexOf(task), false, myRunId);
+        } catch (err) {
+          // Non-critical — just skip dynamically added tasks that fail
+          console.warn('[BuildPipeline] Dynamic task failed:', err);
+        }
         if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
         await checkPause();
       }
+    }
+
+    // Surface failed tasks to Houston
+    if (allFailedIds.length > 0 && isMountedRef.current) {
+      const failedNames = allFailedIds.map(id => tasks.find(t => t.id === id)?.title || id);
+      notifyHoustonBuildError('Build', `${allFailedIds.length} task(s) failed: ${failedNames.join(', ')}`);
     }
 
     pipelineStartedRef.current = false;
@@ -550,7 +920,7 @@ Build this task completely. Do not work on anything else.`;
     if (finalTasks.every(t => t.completed)) {
       handleBuildComplete();
     }
-  }, [currentProject, tasks, isMountedRef, ensureGitRepo, runTaskPipeline, handleBuildComplete, setTaskPhase, setCurrentTaskId, checkPause]);
+  }, [currentProject, tasks, isMountedRef, ensureGitRepo, runTaskPipeline, buildTaskInWorktree, mergeTaskFromWorktree, cleanupStaleWorktrees, cleanupFailedWorktree, reconcileTierBoundary, handleBuildComplete, setTaskPhase, setCurrentTaskId, checkPause, projectPath, updateTask, updateActiveTask, removeActiveTask, notifyHoustonBuildError]);
 
 
   // Resume pipeline after preflight check passes
@@ -583,9 +953,15 @@ Build this task completely. Do not work on anything else.`;
     runAllTasks();
   }, [currentTaskId, updateTask, runAllTasks]);
 
-  // Set auto-approve mode (skip pausing between tasks)
+  // Set auto-approve mode (skip pausing between tiers)
   const setAutoApprove = useCallback((value: boolean) => {
     autoApproveRef.current = value;
+  }, []);
+
+  // Request stop after current tier completes
+  const requestStopAfterTier = useCallback(() => {
+    stopAfterTierRef.current = true;
+    setStopRequested(true);
   }, []);
 
   // Cleanup: stop the loop, kill orphaned processes, preserve branch state for resume
@@ -594,9 +970,11 @@ Build this task completely. Do not work on anything else.`;
     pipelineErrorRef.current = true; // stop the loop if still running
     pipelineStartedRef.current = false;
     runIdRef.current++; // invalidate any in-flight loop iterations
-    // Clear any pending pause and reset auto-approve
+    // Clear any pending pause, auto-approve, and stop requests
     pauseRequestedRef.current = false;
     autoApproveRef.current = false;
+    stopAfterTierRef.current = false;
+    setStopRequested(false);
     setPaused(false);
     if (pauseResolverRef.current) {
       pauseResolverRef.current();
@@ -608,7 +986,11 @@ Build this task completely. Do not work on anything else.`;
     } catch {
       // Best effort
     }
-  }, [setSessionActive]);
+    // Clean up any worktrees
+    try { await cleanupStaleWorktrees(); } catch { /* best effort */ }
+    // Clear active tasks map
+    setActiveTasksMap(new Map());
+  }, [setSessionActive, cleanupStaleWorktrees]);
 
   const handleEndBuild = useCallback(async () => {
     const confirmed = window.confirm(
@@ -657,6 +1039,14 @@ Build this task completely. Do not work on anything else.`;
     completedTasks,
     projectPath,
     preflightNeeded,
+    activeTasksMap,
+    // Tier state
+    currentTier,
+    totalTiers,
+    tierTasksComplete,
+    tierTasksTotal,
+    stopRequested,
+    failedTaskIds,
 
     // Actions
     runAllTasks,
@@ -667,5 +1057,6 @@ Build this task completely. Do not work on anything else.`;
     handleEndBuild,
     handleNavigateBack,
     setAutoApprove,
+    requestStopAfterTier,
   };
 }

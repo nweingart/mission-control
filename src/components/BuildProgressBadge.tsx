@@ -4,6 +4,7 @@ interface BuildProgressBadgeProps {
   tasks: Task[];
   currentTaskId: string | null;
   taskPhase: TaskPhase;
+  parallelCount?: number;
   onClick?: () => void;
 }
 
@@ -11,6 +12,7 @@ export default function BuildProgressBadge({
   tasks,
   currentTaskId,
   taskPhase,
+  parallelCount,
   onClick,
 }: BuildProgressBadgeProps) {
   const completedTasks = tasks.filter((t) => t.completed).length;
@@ -36,7 +38,7 @@ export default function BuildProgressBadge({
         <span className="w-2 h-2 bg-success"></span>
       )}
       <span className="text-[13px] font-display uppercase tracking-wider">
-        Build ({activeTasks}/{tasks.length})
+        Build ({activeTasks}/{tasks.length}){parallelCount && parallelCount > 1 ? ` ×${parallelCount}` : ''}
       </span>
     </div>
   );

@@ -579,6 +579,33 @@ export class GitHubService {
     writeFileSync(join(workflowDir, 'deploy.yml'), content, 'utf-8');
   }
 
+  async runShellCommand(cwd: string, command: string): Promise<string> {
+    const args = command.split(' ');
+    const cmd = args.shift()!;
+    const { stdout, stderr, code } = await runCommand(cmd, args, cwd, undefined, 5 * 60 * 1000);
+    if (code !== 0) {
+      throw new Error(stderr || `Command failed with code ${code}`);
+    }
+    return stdout;
+  }
+
+  async createWorktree(repoPath: string, worktreePath: string, branchName: string, startPoint = 'main'): Promise<void> {
+    mkdirSync(join(worktreePath, '..'), { recursive: true });
+    const { stderr, code } = await runCommand('git', ['worktree', 'add', worktreePath, '-b', branchName, startPoint], repoPath);
+    if (code !== 0) throw new Error(stderr || 'Failed to create worktree');
+  }
+
+  async removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
+    try {
+      await runCommand('git', ['worktree', 'remove', worktreePath, '--force'], repoPath);
+    } catch {
+      // Fallback: manual delete + prune
+      const fs = require('fs');
+      fs.rmSync(worktreePath, { recursive: true, force: true });
+      await runCommand('git', ['worktree', 'prune'], repoPath);
+    }
+  }
+
   async deleteRepo(repoUrl: string): Promise<void> {
     const fullName = repoUrl.replace('https://github.com/', '').replace(/\.git$/, '').replace(/\/$/, '');
     if (!fullName || !fullName.includes('/')) {

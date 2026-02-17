@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import TaskList from '../components/TaskList';
 import { resilientChat } from '../utils/resilient-chat';
-import type { HumanTask } from '../types';
+import { computeTierPlan, assignTiers } from '../utils/dag-scheduler';
+import type { HumanTask, Task } from '../types';
 
 const DEFAULT_TASKS = [
   'Set up Next.js project with TypeScript and Tailwind CSS',
@@ -90,7 +91,16 @@ Additionally, identify any setup tasks that require HUMAN action outside the cod
 
 Return your response as a JSON object with two arrays:
 {
-  "tasks": [{"title": "...", "description": "1-2 sentence detail", "estimatedMinutes": 3}, ...],
+  "tasks": [
+    {
+      "title": "...",
+      "description": "1-2 sentence detail",
+      "estimatedMinutes": 3,
+      "creates": ["src/components/Auth.tsx", "src/hooks/useAuth.ts"],
+      "modifies": ["src/app/layout.tsx"],
+      "dependsOn": [0]
+    }
+  ],
   "humanTasks": [
     {
       "title": "Add Supabase credentials",
@@ -104,6 +114,16 @@ Return your response as a JSON object with two arrays:
     }
   ]
 }
+
+For each task, also include:
+- "creates": array of file paths this task will create (new files only)
+- "modifies": array of existing file paths this task will change
+- "dependsOn": array of task indices (0-based) that must complete before this task can start. Only include direct dependencies — if task 3 depends on task 1, and task 2 also depends on task 1, task 3 does NOT need to list task 1 unless it directly needs task 1's output.
+
+File path guidelines:
+- Use project-relative paths (e.g., "src/components/Auth.tsx", not absolute paths)
+- Do NOT include package.json, lock files, or config files (tsconfig, tailwind.config, etc.) — these are handled separately
+- Focus on source files your task will directly create or edit
 
 If there are no human tasks needed, return an empty humanTasks array.
 estimatedMinutes should be 1-4 for each task (aim for under 4 minutes each).
@@ -155,13 +175,16 @@ Do not include any other text, just the JSON object.`;
                   return { id: `task-${Date.now()}-${index}`, title: item.trim(), completed: false };
                 }
                 if (item && typeof item === 'object' && 'title' in item) {
-                  const obj = item as { title: string; description?: string; estimatedMinutes?: number };
-                  if (typeof obj.title === 'string' && obj.title.trim().length > 0) {
+                  const obj = item as Record<string, unknown>;
+                  if (typeof obj.title === 'string' && (obj.title as string).trim().length > 0) {
                     return {
                       id: `task-${Date.now()}-${index}`,
-                      title: obj.title.trim(),
+                      title: (obj.title as string).trim(),
                       description: typeof obj.description === 'string' ? obj.description.trim() : undefined,
                       estimatedMinutes: typeof obj.estimatedMinutes === 'number' ? obj.estimatedMinutes : undefined,
+                      creates: Array.isArray(obj.creates) ? obj.creates.filter((f: unknown) => typeof f === 'string') : undefined,
+                      modifies: Array.isArray(obj.modifies) ? obj.modifies.filter((f: unknown) => typeof f === 'string') : undefined,
+                      _rawDependsOn: Array.isArray(obj.dependsOn) ? obj.dependsOn.filter((d: unknown) => typeof d === 'number') : undefined,
                       completed: false,
                     };
                   }
@@ -175,7 +198,22 @@ Do not include any other text, just the JSON object.`;
               throw new Error('No valid tasks found in response');
             }
 
-            setTasks(generatedTasks);
+            // Convert index-based dependsOn from Claude to task-ID-based
+            const withDeps = generatedTasks.map((task: Record<string, unknown>, idx: number) => {
+              const rawDeps = (task as Record<string, unknown>)._rawDependsOn as number[] | undefined;
+              const { _rawDependsOn: _, ...cleanTask } = task as Record<string, unknown>;
+              if (Array.isArray(rawDeps)) {
+                const depIds = rawDeps
+                  .filter((d: number) => d >= 0 && d < generatedTasks.length && d !== idx)
+                  .map((d: number) => (generatedTasks[d] as Record<string, unknown>).id as string);
+                return { ...cleanTask, dependsOn: depIds.length > 0 ? depIds : undefined };
+              }
+              return cleanTask;
+            });
+
+            // Assign tiers from the DAG
+            const tiered = assignTiers(withDeps as Task[]);
+            setTasks(tiered);
 
             // Parse and save human tasks
             if (humanTaskArray && humanTaskArray.length > 0) {
@@ -287,7 +325,9 @@ Do not include any other text, just the JSON object.`;
   };
 
   const handleTasksReorder = (newTasks: typeof tasks) => {
-    reorderTasks(newTasks);
+    // Recompute tiers after reorder
+    const tiered = assignTiers(newTasks);
+    reorderTasks(tiered);
   };
 
   const handleTaskEdit = (id: string, title: string) => {
@@ -298,6 +338,18 @@ Do not include any other text, just the JSON object.`;
     await updateProject({ status: 'building' });
     goToBuilding();
   };
+
+  // Compute tier plan from current tasks (recomputes when tasks change)
+  const tierPlan = useMemo(() => {
+    if (tasks.length === 0) return null;
+    return computeTierPlan(tasks);
+  }, [tasks]);
+
+  const hasManifests = useMemo(() => {
+    return tasks.some(t => t.creates !== undefined || t.modifies !== undefined);
+  }, [tasks]);
+
+  const [expandedTier, setExpandedTier] = useState<number | null>(null);
 
   const handleRegenerateTasks = () => {
     // Warn if tasks have been modified by user
@@ -412,6 +464,106 @@ Do not include any other text, just the JSON object.`;
                 editable={true}
                 showAddButton={true}
               />
+
+              {/* Execution Plan (tier preview) */}
+              {tierPlan && tierPlan.tiers.length > 0 && hasManifests && (
+                <div className="mt-8">
+                  <h3 className="text-sm font-sans font-semibold text-ink-muted uppercase tracking-wider mb-3">
+                    Execution Plan
+                  </h3>
+                  <div className="bg-surface border border-border overflow-hidden">
+                    {tierPlan.tiers.map((group) => {
+                      const tierTasks = group.taskIds
+                        .map(id => tasks.find(t => t.id === id))
+                        .filter((t): t is Task => t !== undefined);
+                      const isExpanded = expandedTier === group.tier;
+
+                      return (
+                        <div key={group.tier} className="border-b border-border last:border-b-0">
+                          <button
+                            onClick={() => setExpandedTier(isExpanded ? null : group.tier)}
+                            className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-surface-card/50 transition-colors text-left"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono font-semibold text-accent bg-accent/10 px-1.5 py-0.5">
+                                T{group.tier}
+                              </span>
+                              <span className="text-sm text-ink">
+                                {tierTasks.length} {tierTasks.length === 1 ? 'task' : 'tasks'}
+                                {tierTasks.length > 1 && (
+                                  <span className="text-ink-muted ml-1">(parallel)</span>
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-ink-muted">~{group.estimatedMin} min</span>
+                              <svg
+                                className={`w-4 h-4 text-ink-muted transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </div>
+                          </button>
+                          {isExpanded && (
+                            <div className="px-4 pb-3 space-y-2">
+                              {tierTasks.map((task) => (
+                                <div key={task.id} className="bg-surface-card border border-border p-3">
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-xs text-ink-muted font-mono mt-0.5 flex-shrink-0">
+                                      {group.taskIds.indexOf(task.id) + 1}.
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-ink">{task.title}</p>
+                                      {(task.creates?.length || task.modifies?.length) && (
+                                        <div className="mt-1.5 flex flex-wrap gap-1">
+                                          {task.creates?.map(f => (
+                                            <span key={f} className="text-[10px] font-mono px-1.5 py-0.5 bg-spectrum-green/10 text-spectrum-green">
+                                              +{f.split('/').pop()}
+                                            </span>
+                                          ))}
+                                          {task.modifies?.map(f => (
+                                            <span key={f} className="text-[10px] font-mono px-1.5 py-0.5 bg-spectrum-blue/10 text-spectrum-blue">
+                                              ~{f.split('/').pop()}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {task.dependsOn && task.dependsOn.length > 0 && (
+                                        <p className="text-[10px] text-ink-muted mt-1">
+                                          depends on: {task.dependsOn.map(depId => {
+                                            const dep = tasks.find(t => t.id === depId);
+                                            return dep ? `"${dep.title}"` : depId;
+                                          }).join(', ')}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {/* Time savings footer */}
+                    <div className="px-4 py-2.5 bg-surface-card/50 flex items-center justify-between text-xs text-ink-muted">
+                      <span>
+                        {tierPlan.tiers.length} {tierPlan.tiers.length === 1 ? 'tier' : 'tiers'} &middot;{' '}
+                        ~{tierPlan.estimatedParallelMin} min parallel vs ~{tierPlan.estimatedSequentialMin} min sequential
+                      </span>
+                      {tierPlan.estimatedSequentialMin > tierPlan.estimatedParallelMin && (
+                        <span className="text-spectrum-green font-medium">
+                          ~{Math.round(((tierPlan.estimatedSequentialMin - tierPlan.estimatedParallelMin) / tierPlan.estimatedSequentialMin) * 100)}% faster
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-ink-muted mt-2">
+                    Tasks in the same tier have no file conflicts and can run in parallel.
+                  </p>
+                </div>
+              )}
 
               {/* Setup Tasks (human tasks) */}
               {humanTasks.length > 0 && (

@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import type { Task, TaskPhase } from '../types';
+import type { Task, TaskPhase, TaskPipelineStatus } from '../types';
 
 interface KanbanBoardProps {
   tasks: Task[];
+  activeTasksMap?: Map<string, TaskPipelineStatus>;
   currentTaskId?: string | null;
   taskPhase?: TaskPhase;
 }
@@ -55,7 +56,7 @@ const CHECKPOINT_LABELS: Record<string, string> = {
   reviewed: 'Paused at reviewed',
 };
 
-export default function KanbanBoard({ tasks, currentTaskId, taskPhase }: KanbanBoardProps) {
+export default function KanbanBoard({ tasks, activeTasksMap, currentTaskId, taskPhase }: KanbanBoardProps) {
   // Organize tasks into columns
   const columns = useMemo(() => {
     const todoTasks: Task[] = [];
@@ -65,6 +66,8 @@ export default function KanbanBoard({ tasks, currentTaskId, taskPhase }: KanbanB
     tasks.forEach((task) => {
       if (task.completed) {
         doneTasks.push(task);
+      } else if (activeTasksMap?.has(task.id)) {
+        inProgressTasks.push(task);
       } else if (task.id === currentTaskId) {
         inProgressTasks.push(task);
       } else if (task.buildPhase && task.buildPhase !== 'merged') {
@@ -80,7 +83,7 @@ export default function KanbanBoard({ tasks, currentTaskId, taskPhase }: KanbanB
       'in-progress': inProgressTasks,
       done: doneTasks,
     };
-  }, [tasks, currentTaskId]);
+  }, [tasks, activeTasksMap, currentTaskId]);
 
   return (
     <div className="flex gap-4 h-full min-h-0">
@@ -105,10 +108,10 @@ export default function KanbanBoard({ tasks, currentTaskId, taskPhase }: KanbanB
               <TaskCard
                 key={task.id}
                 task={task}
-                isActive={task.id === currentTaskId}
-                isPaused={!task.completed && task.id !== currentTaskId && !!task.buildPhase && task.buildPhase !== 'merged'}
+                isActive={activeTasksMap?.has(task.id) || task.id === currentTaskId}
+                isPaused={!task.completed && !activeTasksMap?.has(task.id) && task.id !== currentTaskId && !!task.buildPhase && task.buildPhase !== 'merged'}
                 columnId={column.id}
-                taskPhase={task.id === currentTaskId ? taskPhase : undefined}
+                taskPhase={activeTasksMap?.get(task.id)?.phase || (task.id === currentTaskId ? taskPhase : undefined)}
               />
             ))}
 

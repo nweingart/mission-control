@@ -230,7 +230,7 @@ ipcMain.handle('claude:chat', async (event, projectPath, prompt, inactivityTimeo
   console.log('[main.ts] prompt length:', prompt?.length);
   try {
     const result = await claudeCodeService.chat(projectPath, prompt, (content) => {
-      safeSend('claude:chatOutput', content);
+      safeSend('claude:chatOutput', { chatId: chatId || '__legacy__', content });
     }, inactivityTimeoutMs, chatId);
     console.log('[main.ts] claude:chat completed, result length:', result?.length);
     return result;
@@ -339,7 +339,14 @@ ipcMain.handle('github:getWorkflowRuns', (_, projectPath: string, limit?: number
 ipcMain.handle('github:writeWorkflowFile', (_, projectPath: string, content: string) => {
   return githubService.writeWorkflowFile(projectPath, content);
 });
+ipcMain.handle('github:runShellCommand', (_, cwd: string, command: string) => {
+  return githubService.runShellCommand(cwd, command);
+});
 ipcMain.handle('github:deleteRepo', (_, repoUrl: string) => githubService.deleteRepo(repoUrl));
+ipcMain.handle('github:createWorktree', (_, repoPath: string, worktreePath: string, branchName: string, startPoint?: string) =>
+  githubService.createWorktree(repoPath, worktreePath, branchName, startPoint));
+ipcMain.handle('github:removeWorktree', (_, repoPath: string, worktreePath: string) =>
+  githubService.removeWorktree(repoPath, worktreePath));
 
 // Register modular IPC handlers
 registerShellHandlers({

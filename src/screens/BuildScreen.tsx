@@ -32,6 +32,15 @@ export default function BuildScreen() {
     currentTask,
     completedTasks,
     preflightNeeded,
+    activeTasksMap,
+    // Tier state
+    currentTier,
+    totalTiers,
+    tierTasksComplete,
+    tierTasksTotal,
+    stopRequested,
+    failedTaskIds,
+    // Actions
     runAllTasks,
     resumeAfterPreflight,
     togglePause,
@@ -40,13 +49,15 @@ export default function BuildScreen() {
     handleEndBuild,
     handleNavigateBack,
     setAutoApprove,
+    requestStopAfterTier,
   } = pipeline;
 
   // ─── Smart progress computation ─────────────────────────────
   const allDone = completedTasks === tasks.length && tasks.length > 0;
 
-  // Count completed + the currently active task for display
-  const activeTasks = completedTasks + (currentTaskId ? 1 : 0);
+  // Count completed + currently active tasks for display
+  const inFlightCount = activeTasksMap.size || (currentTaskId ? 1 : 0);
+  const activeTasks = completedTasks + inFlightCount;
   const progress = tasks.length > 0 ? (activeTasks / tasks.length) * 100 : 0;
 
   // Auto-start build on mount (replaces the old modal)
@@ -141,11 +152,15 @@ export default function BuildScreen() {
   };
 
   // ─── Progress bar label ─────────────────────────────────────
+  const tierLabel = totalTiers > 1 ? ` (Tier ${currentTier + 1} of ${totalTiers})` : '';
   const progressLabel = currentTask
-    ? `${completedTasks} done, working on "${currentTask.title}"`
+    ? `${completedTasks} done, working on "${currentTask.title}"${tierLabel}`
     : allDone
     ? `All ${tasks.length} tasks complete`
-    : `Building: task ${activeTasks} of ${tasks.length}`;
+    : `Building: task ${activeTasks} of ${tasks.length}${tierLabel}`;
+
+  // Count failed tasks for display
+  const failedCount = failedTaskIds.length;
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col relative">
@@ -162,6 +177,7 @@ export default function BuildScreen() {
           tasks={tasks}
           currentTaskId={currentTaskId}
           taskPhase={taskPhase}
+          parallelCount={activeTasksMap.size > 1 ? activeTasksMap.size : undefined}
         />
         {humanTasks.length > 0 && (
           <div className={`ml-4 flex items-center gap-1.5 px-3 py-1 text-xs font-medium ${
@@ -186,6 +202,36 @@ export default function BuildScreen() {
             Design
           </button>
         )}
+        {totalTiers > 1 && (
+          <div className="ml-4 flex items-center gap-2 text-xs text-ink-muted">
+            <div className="flex gap-0.5">
+              {Array.from({ length: totalTiers }, (_, i) => (
+                <div
+                  key={i}
+                  className={`w-2 h-2 rounded-full transition-colors ${
+                    i < currentTier ? 'bg-success'
+                    : i === currentTier ? 'bg-accent animate-pulse'
+                    : 'bg-border'
+                  }`}
+                />
+              ))}
+            </div>
+            <span>Tier {currentTier + 1}/{totalTiers}</span>
+            {tierTasksTotal > 0 && (
+              <span className="text-ink-muted/60">
+                ({tierTasksComplete}/{tierTasksTotal} in tier)
+              </span>
+            )}
+          </div>
+        )}
+        {failedCount > 0 && (
+          <div className="ml-3 flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-error/10 text-error">
+            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            {failedCount} failed
+          </div>
+        )}
       </div>
 
       {/* Content — both tabs always mounted, visibility toggled via CSS */}
@@ -201,44 +247,58 @@ export default function BuildScreen() {
             </div>
 
             {/* Current task with status badge */}
-            <div className="mb-4 bg-surface border border-border p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-sm text-ink-muted">Current Task:</span>
-                  <h3 className="font-medium text-ink">
-                    {currentTask?.title || 'All tasks complete!'}
-                  </h3>
-                </div>
-                <div className="flex items-center space-x-3">
-                  {sessionActive && (
-                    <span className="flex items-center text-spectrum-green text-sm">
-                      <span className="relative flex h-2 w-2 mr-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full bg-spectrum-green opacity-75"></span>
-                        <span className="relative inline-flex h-2 w-2 bg-spectrum-green"></span>
-                      </span>
-                      Active
-                    </span>
-                  )}
-                  {currentTask && (
-                    <span className="px-3 py-1 text-xs font-medium bg-spectrum-green/10 text-spectrum-green">
-                      {paused ? 'Paused'
-                        : taskPhase === 'building' ? 'Building...'
-                        : taskPhase === 'reviewing' ? 'Reviewing...'
-                        : taskPhase === 'fixing' ? 'Fixing...'
-                        : taskPhase === 'merging' ? 'Merging...'
-                        : taskPhase === 'branching' ? 'Branching...'
-                        : taskPhase === 'committing' ? 'Committing...'
-                        : taskPhase === 'pushing' ? 'Pushing...'
-                        : taskPhase === 'error' ? 'Error'
-                        : taskPhase}
-                    </span>
-                  )}
+            {activeTasksMap.size > 1 ? (
+              <div className="mb-4 bg-surface border border-border p-4">
+                <span className="text-sm text-ink-muted">Building {activeTasksMap.size} tasks in parallel:</span>
+                <div className="mt-2 space-y-1">
+                  {Array.from(activeTasksMap.values()).map(status => (
+                    <div key={status.taskId} className="flex items-center gap-2 text-sm">
+                      <div className="w-3 h-3 border-2 border-spectrum-green border-t-transparent animate-spin" />
+                      <span className="text-ink">{tasks.find(t => t.id === status.taskId)?.title}</span>
+                      <span className="text-xs text-ink-muted capitalize">{status.phase}...</span>
+                    </div>
+                  ))}
                 </div>
               </div>
+            ) : (
+              <div className="mb-4 bg-surface border border-border p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm text-ink-muted">Current Task:</span>
+                    <h3 className="font-medium text-ink">
+                      {currentTask?.title || 'All tasks complete!'}
+                    </h3>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    {sessionActive && (
+                      <span className="flex items-center text-spectrum-green text-sm">
+                        <span className="relative flex h-2 w-2 mr-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full bg-spectrum-green opacity-75"></span>
+                          <span className="relative inline-flex h-2 w-2 bg-spectrum-green"></span>
+                        </span>
+                        Active
+                      </span>
+                    )}
+                    {currentTask && (
+                      <span className="px-3 py-1 text-xs font-medium bg-spectrum-green/10 text-spectrum-green">
+                        {paused ? 'Paused'
+                          : taskPhase === 'building' ? 'Building...'
+                          : taskPhase === 'reviewing' ? 'Reviewing...'
+                          : taskPhase === 'fixing' ? 'Fixing...'
+                          : taskPhase === 'merging' ? 'Merging...'
+                          : taskPhase === 'branching' ? 'Branching...'
+                          : taskPhase === 'committing' ? 'Committing...'
+                          : taskPhase === 'pushing' ? 'Pushing...'
+                          : taskPhase === 'error' ? 'Error'
+                          : taskPhase}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
-            </div>
-
-            {/* Houston approval banner — pause between tasks */}
+            {/* Houston approval banner — pause between tiers */}
             {paused && houstonApproval && (
               <div className="mb-4 bg-spectrum-blue/10 border border-spectrum-blue/30 p-4">
                 <div className="flex items-start">
@@ -247,11 +307,11 @@ export default function BuildScreen() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-ink">
-                      <span className="font-medium">"{houstonApproval.taskTitle}"</span> landed successfully.{' '}
+                      <span className="font-medium">"{houstonApproval.taskTitle}"</span> completed.{' '}
                       {houstonApproval.remaining} {houstonApproval.remaining === 1 ? 'task' : 'tasks'} remaining.
                     </p>
                     <p className="text-xs text-ink-muted mt-1">
-                      Review the changes above, then continue when ready.
+                      Review the changes, then continue to the next tier.
                     </p>
                   </div>
                   <div className="flex gap-2 flex-shrink-0 ml-4">
@@ -259,7 +319,7 @@ export default function BuildScreen() {
                       onClick={handleContinueOne}
                       className="btn-solid-primary px-4 py-1.5 text-sm"
                     >
-                      Continue
+                      Next Tier
                     </button>
                     <button
                       onClick={handleAutoContinueAll}
@@ -384,6 +444,7 @@ export default function BuildScreen() {
             <div className="flex-1 min-h-0">
               <KanbanBoard
                 tasks={tasks}
+                activeTasksMap={activeTasksMap}
                 currentTaskId={currentTaskId}
                 taskPhase={taskPhase}
               />
@@ -392,7 +453,9 @@ export default function BuildScreen() {
             {/* Footer status */}
             <div className="mt-4 flex justify-between items-center">
               <div className="text-sm text-ink-muted">
-                {paused
+                {stopRequested
+                  ? `Finishing tier ${currentTier + 1}, then stopping...`
+                  : paused
                   ? 'Build paused'
                   : taskPhase === 'building'
                   ? 'Claude is working on this task...'
@@ -408,26 +471,46 @@ export default function BuildScreen() {
               <div className="flex items-center gap-3">
                 {/* Pause / Resume button — only show when pipeline is actively running */}
                 {sessionActive || (taskPhase !== 'idle' && taskPhase !== 'error' && taskPhase !== 'complete') ? (
-                  <button
-                    onClick={togglePause}
-                    className={`btn-solid flex items-center space-x-2 px-4 py-2 ${paused ? 'text-spectrum-green' : 'text-ink-muted'}`}
-                  >
-                    {paused ? (
-                      <>
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M8 5v14l11-7z" />
+                  <>
+                    <button
+                      onClick={togglePause}
+                      className={`btn-solid flex items-center space-x-2 px-4 py-2 ${paused ? 'text-spectrum-green' : 'text-ink-muted'}`}
+                    >
+                      {paused ? (
+                        <>
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                          <span>Resume</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                          </svg>
+                          <span>Pause</span>
+                        </>
+                      )}
+                    </button>
+                    {/* Stop after this tier — only show when tiers > 1 and not already stopping */}
+                    {totalTiers > 1 && !paused && (
+                      <button
+                        onClick={requestStopAfterTier}
+                        disabled={stopRequested}
+                        className={`btn-solid flex items-center space-x-2 px-4 py-2 text-sm ${
+                          stopRequested
+                            ? 'text-spectrum-orange cursor-default opacity-80'
+                            : 'text-ink-muted hover:text-spectrum-orange'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
                         </svg>
-                        <span>Resume</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                        </svg>
-                        <span>Pause</span>
-                      </>
+                        <span>{stopRequested ? 'Stopping after tier...' : 'Stop after tier'}</span>
+                      </button>
                     )}
-                  </button>
+                  </>
                 ) : null}
 
                 {allDone && (
