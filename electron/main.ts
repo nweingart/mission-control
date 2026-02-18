@@ -4,6 +4,7 @@ import * as pty from 'node-pty';
 import { StorageService } from './services/storage';
 import { CLICheckService } from './services/cli-check';
 import { ClaudeCodeService } from './services/claude-code';
+import { CodexService } from './services/codex';
 import { GitHubService } from './services/github';
 import { registerShellHandlers } from './ipc/shell-handlers';
 import { registerSetupHandlers } from './ipc/setup-handlers';
@@ -37,6 +38,7 @@ let mainWindow: BrowserWindow | null = null;
 const storageService = new StorageService();
 const cliCheckService = new CLICheckService();
 const claudeCodeService = new ClaudeCodeService();
+const codexService = new CodexService();
 const githubService = new GitHubService();
 
 /**
@@ -104,6 +106,7 @@ function createWindow() {
     // On macOS, closing the window doesn't quit the app, so without this
     // Claude, setup, and dev-server PTY processes become zombies.
     claudeCodeService.killAll();
+    codexService.cancelChat();
     for (const [id, session] of setupSessions) {
       try { session.kill(); } catch { /* ignore */ }
       setupSessions.delete(id);
@@ -167,6 +170,7 @@ app.on('open-url', (event, url) => {
 // Cleanup PTY sessions before quitting
 app.on('before-quit', () => {
   claudeCodeService.killAll();
+  codexService.cancelChat();
 });
 
 // IPC Handlers - Storage
@@ -257,6 +261,25 @@ ipcMain.handle('claude:resetCompletionDetection', (_, sessionId: string) => {
 ipcMain.handle('claude:confirmCompletion', (_, sessionId: string) => {
   claudeCodeService.disableCompletionDetection(sessionId);
 });
+
+// IPC Handlers - Codex
+ipcMain.handle('codex:chat', async (event, projectPath, prompt, inactivityTimeoutMs?, chatId?) => {
+  console.log('[main.ts] codex:chat IPC handler called');
+  try {
+    const result = await codexService.chat(projectPath, prompt, (content) => {
+      safeSend('codex:chatOutput', { chatId: chatId || '__legacy__', content });
+    }, inactivityTimeoutMs, chatId);
+    return result;
+  } catch (err) {
+    console.error('[main.ts] codex:chat error:', err);
+    throw err;
+  }
+});
+ipcMain.handle('codex:cancelChat', (_, chatId?) => codexService.cancelChat(chatId));
+
+// IPC Handlers - CLI Check (Codex)
+ipcMain.handle('cli:checkCodex', () => cliCheckService.checkCodex());
+ipcMain.handle('cli:checkCodexDeep', () => cliCheckService.checkCodexDeep());
 
 // IPC Handlers - GitHub
 ipcMain.handle('github:checkGitStatus', (_, projectPath: string) => {

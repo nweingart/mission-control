@@ -196,6 +196,40 @@ describe('CLICheckService', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // checkCodex
+  // ---------------------------------------------------------------------------
+  describe('checkCodex', () => {
+    it('returns not installed when which fails', async () => {
+      setupExec([
+        ['which codex', { error: new Error('not found') }],
+      ]);
+
+      const result = await service.checkCodex();
+      expect(result).toEqual({ installed: false, authenticated: false });
+    });
+
+    it('returns installed and authenticated when version succeeds', async () => {
+      setupExec([
+        ['which codex', { stdout: '/usr/local/bin/codex' }],
+        ['codex --version', { stdout: '0.1.0' }],
+      ]);
+
+      const result = await service.checkCodex();
+      expect(result).toEqual({ installed: true, authenticated: true });
+    });
+
+    it('returns installed but not authenticated when version fails', async () => {
+      setupExec([
+        ['which codex', { stdout: '/usr/local/bin/codex' }],
+        ['codex --version', { error: new Error('timeout') }],
+      ]);
+
+      const result = await service.checkCodex();
+      expect(result).toEqual({ installed: true, authenticated: false });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // checkAll
   // ---------------------------------------------------------------------------
   describe('checkAll', () => {
@@ -207,6 +241,9 @@ describe('CLICheckService', () => {
         // gh
         ['which gh', { stdout: '/usr/local/bin/gh' }],
         ['gh auth status', { stdout: 'Logged in to github.com' }],
+        // codex
+        ['which codex', { stdout: '/usr/local/bin/codex' }],
+        ['codex --version', { stdout: '0.1.0' }],
       ]);
 
       const result = await service.checkAll();
@@ -214,6 +251,28 @@ describe('CLICheckService', () => {
       expect(result).toEqual({
         claude: { installed: true, authenticated: true },
         github: { installed: true, authenticated: true },
+        codex: { installed: true, authenticated: true },
+      });
+    });
+
+    it('returns codex not installed when codex is missing', async () => {
+      setupExec([
+        // claude
+        ['which claude', { stdout: '/usr/local/bin/claude' }],
+        ['claude --version', { stdout: '1.0.0' }],
+        // gh
+        ['which gh', { stdout: '/usr/local/bin/gh' }],
+        ['gh auth status', { stdout: 'Logged in to github.com' }],
+        // codex not found
+        ['which codex', { error: new Error('not found') }],
+      ]);
+
+      const result = await service.checkAll();
+
+      expect(result).toEqual({
+        claude: { installed: true, authenticated: true },
+        github: { installed: true, authenticated: true },
+        codex: { installed: false, authenticated: false },
       });
     });
   });

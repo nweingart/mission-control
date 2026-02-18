@@ -8,15 +8,39 @@ import BuildProgressBadge from '../components/BuildProgressBadge';
 import PreflightGateOverlay from '../components/PreflightGateOverlay';
 import DesignDuel from '../components/DesignDuel';
 import type { ServiceKey } from '../constants/preflight-requirements';
+import type { AgentRoleConfig } from '../types';
 import houstonAvatar from '../assets/houston-avatar.webp';
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return n.toLocaleString();
+}
 
 export default function BuildScreen() {
   const { currentProject, tasks, houstonApproval, clearHoustonApproval, notifyHoustonHumanTasks } = useAppStore();
 
 
 
-  const requiredServices: ServiceKey[] = ['claude', 'github'];
-  const preflight = usePreflightCheck(requiredServices);
+  // Dynamic preflight: include codex if multi-agent mode uses it.
+  // Start with null to signal "not yet loaded" — auto-start gates on this.
+  const [requiredServices, setRequiredServices] = useState<ServiceKey[] | null>(null);
+
+  useEffect(() => {
+    window.api.storage.getConfig().then((config) => {
+      const services: ServiceKey[] = ['github'];
+      const roles: AgentRoleConfig = config.agentRoles ?? { builder: 'claude', reviewer: 'claude' };
+      if (!config.multiAgentEnabled || roles.builder === 'claude' || roles.reviewer === 'claude') {
+        services.push('claude');
+      }
+      if (config.multiAgentEnabled && (roles.builder === 'codex' || roles.reviewer === 'codex')) {
+        services.push('codex');
+      }
+      setRequiredServices(services);
+    });
+  }, []);
+
+  const preflight = usePreflightCheck(requiredServices ?? ['claude', 'github']);
   const pipeline = useBuildPipeline();
   const buildStartedRef = useRef(false);
   const humanTasksTriggeredRef = useRef(false);
@@ -40,6 +64,10 @@ export default function BuildScreen() {
     tierTasksTotal,
     stopRequested,
     failedTaskIds,
+    // Token tracking
+    buildTokens,
+    buildCostUsd,
+    buildMetrics,
     // Actions
     runAllTasks,
     resumeAfterPreflight,
@@ -61,14 +89,16 @@ export default function BuildScreen() {
   const progress = tasks.length > 0 ? (activeTasks / tasks.length) * 100 : 0;
 
   // Auto-start build on mount (replaces the old modal)
+  // Gates on requiredServices being loaded from config to avoid racing with defaults.
   useEffect(() => {
     if (buildStartedRef.current) return;
     if (!currentProject || tasks.length === 0) return;
     if (allDone) return;
+    if (requiredServices === null) return; // Wait for config to load
     buildStartedRef.current = true;
     preflight.runGuarded(() => runAllTasks());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentProject, tasks.length, allDone]);
+  }, [currentProject, tasks.length, allDone, requiredServices]);
 
   // Auto-trigger Houston for pending human tasks
   useEffect(() => {
@@ -232,6 +262,18 @@ export default function BuildScreen() {
             {failedCount} failed
           </div>
         )}
+        {/* Real-time token counter */}
+        {(buildTokens.input > 0 || buildTokens.output > 0 || buildCostUsd > 0) && (
+          <div className="ml-auto flex items-center gap-2 px-3 py-1 text-xs font-mono text-ink-muted">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <span>{formatTokenCount(buildTokens.input)} in / {formatTokenCount(buildTokens.output)} out</span>
+            {buildCostUsd > 0 && (
+              <span className="text-ink-muted/60">(${buildCostUsd.toFixed(2)})</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Content — both tabs always mounted, visibility toggled via CSS */}
@@ -246,18 +288,88 @@ export default function BuildScreen() {
               />
             </div>
 
+            {/* Post-build summary (shown when all done and metrics available) */}
+            {allDone && buildMetrics && buildMetrics.totalTokens.input > 0 && (
+              <div className="mb-4 bg-surface border border-accent/20 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  <span className="text-sm font-medium text-ink">Build Summary</span>
+                  <span className="text-xs text-ink-muted ml-auto">
+                    {Math.round(buildMetrics.wallClockMs / 60000)} min
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <div className="text-ink-muted mb-1">Token Usage</div>
+                    <div className="font-mono text-ink">
+                      {formatTokenCount(buildMetrics.totalTokens.input)} in / {formatTokenCount(buildMetrics.totalTokens.output)} out
+                    </div>
+                    {buildMetrics.totalCostUsd > 0 && (
+                      <div className="font-mono text-ink-muted mt-0.5">${buildMetrics.totalCostUsd.toFixed(2)} total</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-ink-muted mb-1">Tasks</div>
+                    <div className="text-ink">
+                      {buildMetrics.tasksCompleted} completed
+                      {buildMetrics.tasksFailed > 0 && <span className="text-error ml-1">({buildMetrics.tasksFailed} failed)</span>}
+                    </div>
+                    {buildMetrics.tasksRetried > 0 && (
+                      <div className="text-ink-muted mt-0.5">{buildMetrics.tasksRetried} retries</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-ink-muted mb-1">Avg per Task</div>
+                    <div className="font-mono text-ink">
+                      {buildMetrics.taskMetrics.length > 0
+                        ? `${formatTokenCount(Math.round(buildMetrics.totalTokens.input / buildMetrics.taskMetrics.length))} in`
+                        : '\u2014'}
+                    </div>
+                  </div>
+                </div>
+                {/* Top consumers */}
+                {buildMetrics.taskMetrics.length > 1 && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <div className="text-xs text-ink-muted mb-1.5">Largest tasks by tokens</div>
+                    {[...buildMetrics.taskMetrics]
+                      .sort((a, b) => b.tokens.total.input - a.tokens.total.input)
+                      .slice(0, 3)
+                      .map((tm, i) => (
+                        <div key={tm.taskId} className="flex justify-between text-xs py-0.5">
+                          <span className="text-ink truncate mr-2">{i + 1}. {tm.taskTitle}</span>
+                          <span className="font-mono text-ink-muted flex-shrink-0">{formatTokenCount(tm.tokens.total.input)} in</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Current task with status badge */}
             {activeTasksMap.size > 1 ? (
               <div className="mb-4 bg-surface border border-border p-4">
                 <span className="text-sm text-ink-muted">Building {activeTasksMap.size} tasks in parallel:</span>
                 <div className="mt-2 space-y-1">
-                  {Array.from(activeTasksMap.values()).map(status => (
-                    <div key={status.taskId} className="flex items-center gap-2 text-sm">
-                      <div className="w-3 h-3 border-2 border-spectrum-green border-t-transparent animate-spin" />
-                      <span className="text-ink">{tasks.find(t => t.id === status.taskId)?.title}</span>
-                      <span className="text-xs text-ink-muted capitalize">{status.phase}...</span>
-                    </div>
-                  ))}
+                  {Array.from(activeTasksMap.values()).map(status => {
+                    // Extract last non-empty line of output for a compact status preview
+                    const lastLine = status.output
+                      ? status.output.trimEnd().split('\n').filter(Boolean).pop()?.slice(0, 120) || ''
+                      : '';
+                    return (
+                      <div key={status.taskId} className="py-1">
+                        <div className="flex items-center gap-2 text-sm">
+                          <div className="w-3 h-3 border-2 border-spectrum-green border-t-transparent animate-spin flex-shrink-0" />
+                          <span className="text-ink truncate">{tasks.find(t => t.id === status.taskId)?.title}</span>
+                          <span className="text-xs text-ink-muted capitalize flex-shrink-0">{status.phase}...</span>
+                        </div>
+                        {lastLine && (
+                          <div className="ml-5 mt-0.5 text-xs font-mono text-ink-muted/60 truncate">{lastLine}</div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : (

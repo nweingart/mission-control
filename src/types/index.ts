@@ -68,6 +68,62 @@ export interface Task {
   // Dependency graph (computed deterministically from file manifests)
   dependsOn?: string[];
   tier?: number;
+
+  // Token tracking (Phase 4)
+  tokenUsage?: TaskTokenUsage;
+}
+
+export interface TokenCount {
+  input: number;
+  output: number;
+}
+
+export type AgentProvider = 'claude' | 'codex';
+
+export interface AgentRoleConfig {
+  builder: AgentProvider;
+  reviewer: AgentProvider;
+}
+
+export interface TaskTokenUsage {
+  build?: TokenCount;
+  review?: TokenCount;
+  fix?: TokenCount;
+  total: TokenCount;
+  buildAgent?: AgentProvider;
+  reviewAgent?: AgentProvider;
+}
+
+export interface BuildMetrics {
+  totalTokens: TokenCount;
+  totalCostUsd: number;
+  taskMetrics: {
+    taskId: string;
+    taskTitle: string;
+    tokens: TaskTokenUsage;
+    wallClockMs: number;
+    tier: number;
+  }[];
+  wallClockMs: number;
+  tiersExecuted: number;
+  tasksCompleted: number;
+  tasksFailed: number;
+  tasksRetried: number;
+}
+
+export interface ChatResult {
+  response: string;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
+  model?: string;
+  costUsd?: number;
+  durationMs?: number;
+  numTurns?: number;
+  agent?: AgentProvider;
 }
 
 export interface TierGroup {
@@ -86,6 +142,7 @@ export interface TierPlan {
 export interface CLIStatus {
   claude: { installed: boolean; authenticated: boolean };
   github: { installed: boolean; authenticated: boolean };
+  codex?: { installed: boolean; authenticated: boolean };
 }
 
 export type Screen =
@@ -120,6 +177,8 @@ export interface Config {
   hasSetWorkspace?: boolean;
   freeProjectUsed?: boolean;
   devMode?: boolean;
+  multiAgentEnabled?: boolean;
+  agentRoles?: AgentRoleConfig;
 }
 
 export interface ReviewFinding {
@@ -160,6 +219,7 @@ export interface TaskPipelineStatus {
   branchName: string;
   worktreePath: string;
   chatId: string;
+  output: string;
 }
 
 export type PlanningType = 'bug_fix' | 'feature_refactor' | 'new_feature';

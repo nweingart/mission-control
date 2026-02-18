@@ -1,9 +1,52 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import type { AgentRoleConfig, AgentProvider } from '../types';
 
 export default function SettingsScreen() {
   const { setScreen, resetOnboarding, authUser, subscriptionStatus, signOut } = useAppStore();
   const [isManaging, setIsManaging] = useState(false);
+
+  // Multi-agent mode state
+  const [multiAgentEnabled, setMultiAgentEnabled] = useState(false);
+  const [agentRoles, setAgentRoles] = useState<AgentRoleConfig>({ builder: 'claude', reviewer: 'claude' });
+  const [codexStatus, setCodexStatus] = useState<{ installed: boolean; authenticated: boolean } | null>(null);
+  const [codexChecking, setCodexChecking] = useState(false);
+
+  useEffect(() => {
+    window.api.storage.getConfig().then((config) => {
+      setMultiAgentEnabled(config.multiAgentEnabled ?? false);
+      setAgentRoles(config.agentRoles ?? { builder: 'claude', reviewer: 'claude' });
+    });
+    // Fast check (--version) for initial display
+    window.api.cli.checkCodex().then(setCodexStatus);
+  }, []);
+
+  const handleDeepCheckCodex = async () => {
+    setCodexChecking(true);
+    try {
+      const result = await window.api.cli.checkCodexDeep();
+      setCodexStatus(result);
+    } finally {
+      setCodexChecking(false);
+    }
+  };
+
+  const saveMultiAgentConfig = async (enabled: boolean, roles: AgentRoleConfig) => {
+    const config = await window.api.storage.getConfig();
+    await window.api.storage.saveConfig({ ...config, multiAgentEnabled: enabled, agentRoles: roles });
+  };
+
+  const handleToggleMultiAgent = async () => {
+    const newEnabled = !multiAgentEnabled;
+    setMultiAgentEnabled(newEnabled);
+    await saveMultiAgentConfig(newEnabled, agentRoles);
+  };
+
+  const handleRoleChange = async (role: 'builder' | 'reviewer', provider: AgentProvider) => {
+    const newRoles = { ...agentRoles, [role]: provider };
+    setAgentRoles(newRoles);
+    await saveMultiAgentConfig(multiAgentEnabled, newRoles);
+  };
 
   const handleResetOnboarding = () => {
     if (window.confirm('Reset onboarding walkthrough? You will see the intro screens again.')) {
@@ -113,6 +156,82 @@ export default function SettingsScreen() {
             >
               Reset Onboarding
             </button>
+          </section>
+
+          {/* Multi-Agent Mode */}
+          <section className="card-panel p-5 space-y-3">
+            <h2 className="text-sm font-semibold text-ink mb-3">Multi-Agent Mode</h2>
+            <div className="flex items-center justify-between px-3 py-2.5">
+              <div>
+                <div className="text-sm text-ink">Enable Multi-Agent Mode</div>
+                <div className="text-xs text-ink-muted mt-0.5">Route build and review phases to different AI agents</div>
+              </div>
+              <button
+                onClick={handleToggleMultiAgent}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  multiAgentEnabled ? 'bg-accent' : 'bg-ink-muted/30'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                    multiAgentEnabled ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {multiAgentEnabled && (
+              <>
+                {codexStatus && !codexStatus.installed && (
+                  <div className="mx-3 px-3 py-2 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning">
+                    Codex CLI is not installed. Run: <code className="font-mono">npm install -g @openai/codex</code>
+                  </div>
+                )}
+                {codexStatus && codexStatus.installed && !codexStatus.authenticated && (
+                  <div className="mx-3 px-3 py-2 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning">
+                    Codex CLI is installed but not authenticated. Run: <code className="font-mono">codex login</code>
+                  </div>
+                )}
+
+                <div className="px-3 space-y-2">
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-sm text-ink">Builder (writes code)</span>
+                    <select
+                      value={agentRoles.builder}
+                      onChange={(e) => handleRoleChange('builder', e.target.value as AgentProvider)}
+                      className="text-sm bg-surface border border-border rounded px-2 py-1 text-ink"
+                    >
+                      <option value="claude">Claude</option>
+                      <option value="codex">Codex</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-sm text-ink">Reviewer (reviews + fixes)</span>
+                    <select
+                      value={agentRoles.reviewer}
+                      onChange={(e) => handleRoleChange('reviewer', e.target.value as AgentProvider)}
+                      className="text-sm bg-surface border border-border rounded px-2 py-1 text-ink"
+                    >
+                      <option value="claude">Claude</option>
+                      <option value="codex">Codex</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="px-3 flex items-center justify-between py-2">
+                  <span className="text-xs text-ink-muted">
+                    Config is read when a build starts. Changes take effect on the next build.
+                  </span>
+                  <button
+                    onClick={handleDeepCheckCodex}
+                    disabled={codexChecking}
+                    className="text-xs text-accent hover:text-accent/80 transition-colors disabled:opacity-50"
+                  >
+                    {codexChecking ? 'Checking...' : 'Verify Codex'}
+                  </button>
+                </div>
+              </>
+            )}
           </section>
 
           {/* Debug / Test */}

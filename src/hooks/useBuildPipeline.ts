@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useIsMounted } from './useIsMounted';
-import type { Task, TaskPhase, ReviewArtifact, TaskPipelineStatus } from '../types';
+import type { Task, TaskPhase, ReviewArtifact, TaskPipelineStatus, TokenCount, TaskTokenUsage, BuildMetrics, ChatResult, AgentRoleConfig } from '../types';
+import { getAgentForRole, cancelBuildAgents } from '../utils/agent-router';
+import type { AgentAPI } from '../utils/agent-router';
 import {
   slugify,
   parseReviewResponse,
@@ -92,6 +94,36 @@ export function useBuildPipeline() {
 
   const isMountedRef = useIsMounted();
 
+  // Multi-agent config — read once on mount, used at build start.
+  // agentConfigLoaded gates runAllTasks to prevent racing with defaults.
+  const [agentConfig, setAgentConfig] = useState<{
+    multiAgentEnabled: boolean;
+    agentRoles?: AgentRoleConfig;
+  }>({ multiAgentEnabled: false });
+  const [agentConfigLoaded, setAgentConfigLoaded] = useState(false);
+
+  useEffect(() => {
+    window.api.storage.getConfig().then((config) => {
+      setAgentConfig({
+        multiAgentEnabled: config.multiAgentEnabled ?? false,
+        agentRoles: config.agentRoles,
+      });
+      setAgentConfigLoaded(true);
+    });
+  }, []);
+
+  const builderAgent = useMemo(
+    () => getAgentForRole(agentConfig.multiAgentEnabled, agentConfig.agentRoles, 'builder'),
+    [agentConfig.multiAgentEnabled, agentConfig.agentRoles]
+  );
+  const reviewerAgent = useMemo(
+    () => getAgentForRole(agentConfig.multiAgentEnabled, agentConfig.agentRoles, 'reviewer'),
+    [agentConfig.multiAgentEnabled, agentConfig.agentRoles]
+  );
+
+  // Track all build-owned chatIds for scoped cancellation
+  const buildChatIdsRef = useRef<Set<string>>(new Set());
+
   // Per-task pipeline state
   const [taskPhase, setTaskPhaseLocal] = useState<TaskPhase>('idle');
   const [currentBranch, setCurrentBranch] = useState('main');
@@ -128,7 +160,7 @@ export function useBuildPipeline() {
     setActiveTasksMap(prev => {
       const next = new Map(prev);
       const existing = next.get(taskId);
-      next.set(taskId, { taskId, phase: 'idle', branchName: '', worktreePath: '', chatId: '', ...existing, ...updates });
+      next.set(taskId, { taskId, phase: 'idle', branchName: '', worktreePath: '', chatId: '', output: '', ...existing, ...updates });
       return next;
     });
   }, []);
@@ -139,6 +171,37 @@ export function useBuildPipeline() {
       next.delete(taskId);
       return next;
     });
+  }, []);
+
+  // Per-task output buffering: accumulate in a ref and flush periodically to avoid
+  // overwhelming React with state updates on every streaming chunk.
+  const taskOutputBuffersRef = useRef<Map<string, string>>(new Map());
+  const taskOutputFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Start flushing output buffers to state at ~2Hz
+  useEffect(() => {
+    taskOutputFlushTimerRef.current = setInterval(() => {
+      const buffers = taskOutputBuffersRef.current;
+      if (buffers.size === 0) return;
+      setActiveTasksMap(prev => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [taskId, newOutput] of buffers) {
+          const existing = next.get(taskId);
+          if (existing) {
+            // Keep only the last 4000 chars to avoid unbounded growth
+            const combined = (existing.output + newOutput).slice(-4000);
+            next.set(taskId, { ...existing, output: combined });
+            changed = true;
+          }
+        }
+        buffers.clear();
+        return changed ? next : prev;
+      });
+    }, 500);
+    return () => {
+      if (taskOutputFlushTimerRef.current) clearInterval(taskOutputFlushTimerRef.current);
+    };
   }, []);
 
   const pipelineStartedRef = useRef(false);
@@ -164,6 +227,35 @@ export function useBuildPipeline() {
   const [tierTasksComplete, setTierTasksComplete] = useState(0);
   const [tierTasksTotal, setTierTasksTotal] = useState(0);
   const [failedTaskIds, setFailedTaskIds] = useState<string[]>([]);
+
+  // Token tracking state (Phase 4)
+  const [buildTokens, setBuildTokens] = useState<TokenCount>({ input: 0, output: 0 });
+  const [buildCostUsd, setBuildCostUsd] = useState(0);
+  const [buildMetrics, setBuildMetrics] = useState<BuildMetrics | null>(null);
+  const buildStartTimeRef = useRef(0);
+  const taskStartTimesRef = useRef<Map<string, number>>(new Map());
+  const retriedCountRef = useRef(0);
+
+  // Helper: extract TokenCount from ChatResult usage
+  const extractTokens = useCallback((result: ChatResult): TokenCount | undefined => {
+    if (result.usage) {
+      return { input: result.usage.input_tokens, output: result.usage.output_tokens };
+    }
+    return undefined;
+  }, []);
+
+  // Helper: accumulate running totals
+  const accumulateTokens = useCallback((result: ChatResult) => {
+    if (result.usage) {
+      setBuildTokens(prev => ({
+        input: prev.input + result.usage!.input_tokens,
+        output: prev.output + result.usage!.output_tokens,
+      }));
+    }
+    if (result.costUsd) {
+      setBuildCostUsd(prev => prev + result.costUsd!);
+    }
+  }, []);
 
   // Keep refs in sync
   useEffect(() => {
@@ -253,6 +345,16 @@ export function useBuildPipeline() {
         try { await window.api.github.removeWorktree(projectPath, `${worktreeDir}/${entry}`); } catch { /* best effort */ }
       }
     } catch { /* dir doesn't exist — that's fine */ }
+
+    // Clean up stale feature branches left by previous crashed builds.
+    // Without this, git worktree add -b <branch> fails if the branch already exists.
+    try {
+      const branchOutput = await window.api.github.runShellCommand(projectPath, 'git branch --list feature/task-*');
+      const staleBranches = branchOutput.split('\n').map(b => b.trim().replace(/^\*\s*/, '')).filter(Boolean);
+      for (const branch of staleBranches) {
+        try { await window.api.github.deleteBranch(projectPath, branch); } catch { /* best effort */ }
+      }
+    } catch { /* best effort */ }
   }, [currentProject, projectPath]);
 
   const cleanupFailedWorktree = useCallback(async (worktreePath: string, branchName: string) => {
@@ -262,6 +364,7 @@ export function useBuildPipeline() {
 
   const buildTaskInWorktree = useCallback(
     async (task: Task, idx: number, myRunId: number): Promise<{ branchName: string; worktreePath: string }> => {
+      taskStartTimesRef.current.set(task.id, Date.now());
       const isStale = () => myRunId !== runIdRef.current;
       const branchName = task.branchName || `feature/task-${idx + 1}-${slugify(task.title)}`;
       const projectSlug = currentProject!.slug;
@@ -275,6 +378,13 @@ export function useBuildPipeline() {
       updateTask(task.id, { buildPhase: 'branched', branchName });
       addGitEvent({ type: 'branch_created', taskId: task.id, taskTitle: task.title, branchName });
 
+      // Install dependencies in the worktree (node_modules is gitignored, so worktrees start without it)
+      try {
+        await window.api.github.runShellCommand(worktreePath, 'npm install');
+      } catch {
+        // Non-fatal — project may not have a package.json, or deps may not be needed for this task
+      }
+
       if (!isMountedRef.current || isStale()) throw new Error('Pipeline cancelled');
 
       // BUILDING
@@ -283,15 +393,25 @@ export function useBuildPipeline() {
       const context = prd || currentProject!.idea || '';
       const buildPrompt = `I'm building "${currentProject!.name}".\n\n## Context\n${context}\n\n## Your Task\nTask ${idx + 1} of ${tasks.length}: ${task.title}${task.description ? `\nDetails: ${task.description}` : ''}\n\nBuild this task completely. Do not work on anything else.`;
 
-      // Register per-task output handler
-      window.api.claude.onChatOutputForTask(chatId, () => {
-        // Output tracking — could accumulate per-task output for detail view later
-      });
+      // Register per-task output handler — accumulates into buffer, flushed to state at 2Hz
+      const appendOutput = (content: string) => {
+        const buf = taskOutputBuffersRef.current;
+        buf.set(task.id, (buf.get(task.id) || '') + content);
+      };
+      builderAgent.onChatOutputForTask(chatId, appendOutput);
+      buildChatIdsRef.current.add(chatId);
+
+      // Token tracking for this task
+      let buildTokens: TokenCount | undefined;
+      let reviewTokens: TokenCount | undefined;
+      let fixTokens: TokenCount | undefined;
 
       try {
-        await retryOnTimeout(() => window.api.claude.chat(worktreePath, buildPrompt, 10 * 60 * 1000, chatId), 2, `build:${task.title}`);
+        const buildResult = await retryOnTimeout(() => builderAgent.chat(worktreePath, buildPrompt, 10 * 60 * 1000, chatId), 2, `build:${task.title}`);
+        buildTokens = extractTokens(buildResult);
+        accumulateTokens(buildResult);
       } finally {
-        window.api.claude.offChatOutputForTask(chatId);
+        builderAgent.offChatOutputForTask(chatId);
       }
 
       if (!isMountedRef.current || isStale()) throw new Error('Pipeline cancelled');
@@ -313,12 +433,15 @@ export function useBuildPipeline() {
         try { diffStat = await window.api.github.getDiffStat(worktreePath, 'main'); } catch { diffStat = 'unable to compute'; }
 
         const reviewChatId = `review-${task.id}-${Date.now()}`;
-        window.api.claude.onChatOutputForTask(reviewChatId, () => {});
+        reviewerAgent.onChatOutputForTask(reviewChatId, appendOutput);
+        buildChatIdsRef.current.add(reviewChatId);
         try {
-          const reviewResponse = await retryOnTimeout(
-            () => window.api.claude.chat(worktreePath, buildReviewPrompt(task, diff), 10 * 60 * 1000, reviewChatId), 1, `review:${task.title}`
+          const reviewResult = await retryOnTimeout(
+            () => reviewerAgent.chat(worktreePath, buildReviewPrompt(task, diff), 10 * 60 * 1000, reviewChatId), 1, `review:${task.title}`
           );
-          const artifact = parseReviewResponse(reviewResponse, task, branchName, diffStat);
+          reviewTokens = extractTokens(reviewResult);
+          accumulateTokens(reviewResult);
+          const artifact = parseReviewResponse(reviewResult.response, task, branchName, diffStat);
           addGitEvent({ type: 'review_completed', taskId: task.id, taskTitle: task.title, branchName, reviewArtifact: artifact });
 
           if (!isMountedRef.current || isStale()) throw new Error('Pipeline cancelled');
@@ -327,13 +450,16 @@ export function useBuildPipeline() {
           if (hasFixableIssues(artifact)) {
             updateActiveTask(task.id, { phase: 'fixing' });
             const fixChatId = `fix-${task.id}-${Date.now()}`;
-            window.api.claude.onChatOutputForTask(fixChatId, () => {});
+            reviewerAgent.onChatOutputForTask(fixChatId, appendOutput);
+            buildChatIdsRef.current.add(fixChatId);
             try {
-              await retryOnTimeout(
-                () => window.api.claude.chat(worktreePath, buildFixPrompt(artifact), 10 * 60 * 1000, fixChatId), 1, `fix:${task.title}`
+              const fixResult = await retryOnTimeout(
+                () => reviewerAgent.chat(worktreePath, buildFixPrompt(artifact), 10 * 60 * 1000, fixChatId), 1, `fix:${task.title}`
               );
+              fixTokens = extractTokens(fixResult);
+              accumulateTokens(fixResult);
             } finally {
-              window.api.claude.offChatOutputForTask(fixChatId);
+              reviewerAgent.offChatOutputForTask(fixChatId);
             }
             artifact.findings = artifact.findings.map(f => {
               if (f.severity === 'warning') return { ...f, fixed: true };
@@ -347,15 +473,30 @@ export function useBuildPipeline() {
 
           updateTask(task.id, { buildPhase: 'reviewed', lastReviewArtifact: artifact });
         } finally {
-          window.api.claude.offChatOutputForTask(reviewChatId);
+          reviewerAgent.offChatOutputForTask(reviewChatId);
         }
       } else {
         updateTask(task.id, { buildPhase: 'reviewed' });
       }
 
+      // Save per-task token usage
+      const totalInput = (buildTokens?.input ?? 0) + (reviewTokens?.input ?? 0) + (fixTokens?.input ?? 0);
+      const totalOutput = (buildTokens?.output ?? 0) + (reviewTokens?.output ?? 0) + (fixTokens?.output ?? 0);
+      if (totalInput > 0 || totalOutput > 0) {
+        const tokenUsage: TaskTokenUsage = {
+          build: buildTokens,
+          review: reviewTokens,
+          fix: fixTokens,
+          total: { input: totalInput, output: totalOutput },
+          buildAgent: builderAgent.provider,
+          reviewAgent: reviewerAgent.provider,
+        };
+        updateTask(task.id, { tokenUsage });
+      }
+
       return { branchName, worktreePath };
     },
-    [projectPath, currentProject, tasks, isMountedRef, updateTask, addGitEvent, updateActiveTask]
+    [projectPath, currentProject, tasks, isMountedRef, updateTask, addGitEvent, updateActiveTask, extractTokens, accumulateTokens, builderAgent, reviewerAgent]
   );
 
   const mergeTaskFromWorktree = useCallback(
@@ -388,6 +529,7 @@ export function useBuildPipeline() {
   // ─── CORE PIPELINE (checkpoint-aware, used for single-task tiers) ───
   const runTaskPipeline = useCallback(
     async (task: Task, idx: number, retryFromScratch = false, myRunId?: number) => {
+      taskStartTimesRef.current.set(task.id, Date.now());
       const currentRunId = myRunId ?? runIdRef.current;
       const isStale = () => currentRunId !== runIdRef.current;
       const branchName = task.branchName || `feature/task-${idx + 1}-${slugify(task.title)}`;
@@ -438,6 +580,11 @@ export function useBuildPipeline() {
           }
         }
 
+        // Token tracking for sequential pipeline
+        let seqBuildTokens: TokenCount | undefined;
+        let seqReviewTokens: TokenCount | undefined;
+        let seqFixTokens: TokenCount | undefined;
+
         // ── BUILDING + COMMITTING (level < 2) ────────────────
         if (level < 2) {
           if (!isMountedRef.current || isStale()) return;
@@ -458,7 +605,11 @@ Task ${idx + 1} of ${totalTasks}: ${task.title}${task.description ? `\nDetails: 
 Build this task completely. Do not work on anything else.`;
 
           console.log('[BuildPipeline] Sending build prompt via chat API, length:', buildPrompt.length);
-          await retryOnTimeout(() => window.api.claude.chat(projectPath, buildPrompt, 10 * 60 * 1000), 2, `build:${task.title}`);
+          const seqBuildChatId = `build-${task.id}-${Date.now()}`;
+          buildChatIdsRef.current.add(seqBuildChatId);
+          const buildResult = await retryOnTimeout(() => builderAgent.chat(projectPath, buildPrompt, 10 * 60 * 1000, seqBuildChatId), 2, `build:${task.title}`);
+          seqBuildTokens = extractTokens(buildResult);
+          accumulateTokens(buildResult);
           console.log('[BuildPipeline] Chat completed for task:', task.title);
 
           setSessionActive(false);
@@ -506,19 +657,28 @@ Build this task completely. Do not work on anything else.`;
               diffStat = 'unable to compute';
             }
 
-            // Stream review output via chatOutput listener
+            // Stream review output via per-task handler
             setReviewOutput('');
-            window.api.claude.onChatOutput((content: string) => {
+            const seqReviewChatId = `review-${task.id}-${Date.now()}`;
+            buildChatIdsRef.current.add(seqReviewChatId);
+            reviewerAgent.onChatOutputForTask(seqReviewChatId, (content: string) => {
               if (!isMountedRef.current) return;
               setReviewOutput((prev) => prev + content);
             });
 
-            const reviewResponse = await retryOnTimeout(
-              () => window.api.claude.chat(projectPath, buildReviewPrompt(task, diff), 10 * 60 * 1000),
-              1, `review:${task.title}`
-            );
+            let reviewResult;
+            try {
+              reviewResult = await retryOnTimeout(
+                () => reviewerAgent.chat(projectPath, buildReviewPrompt(task, diff), 10 * 60 * 1000, seqReviewChatId),
+                1, `review:${task.title}`
+              );
+            } finally {
+              reviewerAgent.offChatOutputForTask(seqReviewChatId);
+            }
+            seqReviewTokens = extractTokens(reviewResult);
+            accumulateTokens(reviewResult);
 
-            artifact = parseReviewResponse(reviewResponse, task, branchName, diffStat);
+            artifact = parseReviewResponse(reviewResult.response, task, branchName, diffStat);
             setReviewArtifact(artifact);
             addGitEvent({ type: 'review_completed', taskId: task.id, taskTitle: task.title, branchName, reviewArtifact: artifact });
 
@@ -528,10 +688,14 @@ Build this task completely. Do not work on anything else.`;
               setTaskPhase('fixing');
 
               setReviewOutput('');
-              await retryOnTimeout(
-                () => window.api.claude.chat(projectPath, buildFixPrompt(artifact), 10 * 60 * 1000),
+              const seqFixChatId = `fix-${task.id}-${Date.now()}`;
+              buildChatIdsRef.current.add(seqFixChatId);
+              const fixResult = await retryOnTimeout(
+                () => reviewerAgent.chat(projectPath, buildFixPrompt(artifact), 10 * 60 * 1000, seqFixChatId),
                 1, `fix:${task.title}`
               );
+              seqFixTokens = extractTokens(fixResult);
+              accumulateTokens(fixResult);
 
               // Mark findings as fixed based on what the reviewer said is auto-fixable
               artifact.findings = artifact.findings.map((f) => {
@@ -542,11 +706,11 @@ Build this task completely. Do not work on anything else.`;
               artifact.autoFixApplied = true;
               setReviewArtifact({ ...artifact });
 
-              const fixResult = await window.api.github.gitAddAndCommit(
+              const fixCommit = await window.api.github.gitAddAndCommit(
                 projectPath,
                 `fix: review findings for ${task.title}`
               );
-              addGitEvent({ type: 'auto_fixed', taskId: task.id, taskTitle: task.title, branchName, commitHash: fixResult.commitHash, commitMessage: `fix: review findings for ${task.title}` });
+              addGitEvent({ type: 'auto_fixed', taskId: task.id, taskTitle: task.title, branchName, commitHash: fixCommit.commitHash, commitMessage: `fix: review findings for ${task.title}` });
             }
 
             if (hasCriticalUnfixable(artifact)) {
@@ -560,7 +724,22 @@ Build this task completely. Do not work on anything else.`;
             setReviewHistory((prev) => [...prev, artifact]);
           }
 
-          updateTask(task.id, { buildPhase: 'reviewed', lastReviewArtifact: artifact });
+          // Save per-task token usage
+          const seqTotalInput = (seqBuildTokens?.input ?? 0) + (seqReviewTokens?.input ?? 0) + (seqFixTokens?.input ?? 0);
+          const seqTotalOutput = (seqBuildTokens?.output ?? 0) + (seqReviewTokens?.output ?? 0) + (seqFixTokens?.output ?? 0);
+          if (seqTotalInput > 0 || seqTotalOutput > 0) {
+            const tokenUsage: TaskTokenUsage = {
+              build: seqBuildTokens,
+              review: seqReviewTokens,
+              fix: seqFixTokens,
+              total: { input: seqTotalInput, output: seqTotalOutput },
+              buildAgent: builderAgent.provider,
+              reviewAgent: reviewerAgent.provider,
+            };
+            updateTask(task.id, { buildPhase: 'reviewed', lastReviewArtifact: artifact, tokenUsage });
+          } else {
+            updateTask(task.id, { buildPhase: 'reviewed', lastReviewArtifact: artifact });
+          }
           level = 3;
           await checkPause();
         }
@@ -624,6 +803,10 @@ Build this task completely. Do not work on anything else.`;
       notifyHoustonBuildComplete,
       notifyHoustonBuildError,
       checkPause,
+      extractTokens,
+      accumulateTokens,
+      builderAgent,
+      reviewerAgent,
     ]
   );
 
@@ -662,12 +845,20 @@ Build this task completely. Do not work on anything else.`;
 
   // ─── MAIN PIPELINE LOOP (tier-based) ────────────────────────────
   const runAllTasks = useCallback(async () => {
-    if (!currentProject || pipelineStartedRef.current) return;
+    if (!currentProject || pipelineStartedRef.current || !agentConfigLoaded) return;
     pipelineStartedRef.current = true;
     pipelineErrorRef.current = false;
     stopAfterTierRef.current = false;
     setStopRequested(false);
     setFailedTaskIds([]);
+
+    // Reset token tracking state
+    setBuildTokens({ input: 0, output: 0 });
+    setBuildCostUsd(0);
+    setBuildMetrics(null);
+    buildStartTimeRef.current = Date.now();
+    taskStartTimesRef.current = new Map();
+    retriedCountRef.current = 0;
 
     // Increment run ID — any previous loop checking this will see it's stale and bail
     const myRunId = ++runIdRef.current;
@@ -738,6 +929,7 @@ Build this task completely. Do not work on anything else.`;
         const demoted = dMap.get(task.id);
         const attempts = (demoted?.attempts ?? 0) + 1;
 
+        retriedCountRef.current++;
         if (attempts >= 2) {
           console.error(`[BuildPipeline] Task "${task.title}" failed twice, marking as failed`);
           allFailedIds.push(task.id);
@@ -854,10 +1046,15 @@ Build this task completely. Do not work on anything else.`;
         );
       }
 
-      // Mid-operation health check between tiers
+      // Mid-operation health check between tiers — check agents actually in use
       try {
         const healthCheck = await window.api.cli.checkAll();
-        if (!healthCheck.claude?.authenticated || !healthCheck.github?.authenticated) {
+        const needsGitHub = !healthCheck.github?.authenticated;
+        const needsClaude = (builderAgent.provider === 'claude' || reviewerAgent.provider === 'claude')
+          && !healthCheck.claude?.authenticated;
+        const needsCodex = (builderAgent.provider === 'codex' || reviewerAgent.provider === 'codex')
+          && !healthCheck.codex?.authenticated;
+        if (needsGitHub || needsClaude || needsCodex) {
           setPreflightNeeded(true);
           await new Promise<void>((resolve) => { preflightResolveRef.current = resolve; });
         }
@@ -914,13 +1111,40 @@ Build this task completely. Do not work on anything else.`;
 
     pipelineStartedRef.current = false;
 
+    // Compute aggregate build metrics
+    if (isMountedRef.current && !isStale()) {
+      const freshTasks = useAppStore.getState().tasks;
+      const completedCount = freshTasks.filter(t => t.completed).length;
+      const metrics: BuildMetrics = {
+        totalTokens: { ...buildTokens },
+        totalCostUsd: buildCostUsd,
+        taskMetrics: freshTasks
+          .filter(t => t.tokenUsage)
+          .map(t => ({
+            taskId: t.id,
+            taskTitle: t.title,
+            tokens: t.tokenUsage!,
+            wallClockMs: taskStartTimesRef.current.has(t.id)
+              ? Date.now() - taskStartTimesRef.current.get(t.id)!
+              : 0,
+            tier: t.tier ?? 0,
+          })),
+        wallClockMs: Date.now() - buildStartTimeRef.current,
+        tiersExecuted: tierPlan.tiers.length,
+        tasksCompleted: completedCount,
+        tasksFailed: allFailedIds.length,
+        tasksRetried: retriedCountRef.current,
+      };
+      setBuildMetrics(metrics);
+    }
+
     // All tasks done — check fresh store state
     if (!isMountedRef.current || pipelineErrorRef.current || isStale()) return;
     const finalTasks = useAppStore.getState().tasks;
     if (finalTasks.every(t => t.completed)) {
       handleBuildComplete();
     }
-  }, [currentProject, tasks, isMountedRef, ensureGitRepo, runTaskPipeline, buildTaskInWorktree, mergeTaskFromWorktree, cleanupStaleWorktrees, cleanupFailedWorktree, reconcileTierBoundary, handleBuildComplete, setTaskPhase, setCurrentTaskId, checkPause, projectPath, updateTask, updateActiveTask, removeActiveTask, notifyHoustonBuildError]);
+  }, [currentProject, tasks, isMountedRef, ensureGitRepo, runTaskPipeline, buildTaskInWorktree, mergeTaskFromWorktree, cleanupStaleWorktrees, cleanupFailedWorktree, reconcileTierBoundary, handleBuildComplete, setTaskPhase, setCurrentTaskId, checkPause, projectPath, updateTask, updateActiveTask, removeActiveTask, notifyHoustonBuildError, buildTokens, buildCostUsd, agentConfigLoaded]);
 
 
   // Resume pipeline after preflight check passes
@@ -980,16 +1204,18 @@ Build this task completely. Do not work on anything else.`;
       pauseResolverRef.current();
       pauseResolverRef.current = null;
     }
-    // Kill any running claude chat process to prevent orphans
+    // Kill only build-owned chat processes to prevent orphans (scoped cancellation)
     try {
-      await window.api.claude.cancelChat();
+      await cancelBuildAgents(Array.from(buildChatIdsRef.current));
+      buildChatIdsRef.current.clear();
     } catch {
       // Best effort
     }
     // Clean up any worktrees
     try { await cleanupStaleWorktrees(); } catch { /* best effort */ }
-    // Clear active tasks map
+    // Clear active tasks map and output buffers
     setActiveTasksMap(new Map());
+    taskOutputBuffersRef.current.clear();
   }, [setSessionActive, cleanupStaleWorktrees]);
 
   const handleEndBuild = useCallback(async () => {
@@ -1047,6 +1273,10 @@ Build this task completely. Do not work on anything else.`;
     tierTasksTotal,
     stopRequested,
     failedTaskIds,
+    // Token tracking (Phase 4)
+    buildTokens,
+    buildCostUsd,
+    buildMetrics,
 
     // Actions
     runAllTasks,

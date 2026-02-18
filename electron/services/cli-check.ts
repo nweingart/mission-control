@@ -33,6 +33,7 @@ interface CLIStatusItem {
 interface CLIStatus {
   claude: CLIStatusItem;
   github: CLIStatusItem;
+  codex?: CLIStatusItem;
 }
 
 export class CLICheckService {
@@ -127,12 +128,67 @@ export class CLICheckService {
     }
   }
 
+  /**
+   * Lightweight check: is the codex binary installed and callable?
+   * Uses `codex --version` (fast, no API call). Same pattern as checkClaude().
+   */
+  async checkCodex(): Promise<CLIStatusItem> {
+    const installed = await this.commandExists('codex');
+    console.log('[CLICheck] Codex installed:', installed);
+    if (!installed) {
+      return { installed: false, authenticated: false };
+    }
+
+    try {
+      console.log('[CLICheck] Running codex --version...');
+      const { stdout } = await execAsync('codex --version 2>&1', { timeout: 5000, env: enhancedEnv });
+      console.log('[CLICheck] Codex version:', stdout.trim());
+      if (stdout.trim().length > 0) {
+        return { installed: true, authenticated: true };
+      }
+    } catch (err) {
+      console.log('[CLICheck] Codex --version failed:', (err as Error).message);
+    }
+
+    return { installed: true, authenticated: false };
+  }
+
+  /**
+   * Deep check: actually runs a minimal codex exec to verify
+   * the full pipeline works (binary + auth + API connectivity).
+   * More expensive — only call on explicit user actions.
+   */
+  async checkCodexDeep(): Promise<CLIStatusItem> {
+    const installed = await this.commandExists('codex');
+    console.log('[CLICheck] Codex deep check — installed:', installed);
+    if (!installed) {
+      return { installed: false, authenticated: false };
+    }
+
+    try {
+      console.log('[CLICheck] Running codex exec smoke test...');
+      const { stdout } = await execAsync(
+        'codex exec --json "respond with ok" 2>&1',
+        { timeout: 15000, env: enhancedEnv }
+      );
+      console.log('[CLICheck] Codex exec response:', stdout.substring(0, 100));
+      if (stdout.trim().length > 0) {
+        return { installed: true, authenticated: true };
+      }
+    } catch (err) {
+      console.log('[CLICheck] Codex exec smoke test failed:', (err as Error).message?.substring(0, 200));
+    }
+
+    return { installed: true, authenticated: false };
+  }
+
   async checkAll(): Promise<CLIStatus> {
-    const [claude, github] = await Promise.all([
+    const [claude, github, codex] = await Promise.all([
       this.checkClaude(),
       this.checkGitHub(),
+      this.checkCodex(),
     ]);
 
-    return { claude, github };
+    return { claude, github, codex };
   }
 }

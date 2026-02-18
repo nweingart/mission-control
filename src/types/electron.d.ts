@@ -1,4 +1,4 @@
-import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapAnalysis, GamificationStats } from './index';
+import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapAnalysis, GamificationStats, ChatResult, AgentProvider } from './index';
 
 export interface ElectronAPI {
   // Storage
@@ -38,13 +38,15 @@ export interface ElectronAPI {
     checkClaude: () => Promise<{ installed: boolean; authenticated: boolean }>;
     checkClaudeDeep: () => Promise<{ installed: boolean; authenticated: boolean }>;
     checkGitHub: () => Promise<{ installed: boolean; authenticated: boolean }>;
+    checkCodex: () => Promise<{ installed: boolean; authenticated: boolean }>;
+    checkCodexDeep: () => Promise<{ installed: boolean; authenticated: boolean }>;
   };
 
   // Claude Code
   claude: {
     spawn: (projectPath: string, prompt: string) => Promise<string>;
     spawnInteractive: (projectPath: string) => Promise<string>;
-    chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) => Promise<string>;
+    chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) => Promise<ChatResult>;
     onOutput: (callback: (data: { sessionId: string; type: 'stdout' | 'stderr'; content: string }) => void) => void;
     onChatOutput: (callback: (content: string) => void) => void;
     onChatOutputForTask: (chatId: string, callback: (content: string) => void) => void;
@@ -58,6 +60,15 @@ export interface ElectronAPI {
     resetCompletionDetection: (sessionId: string) => Promise<void>;
     confirmCompletion: (sessionId: string) => Promise<void>;
     onCompletionDetected: (callback: (data: { sessionId: string }) => void) => void;
+    removeListeners: () => void;
+  };
+
+  // Codex CLI
+  codex: {
+    chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) => Promise<ChatResult>;
+    onChatOutputForTask: (chatId: string, callback: (content: string) => void) => void;
+    offChatOutputForTask: (chatId: string) => void;
+    cancelChat: (chatId?: string) => Promise<void>;
     removeListeners: () => void;
   };
 

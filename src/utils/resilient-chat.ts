@@ -1,4 +1,5 @@
 import { useAppStore } from '../store/useAppStore';
+import type { AgentProvider } from '../types';
 
 // ── Error type guards ──────────────────────────────────────
 
@@ -21,6 +22,8 @@ interface ResilientChatOptions {
   onRetryAttempt?: (attempt: number, maxRetries: number) => void;
   /** If provided, will fire a toast with Retry on final failure */
   retryAction?: () => void;
+  /** Which agent to use — defaults to 'claude' */
+  agent?: AgentProvider;
 }
 
 interface ResilientChatResult {
@@ -40,7 +43,12 @@ export function resilientChat(
     inactivityTimeoutMs,
     onRetryAttempt,
     retryAction,
+    agent = 'claude',
   } = options;
+
+  // Select the correct API based on agent
+  const chatFn = agent === 'codex' ? window.api.codex.chat : window.api.claude.chat;
+  const cancelFn = agent === 'codex' ? window.api.codex.cancelChat : window.api.claude.cancelChat;
 
   let cancelled = false;
   let currentChatId = '';
@@ -48,7 +56,7 @@ export function resilientChat(
   const cancel = () => {
     cancelled = true;
     if (currentChatId) {
-      window.api.claude.cancelChat(currentChatId).catch(() => {});
+      cancelFn(currentChatId).catch(() => {});
     }
   };
 
@@ -58,7 +66,8 @@ export function resilientChat(
 
       currentChatId = 'chat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
       try {
-        return await window.api.claude.chat(projectPath, prompt, inactivityTimeoutMs, currentChatId);
+        const result = await chatFn(projectPath, prompt, inactivityTimeoutMs, currentChatId);
+        return result.response;
       } catch (err) {
         if (cancelled) throw new Error('cancelled');
 

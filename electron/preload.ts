@@ -51,6 +51,18 @@ function removeAllListeners(prefix: string) {
 // Per-task chat output handler registry for parallel execution
 const chatOutputHandlers = new Map<string, (content: string) => void>();
 
+// Per-task codex output handler registry (mirrors chatOutputHandlers)
+const codexOutputHandlers = new Map<string, (content: string) => void>();
+
+// Route codex chat output to per-task handlers
+ipcRenderer.on('codex:chatOutput', (_event, data: unknown) => {
+  if (typeof data === 'object' && data !== null && 'chatId' in data && 'content' in data) {
+    const { chatId, content } = data as { chatId: string; content: string };
+    const handler = codexOutputHandlers.get(chatId);
+    if (handler) handler(content);
+  }
+});
+
 // Single raw listener that routes based on chatId
 ipcRenderer.on('claude:chatOutput', (_event, data: unknown) => {
   if (typeof data === 'object' && data !== null && 'chatId' in data && 'content' in data) {
@@ -105,6 +117,8 @@ contextBridge.exposeInMainWorld('api', {
     checkClaude: () => ipcRenderer.invoke('cli:checkClaude'),
     checkClaudeDeep: () => ipcRenderer.invoke('cli:checkClaudeDeep'),
     checkGitHub: () => ipcRenderer.invoke('cli:checkGitHub'),
+    checkCodex: () => ipcRenderer.invoke('cli:checkCodex'),
+    checkCodexDeep: () => ipcRenderer.invoke('cli:checkCodexDeep'),
   },
 
   // Claude Code
@@ -118,7 +132,7 @@ contextBridge.exposeInMainWorld('api', {
       return ipcRenderer.invoke('claude:spawnInteractive', projectPath);
     },
     chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) =>
-      ipcRenderer.invoke('claude:chat', projectPath, prompt, inactivityTimeoutMs, chatId) as Promise<string>,
+      ipcRenderer.invoke('claude:chat', projectPath, prompt, inactivityTimeoutMs, chatId) as Promise<{ response: string; usage?: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number }; model?: string; costUsd?: number; durationMs?: number; numTurns?: number }>,
     onOutput: (callback: OutputCallback) => createListener('claude:output', callback),
     onChatOutput: (callback: (content: string) => void) => {
       chatOutputHandlers.set('__legacy__', callback);
@@ -142,6 +156,23 @@ contextBridge.exposeInMainWorld('api', {
     removeListeners: () => {
       removeAllListeners('claude:');
       chatOutputHandlers.clear();
+    },
+  },
+
+  // Codex CLI
+  codex: {
+    chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) =>
+      ipcRenderer.invoke('codex:chat', projectPath, prompt, inactivityTimeoutMs, chatId),
+    onChatOutputForTask: (chatId: string, callback: (content: string) => void) => {
+      codexOutputHandlers.set(chatId, callback);
+    },
+    offChatOutputForTask: (chatId: string) => {
+      codexOutputHandlers.delete(chatId);
+    },
+    cancelChat: (chatId?: string) => ipcRenderer.invoke('codex:cancelChat', chatId),
+    removeListeners: () => {
+      removeAllListeners('codex:');
+      codexOutputHandlers.clear();
     },
   },
 

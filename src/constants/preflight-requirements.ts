@@ -1,4 +1,4 @@
-export type ServiceKey = 'claude' | 'github';
+export type ServiceKey = 'claude' | 'github' | 'codex';
 
 export interface ServiceInfo {
   name: string;
@@ -19,6 +19,12 @@ export const SERVICE_REGISTRY: Record<ServiceKey, ServiceInfo> = {
     installCommand: 'brew install gh',
     authCommand: 'gh auth login',
     description: 'Push code and enable auto-deployments',
+  },
+  codex: {
+    name: 'OpenAI Codex CLI',
+    installCommand: 'npm install -g @openai/codex',
+    authCommand: 'codex login',
+    description: 'AI coding agent from OpenAI',
   },
 };
 
