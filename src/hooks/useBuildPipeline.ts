@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore, useProjectStoreApi } from '../store/ProjectStoreContext';
 import { useIsMounted } from './useIsMounted';
 import type { Task, TaskPhase, ReviewArtifact, TaskPipelineStatus, TokenCount, TaskTokenUsage, BuildMetrics, ChatResult, AgentRoleConfig } from '../types';
 import { getAgentForRole, cancelBuildAgents } from '../utils/agent-router';
@@ -90,7 +90,8 @@ export function useBuildPipeline() {
     setBuildSessionActive,
     notifyHoustonBuildComplete,
     notifyHoustonBuildError,
-  } = useAppStore();
+  } = useProjectStore();
+  const projectStoreApi = useProjectStoreApi();
 
   const isMountedRef = useIsMounted();
 
@@ -1038,7 +1039,7 @@ Build this task completely. Do not work on anything else.`;
       if (!autoApproveRef.current && remainingTiers > 0) {
         pauseRequestedRef.current = true;
         const completedSoFar = tasks.filter(t => t.completed).length;
-        useAppStore.getState().notifyHoustonTaskApproval(
+        projectStoreApi.getState().notifyHoustonTaskApproval(
           `Tier ${tierIdx + 1}`,
           completedSoFar,
           tasks.length,
@@ -1087,7 +1088,7 @@ Build this task completely. Do not work on anything else.`;
 
     // Drain tasks added during the build (e.g., Design Duel task)
     if (!pipelineErrorRef.current && !isStale() && isMountedRef.current) {
-      const freshTasks = useAppStore.getState().tasks;
+      const freshTasks = projectStoreApi.getState().tasks;
       const newUncompleted = freshTasks.filter(t => !t.completed);
       for (const task of newUncompleted) {
         if (!isMountedRef.current || pipelineErrorRef.current || isStale()) break;
@@ -1113,7 +1114,7 @@ Build this task completely. Do not work on anything else.`;
 
     // Compute aggregate build metrics
     if (isMountedRef.current && !isStale()) {
-      const freshTasks = useAppStore.getState().tasks;
+      const freshTasks = projectStoreApi.getState().tasks;
       const completedCount = freshTasks.filter(t => t.completed).length;
       const metrics: BuildMetrics = {
         totalTokens: { ...buildTokens },
@@ -1140,7 +1141,7 @@ Build this task completely. Do not work on anything else.`;
 
     // All tasks done — check fresh store state
     if (!isMountedRef.current || pipelineErrorRef.current || isStale()) return;
-    const finalTasks = useAppStore.getState().tasks;
+    const finalTasks = projectStoreApi.getState().tasks;
     if (finalTasks.every(t => t.completed)) {
       handleBuildComplete();
     }

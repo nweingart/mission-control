@@ -1,4 +1,4 @@
-import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapAnalysis, GamificationStats, ChatResult, AgentProvider } from './index';
+import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapAnalysis, GamificationStats, ChatResult, AgentProvider, FeatureModule, CodeIssue, ScanSnapshot } from './index';
 
 export interface ElectronAPI {
   // Storage
@@ -30,6 +30,15 @@ export interface ElectronAPI {
     saveGapAnalysis: (slug: string, analyses: GapAnalysis[]) => Promise<void>;
     getGamification: (slug: string) => Promise<GamificationStats | null>;
     saveGamification: (slug: string, stats: GamificationStats) => Promise<void>;
+
+    // V2: Features, Issues, Scan History, Import
+    getFeatures: (slug: string) => Promise<FeatureModule[]>;
+    saveFeatures: (slug: string, features: FeatureModule[]) => Promise<void>;
+    getIssues: (slug: string) => Promise<CodeIssue[]>;
+    saveIssues: (slug: string, issues: CodeIssue[]) => Promise<void>;
+    getScanHistory: (slug: string) => Promise<ScanSnapshot[]>;
+    saveScanHistory: (slug: string, snapshots: ScanSnapshot[]) => Promise<void>;
+    importProject: (name: string, githubRepo: string, projectPath: string) => Promise<Project>;
   };
 
   // CLI Check

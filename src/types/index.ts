@@ -1,3 +1,110 @@
+// ── V2: Scan & Codebase Analysis Types ─────────────────────
+
+export interface TechStack {
+  languages: string[];
+  frameworks: string[];
+  buildTools: string[];
+  summary: string;
+}
+
+export interface FeatureModule {
+  id: string;
+  fingerprint: string;
+  name: string;
+  description: string;
+  prd: string;
+  prdEditedByUser?: boolean;
+  /** When re-scan generates a new PRD but user's edit is preserved, store the proposal here */
+  proposedPrd?: string;
+  files: string[];
+  status: 'documented' | 'outdated';
+  createdAt: string;
+  lastUpdated: string;
+}
+
+export interface CodeIssue {
+  id: string;
+  fingerprint: string;
+  title: string;
+  description: string;
+  severity: 'critical' | 'warning' | 'info';
+  category: 'bug' | 'security' | 'performance' | 'dead_code';
+  estimatedEffort: 'quick_fix' | 'moderate' | 'significant';
+  file?: string;
+  status: 'open' | 'planned' | 'fixed';
+  backlogItemId?: string;
+  planningChatId?: string;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface ScanSnapshot {
+  id: string;
+  timestamp: string;
+  masterPrd: string;
+  features: FeatureModule[];
+  issues: CodeIssue[];
+  techStack: TechStack;
+  fileCount: number;
+  summary: string;
+}
+
+export interface ScanDiff {
+  newFeatures: string[];
+  removedFeatures: string[];
+  updatedFeatures: string[];
+  issuesFixed: string[];
+  newIssues: string[];
+  summary: string;
+}
+
+export type ScanStatus = 'pending' | 'scanning' | 'complete' | 'failed';
+
+// ── Project ────────────────────────────────────────────────
+
+export interface Project {
+  slug: string;
+  name: string;
+  createdAt: string;
+  projectPath: string;
+  githubRepo: string;
+
+  // V2: Scan state
+  scanStatus: ScanStatus;
+  lastScannedAt?: string;
+  scanError?: string;
+  lastScanDiff?: ScanDiff;
+  techStack?: TechStack;
+
+  // Carried forward
+  envVars?: Record<string, string>;
+  hasBuiltOnce?: boolean;
+
+  // V1 legacy (kept for archived screens, will be removed)
+  /** @deprecated V1 inception field */
+  status?: ProjectStatus;
+  /** @deprecated V1 inception field */
+  idea?: string;
+  /** @deprecated V1 inception field */
+  prd?: string;
+  /** @deprecated V1 inception field */
+  humanTasks?: HumanTask[];
+  /** @deprecated V1 inception field */
+  designPreferences?: DesignPreferences;
+}
+
+// ── V1 Legacy Types (kept for archived screens) ───────────
+
+export type ProjectStatus =
+  | 'idea'
+  | 'discovery'
+  | 'prd_review'
+  | 'planning'
+  | 'building'
+  | 'previewing'
+  | 'deploying'
+  | 'complete';
+
 export interface DesignPreferences {
   colorTemp: 'warm' | 'cool';
   saturation: 'vibrant' | 'muted';
@@ -25,31 +132,6 @@ export interface HumanTask {
     envVars: string[];
   };
 }
-
-export interface Project {
-  slug: string;
-  name: string;
-  status: ProjectStatus;
-  createdAt: string;
-  projectPath: string;
-  githubRepo?: string;
-  idea?: string;
-  prd?: string;
-  envVars?: Record<string, string>;
-  hasBuiltOnce?: boolean;
-  humanTasks?: HumanTask[];
-  designPreferences?: DesignPreferences;
-}
-
-export type ProjectStatus =
-  | 'idea'
-  | 'discovery'
-  | 'prd_review'
-  | 'planning'
-  | 'building'
-  | 'previewing'
-  | 'deploying'
-  | 'complete';
 
 export interface Task {
   id: string;
@@ -148,20 +230,25 @@ export interface CLIStatus {
 export type Screen =
   | 'onboarding'
   | 'home'
+  | 'import'
+  | 'scanning'
   | 'project-home'
+  | 'docs'
+  | 'issues'
+  | 'planning'
+  | 'building'
+  | 'planning-chats'
+  | 'git-history'
+  | 'settings'
+  // V1 legacy (kept for archived screens)
   | 'idea'
   | 'discovery'
   | 'prd-review'
-  | 'planning'
-  | 'building'
   | 'previewing'
   | 'deploying'
   | 'complete'
-  | 'planning-chats'
-  | 'git-history'
   | 'deployments'
-  | 'gap-analysis'
-  | 'settings';
+  | 'gap-analysis';
 
 export interface ChatMessage {
   id: string;

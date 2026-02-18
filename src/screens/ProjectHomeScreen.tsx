@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
 import GitHistoryScreen from './GitHistoryScreen';
 import DeploymentsScreen from './DeploymentsScreen';
 import DatabaseScreen from './DatabaseScreen';
-import type { ProjectStatus, BacklogItem, Sprint, PlanningType } from '../types';
+import type { ProjectStatus, BacklogItem, Sprint, PlanningType, FeatureModule, CodeIssue } from '../types';
 import {
   DndContext,
   closestCenter,
@@ -303,9 +303,12 @@ export default function ProjectHomeScreen() {
     renameSprint,
     removeSprint,
     setSprintStatus,
-  } = useAppStore();
+    setScreen,
+  } = useProjectStore();
 
   const [prd, setPrd] = useState<string | null>(null);
+  const [features, setFeatures] = useState<FeatureModule[]>([]);
+  const [issues, setIssues] = useState<CodeIssue[]>([]);
   const [expandedBacklogId, setExpandedBacklogId] = useState<string | null>(null);
   const [expandedRoadmapId, setExpandedRoadmapId] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
@@ -314,10 +317,12 @@ export default function ProjectHomeScreen() {
   const [renamingSprintId, setRenamingSprintId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
-  // Load PRD on mount
+  // Load PRD, features, issues on mount
   useEffect(() => {
     if (currentProject) {
       window.api.storage.getPRD(currentProject.slug).then(setPrd).catch(() => setPrd(null));
+      window.api.storage.getFeatures(currentProject.slug).then(setFeatures).catch(() => setFeatures([]));
+      window.api.storage.getIssues(currentProject.slug).then(setIssues).catch(() => setIssues([]));
     }
   }, [currentProject]);
 
@@ -550,8 +555,69 @@ export default function ProjectHomeScreen() {
 
     const hasStatusData = statusCounts.in_progress > 0 || statusCounts.done > 0;
 
+    const openIssues = issues.filter(i => i.status === 'open');
+    const criticalIssues = openIssues.filter(i => i.severity === 'critical');
+    const isV2 = currentProject.scanStatus === 'complete';
+
     return (
       <div className="max-w-5xl mx-auto space-y-6">
+        {/* V2: Scan summary + tech stack */}
+        {isV2 && currentProject.techStack && (
+          <div className="card-panel p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-semibold text-ink">Codebase</h3>
+                <span className="text-xs text-ink-muted">
+                  Last scanned {currentProject.lastScannedAt ? new Date(currentProject.lastScannedAt).toLocaleDateString() : 'never'}
+                </span>
+              </div>
+              <button
+                onClick={() => setScreen('scanning')}
+                className="text-xs text-accent hover:text-accent/80 transition-colors font-medium"
+              >
+                Re-scan
+              </button>
+            </div>
+            <p className="text-sm text-ink-secondary mb-3">{currentProject.techStack.summary}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {[...currentProject.techStack.languages, ...currentProject.techStack.frameworks, ...currentProject.techStack.buildTools].map((tech, i) => (
+                <span key={i} className="px-2 py-0.5 text-xs bg-surface-light border border-border text-ink-muted">{tech}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* V2: Issues summary */}
+        {isV2 && openIssues.length > 0 && (
+          <div className="card-panel p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-ink">Open Issues</h3>
+              <button
+                onClick={() => setScreen('issues')}
+                className="text-xs text-accent hover:text-accent/80 transition-colors font-medium"
+              >
+                View All
+              </button>
+            </div>
+            <div className="flex items-center gap-4 text-sm">
+              {criticalIssues.length > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 bg-error rounded-full" />
+                  <span className="text-error font-medium">{criticalIssues.length} critical</span>
+                </span>
+              )}
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-warning rounded-full" />
+                <span className="text-ink-muted">{openIssues.filter(i => i.severity === 'warning').length} warnings</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-ink-muted/30 rounded-full" />
+                <span className="text-ink-muted">{openIssues.filter(i => i.severity === 'info').length} info</span>
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Backlog card */}
@@ -615,22 +681,39 @@ export default function ProjectHomeScreen() {
             </p>
           </div>
 
-          {/* Project Status card */}
-          <div className="card-panel p-5">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="p-2 bg-spectrum-green/15 text-spectrum-green rounded-md">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+          {/* Features card (V2) or Status card (V1) */}
+          {currentProject.scanStatus === 'complete' ? (
+            <div className="card-panel p-5">
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="p-2 bg-spectrum-green/15 text-spectrum-green rounded-md">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-semibold text-ink-muted">Features</h3>
               </div>
-              <h3 className="text-sm font-semibold text-ink-muted">Status</h3>
+              <p className="text-3xl font-bold text-ink">{features.length}</p>
+              <p className="text-xs text-ink-muted mt-1">
+                {features.length === 0 ? 'No features detected' : `${features.filter(f => f.status === 'documented').length} documented`}
+              </p>
             </div>
-            <div className="mt-1">
-              <span className={`px-2 py-0.5 text-xs font-medium ${statusColor[currentProject.status]}`}>
-                {statusLabel[currentProject.status]}
-              </span>
+          ) : (
+            <div className="card-panel p-5">
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="p-2 bg-spectrum-green/15 text-spectrum-green rounded-md">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-semibold text-ink-muted">Status</h3>
+              </div>
+              <div className="mt-1">
+                <span className={`px-2 py-0.5 text-xs font-medium ${currentProject.status ? statusColor[currentProject.status] : 'bg-surface-light text-ink-muted'}`}>
+                  {currentProject.status ? statusLabel[currentProject.status] : 'Imported'}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Backlog status bar */}
@@ -1289,9 +1372,24 @@ export default function ProjectHomeScreen() {
           <div>
             <label className="text-sm font-sans font-medium text-ink-muted">Status</label>
             <p className="text-sm text-ink mt-1">
-              <span className={`px-2 py-0.5 text-xs font-medium ${statusColor[currentProject.status]}`}>
-                {statusLabel[currentProject.status]}
-              </span>
+              {currentProject.scanStatus ? (
+                <span className={`px-2 py-0.5 text-xs font-medium ${
+                  currentProject.scanStatus === 'complete' ? 'bg-spectrum-green/20 text-spectrum-green' :
+                  currentProject.scanStatus === 'scanning' ? 'bg-spectrum-blue/20 text-spectrum-blue' :
+                  currentProject.scanStatus === 'failed' ? 'bg-spectrum-red/20 text-spectrum-red' :
+                  'bg-surface-light text-ink-muted'
+                }`}>
+                  {currentProject.scanStatus === 'complete' ? 'Active' :
+                   currentProject.scanStatus === 'scanning' ? 'Scanning' :
+                   currentProject.scanStatus === 'failed' ? 'Scan Failed' : 'Pending'}
+                </span>
+              ) : currentProject.status ? (
+                <span className={`px-2 py-0.5 text-xs font-medium ${statusColor[currentProject.status]}`}>
+                  {statusLabel[currentProject.status]}
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 text-xs font-medium bg-surface-light text-ink-muted">Unknown</span>
+              )}
             </p>
           </div>
           {currentProject.githubRepo && (

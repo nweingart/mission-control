@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Chat from './Chat';
 import { useAppStore } from '../store/useAppStore';
+import { useActiveProjectStore } from '../store/ProjectStoreContext';
+import { projectStoreRegistry } from '../store/projectStoreRegistry';
 import { extractBacklogSuggestions } from '../utils/planning';
 import { deriveHoustonMood, getMoodButtonClasses } from '../utils/houstonMood';
 import { buildErrorDiagnostic } from '../utils/houstonGreeting';
@@ -46,7 +48,10 @@ async function buildPrompt(
   userMessage: string,
   history: ChatMessage[],
 ): Promise<string> {
-  const { currentProject, tasks, backlog, sprints } = useAppStore.getState();
+  const activeSlug = useAppStore.getState().activeProjectSlug;
+  const store = activeSlug ? projectStoreRegistry.get(activeSlug) : undefined;
+  if (!store) return userMessage;
+  const { currentProject, tasks, backlog, sprints } = store.getState();
   if (!currentProject) return userMessage;
 
   const humanTasks = currentProject.humanTasks ?? [];
@@ -150,8 +155,8 @@ ${conversationLines ? `CONVERSATION:\n${conversationLines}\n` : ''}User: ${userM
 
 export default function Houston() {
   // Read currentProject first — slug drives per-project state lookup
-  const currentProject = useAppStore((s) => s.currentProject);
-  const gamificationEvent = useAppStore((s) => s.gamificationEvent);
+  const currentProject = useActiveProjectStore((s) => s.currentProject);
+  const gamificationEvent = useActiveProjectStore((s) => s.gamificationEvent);
 
   const slug = currentProject?.slug ?? null;
   const projectChat = slug ? getProjectChat(slug) : null;
@@ -197,8 +202,8 @@ export default function Houston() {
       return next;
     });
   }, [slug]);
-  const buildTaskPhase = useAppStore((s) => s.buildTaskPhase);
-  const buildSessionActive = useAppStore((s) => s.buildSessionActive);
+  const buildTaskPhase = useActiveProjectStore((s) => s.buildTaskPhase);
+  const buildSessionActive = useActiveProjectStore((s) => s.buildSessionActive);
 
   // Greeting flag: true for 3s when project loads
   const [isGreeting, setIsGreeting] = useState(false);
@@ -226,8 +231,8 @@ export default function Houston() {
   const moodClasses = getMoodButtonClasses(mood);
 
   // Auto-open Houston when a build error occurs with a diagnostic message
-  const houstonErrorContext = useAppStore((s) => s.houstonErrorContext);
-  const clearHoustonErrorContext = useAppStore((s) => s.clearHoustonErrorContext);
+  const houstonErrorContext = useActiveProjectStore((s) => s.houstonErrorContext);
+  const clearHoustonErrorContext = useActiveProjectStore((s) => s.clearHoustonErrorContext);
 
   useEffect(() => {
     if (!houstonErrorContext || !slug) return;
@@ -256,8 +261,8 @@ export default function Houston() {
   }, [houstonErrorContext, slug, setIsOpen, setMessages, clearHoustonErrorContext]);
 
   // Auto-open Houston when human tasks are pending
-  const houstonHumanTaskContext = useAppStore((s) => s.houstonHumanTaskContext);
-  const clearHoustonHumanTaskContext = useAppStore((s) => s.clearHoustonHumanTaskContext);
+  const houstonHumanTaskContext = useActiveProjectStore((s) => s.houstonHumanTaskContext);
+  const clearHoustonHumanTaskContext = useActiveProjectStore((s) => s.clearHoustonHumanTaskContext);
 
   useEffect(() => {
     if (!houstonHumanTaskContext || !slug) return;
@@ -353,7 +358,9 @@ export default function Houston() {
       // Extract backlog items from response and auto-add
       const suggestions = extractBacklogSuggestions(response);
       if (suggestions.length > 0) {
-        const { addBacklogItem } = useAppStore.getState();
+        const activeStore = slug ? projectStoreRegistry.get(slug) : undefined;
+        const addBacklogItem = activeStore?.getState().addBacklogItem;
+        if (!addBacklogItem) return;
         for (const s of suggestions) {
           addBacklogItem({
             title: s.title,
@@ -376,7 +383,9 @@ export default function Houston() {
       let tcMatch;
       while ((tcMatch = taskCompleteRegex.exec(response)) !== null) {
         const taskId = tcMatch[1].trim();
-        const { currentProject: cp, updateProject: up } = useAppStore.getState();
+        const tcStore = slug ? projectStoreRegistry.get(slug) : undefined;
+        if (!tcStore) break;
+        const { currentProject: cp, updateProject: up } = tcStore.getState();
         const ht = cp?.humanTasks?.find((t) => t.id === taskId);
         if (ht && cp?.humanTasks) {
           const updatedTasks = cp.humanTasks.map((t) =>

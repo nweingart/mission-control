@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore, useProjectStoreApi } from '../store/ProjectStoreContext';
 import { useBuildPipeline } from '../hooks/useBuildPipeline';
 import { usePreflightCheck } from '../hooks/usePreflightCheck';
 import ProgressBar from '../components/ProgressBar';
@@ -18,7 +18,12 @@ function formatTokenCount(n: number): string {
 }
 
 export default function BuildScreen() {
-  const { currentProject, tasks, houstonApproval, clearHoustonApproval, notifyHoustonHumanTasks } = useAppStore();
+  const currentProject = useProjectStore(s => s.currentProject);
+  const tasks = useProjectStore(s => s.tasks);
+  const houstonApproval = useProjectStore(s => s.houstonApproval);
+  const clearHoustonApproval = useProjectStore(s => s.clearHoustonApproval);
+  const notifyHoustonHumanTasks = useProjectStore(s => s.notifyHoustonHumanTasks);
+  const projectStoreApi = useProjectStoreApi();
 
 
 
@@ -124,7 +129,7 @@ export default function BuildScreen() {
   // Edge case: pipeline finished before Design Duel — re-trigger for new task
   useEffect(() => {
     if (!allDone) return;
-    const freshTasks = useAppStore.getState().tasks;
+    const freshTasks = projectStoreApi.getState().tasks;
     const hasUncompletedDesignTask = freshTasks.some(t => !t.completed && t.id.startsWith('task-design-'));
     if (hasUncompletedDesignTask) {
       handleRetry();

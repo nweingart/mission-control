@@ -1,4 +1,4 @@
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
 import type { MissionRank } from '../types';
 
 const rankColors: Record<MissionRank, string> = {
@@ -10,8 +10,8 @@ const rankColors: Record<MissionRank, string> = {
 };
 
 export default function StreakDisplay() {
-  const gamification = useAppStore((s) => s.gamification);
-  const getMissionRank = useAppStore((s) => s.getMissionRank);
+  const gamification = useProjectStore((s) => s.gamification);
+  const getMissionRank = useProjectStore((s) => s.getMissionRank);
   const rank = getMissionRank();
 
   return (

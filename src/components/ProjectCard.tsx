@@ -12,15 +12,20 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
       case 'idea':
         return 'bg-spectrum-blue/15 text-spectrum-blue border border-spectrum-blue/25';
       case 'discovery':
+      case 'scanning':
         return 'bg-spectrum-purple/15 text-spectrum-purple border border-spectrum-purple/25';
       case 'planning':
+      case 'pending':
         return 'bg-spectrum-yellow/15 text-spectrum-yellow border border-spectrum-yellow/25';
       case 'building':
         return 'bg-spectrum-orange/15 text-spectrum-orange border border-spectrum-orange/25';
       case 'deploying':
         return 'bg-spectrum-blue/15 text-spectrum-blue border border-spectrum-blue/25';
       case 'complete':
+      case 'active':
         return 'bg-spectrum-green/15 text-spectrum-green border border-spectrum-green/25';
+      case 'failed':
+        return 'bg-spectrum-red/15 text-spectrum-red border border-spectrum-red/25';
       default:
         return 'bg-border/50 text-ink-secondary border border-border';
     }
@@ -29,31 +34,32 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
   const getStatusLeftBorder = (status: string) => {
     switch (status) {
       case 'idea': return '#5B9EC9';
-      case 'discovery': return '#5B9EC9';
-      case 'planning': return '#E0A030';
+      case 'discovery':
+      case 'scanning': return '#5B9EC9';
+      case 'planning':
+      case 'pending': return '#E0A030';
       case 'building': return '#5B9EC9';
       case 'deploying': return '#E0A030';
-      case 'complete': return '#4ADE80';
+      case 'complete':
+      case 'active': return '#4ADE80';
+      case 'failed': return '#EF4444';
       default: return '#2A3444';
     }
   };
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case 'idea':
-        return 'Idea';
-      case 'discovery':
-        return 'Discovery';
-      case 'planning':
-        return 'Planning';
-      case 'building':
-        return 'Building';
-      case 'deploying':
-        return 'Deploying';
-      case 'complete':
-        return 'Complete';
-      default:
-        return status;
+      case 'idea': return 'Idea';
+      case 'discovery': return 'Discovery';
+      case 'planning': return 'Planning';
+      case 'building': return 'Building';
+      case 'deploying': return 'Deploying';
+      case 'complete': return 'Complete';
+      case 'active': return 'Active';
+      case 'scanning': return 'Scanning';
+      case 'pending': return 'Pending';
+      case 'failed': return 'Scan Failed';
+      default: return status;
     }
   };
 
@@ -78,17 +84,23 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
     onDelete?.();
   };
 
+  const displayStatus = project.scanStatus
+    ? (project.scanStatus === 'complete' ? 'active' : project.scanStatus)
+    : (project.status || 'idea');
+
+  const description = project.techStack?.summary || project.idea || project.githubRepo || 'No description';
+
   return (
     <div
       onClick={onClick}
       className="card-panel p-5 transition-all cursor-pointer group overflow-hidden"
-      style={{ borderLeft: `4px solid ${getStatusLeftBorder(project.status)}` }}
+      style={{ borderLeft: `4px solid ${getStatusLeftBorder(displayStatus)}` }}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <h3 className="text-base font-sans font-semibold text-ink truncate">{project.name}</h3>
           <p className="text-sm text-ink-muted mt-1 line-clamp-2">
-            {project.idea || 'No description'}
+            {description}
           </p>
         </div>
 
@@ -113,9 +125,9 @@ export default function ProjectCard({ project, onClick, onDelete }: ProjectCardP
 
       <div className="flex items-center justify-between mt-4">
         <span
-          className={`font-display font-bold text-[14px] px-2.5 py-1 rounded ${getStatusColor(project.status)}`}
+          className={`font-display font-bold text-[14px] px-2.5 py-1 rounded ${getStatusColor(displayStatus)}`}
         >
-          {getStatusLabel(project.status)}
+          {getStatusLabel(displayStatus)}
         </span>
         <span className="text-xs text-ink-muted">{formatDate(project.createdAt)}</span>
       </div>

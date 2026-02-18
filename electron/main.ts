@@ -202,6 +202,15 @@ ipcMain.handle('storage:saveGapAnalysis', (_, slug, analyses) => storageService.
 ipcMain.handle('storage:getGamification', (_, slug) => storageService.getGamification(slug));
 ipcMain.handle('storage:saveGamification', (_, slug, stats) => storageService.saveGamification(slug, stats));
 
+// V2: Features, Issues, Scan History, Import
+ipcMain.handle('storage:getFeatures', (_, slug) => storageService.getFeatures(slug));
+ipcMain.handle('storage:saveFeatures', (_, slug, features) => storageService.saveFeatures(slug, features));
+ipcMain.handle('storage:getIssues', (_, slug) => storageService.getIssues(slug));
+ipcMain.handle('storage:saveIssues', (_, slug, issues) => storageService.saveIssues(slug, issues));
+ipcMain.handle('storage:getScanHistory', (_, slug) => storageService.getScanHistory(slug));
+ipcMain.handle('storage:saveScanHistory', (_, slug, snapshots) => storageService.saveScanHistory(slug, snapshots));
+ipcMain.handle('storage:importProject', (_, name, githubRepo, projectPath) => storageService.importProject(name, githubRepo, projectPath));
+
 // IPC Handlers - CLI Check
 ipcMain.handle('cli:checkAll', () => cliCheckService.checkAll());
 ipcMain.handle('cli:checkClaude', () => cliCheckService.checkClaude());

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
+import { getProjectStoreBySlug } from '../store/projectStoreRegistry';
 import type { ProjectStatus, Screen } from '../types';
 import StreakDisplay from './StreakDisplay';
 import GamificationToast from './GamificationToast';
@@ -81,12 +83,22 @@ const dockItems: { key: Tab | 'build'; label: string; color: string; activeColor
 ];
 
 export default function ProjectLayout({ children }: { children: ReactNode }) {
-  const { currentProject, screen, goToHome, goToProjectHome, setScreen, projectHomeTab, setProjectHomeTab } = useAppStore();
+  const currentProject = useProjectStore(s => s.currentProject);
+  const screen = useProjectStore(s => s.screen);
+  const goToProjectHome = useProjectStore(s => s.goToProjectHome);
+  const setScreen = useProjectStore(s => s.setScreen);
+  const projectHomeTab = useProjectStore(s => s.projectHomeTab);
+  const setProjectHomeTab = useProjectStore(s => s.setProjectHomeTab);
+  const goToHome = useAppStore(s => s.goToHome);
+  const openProjectSlugs = useAppStore(s => s.openProjectSlugs);
+  const activeProjectSlug = useAppStore(s => s.activeProjectSlug);
+  const switchProject = useAppStore(s => s.switchProject);
+  const closeProject = useAppStore(s => s.closeProject);
 
   if (!currentProject) return <>{children}</>;
 
   const isBuildRunning = currentProject.status === 'building' && screen === 'building';
-  const phaseScreen = statusToScreen[currentProject.status] || 'building';
+  const phaseScreen = currentProject.status ? (statusToScreen[currentProject.status] || 'building') : 'building';
   const isOnDashboard = screen === 'project-home';
   const isOnBuild = screen === 'building';
   const hasBuiltOnce = currentProject?.hasBuiltOnce === true;
@@ -126,10 +138,41 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         {/* Divider */}
         <div className="w-px h-5 bg-border" />
 
-        {/* Project name */}
-        <span className="text-sm font-medium text-ink truncate max-w-[200px]">
-          {currentProject.name}
-        </span>
+        {/* Project tabs */}
+        <div className="flex items-center gap-1 overflow-x-auto no-drag">
+          {openProjectSlugs.map(slug => {
+            const isActive = slug === activeProjectSlug;
+            const store = getProjectStoreBySlug(slug);
+            const name = store?.getState().currentProject?.name ?? slug;
+            const buildActive = store?.getState().buildSessionActive ?? false;
+            return (
+              <button
+                key={slug}
+                onClick={() => switchProject(slug)}
+                className={`group relative flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  isActive
+                    ? 'bg-houston-blue-soft text-houston-blue-deep'
+                    : 'text-ink-muted hover:text-ink hover:bg-surface-hover'
+                }`}
+              >
+                {/* Build status dot */}
+                {buildActive && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-houston-amber animate-pulse" />
+                )}
+                <span className="truncate max-w-[120px]">{name}</span>
+                {/* Close button */}
+                {openProjectSlugs.length > 1 && (
+                  <span
+                    onClick={(e) => { e.stopPropagation(); closeProject(slug); }}
+                    className="opacity-0 group-hover:opacity-100 ml-0.5 text-ink-muted hover:text-ink transition-opacity"
+                  >
+                    &times;
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
         {/* Divider */}
         <div className="w-px h-5 bg-border" />

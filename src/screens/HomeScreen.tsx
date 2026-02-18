@@ -4,17 +4,17 @@ import ProjectCard from '../components/ProjectCard';
 import PaywallModal from '../components/PaywallModal';
 
 export default function HomeScreen() {
-  const { projects, startNewProject, loadProject, refreshProjects, setScreen, setCLIStatus, cliStatus } = useAppStore();
+  const { projects, startImportProject, openProject, switchProject, openProjectSlugs, refreshProjects, setScreen, setCLIStatus, cliStatus } = useAppStore();
   const [loadingSlug, setLoadingSlug] = useState<string | null>(null);
   const [showPaywall, setShowPaywall] = useState(false);
 
-  const handleNewProject = async () => {
+  const handleImportProject = async () => {
     const config = await window.api.storage.getConfig();
     if (config.freeProjectUsed && !config.devMode) {
       setShowPaywall(true);
       return;
     }
-    startNewProject();
+    startImportProject();
   };
 
   // Check CLI status on mount (non-blocking, no redirect)
@@ -31,9 +31,14 @@ export default function HomeScreen() {
   }, [setCLIStatus]);
 
   const handleLoadProject = async (slug: string) => {
+    // If already open, instant switch — no loading needed
+    if (openProjectSlugs.includes(slug)) {
+      switchProject(slug);
+      return;
+    }
     setLoadingSlug(slug);
     try {
-      await loadProject(slug);
+      await openProject(slug);
     } finally {
       setLoadingSlug(null);
     }
@@ -43,15 +48,14 @@ export default function HomeScreen() {
     const project = projects.find(p => p.slug === slug);
     if (!project) return;
 
-    let cleanupMsg = 'This will move the project folder to Trash.';
-    if (project.githubRepo) {
-      cleanupMsg += ' The GitHub repo will also be deleted.';
-    }
+    // V2 imported projects: NEVER delete the remote GitHub repo — it's the user's source repo
+    const isImportedProject = project.scanStatus && project.scanStatus !== 'pending';
+    const cleanupMsg = 'This will remove the project from Houston and move the local folder to Trash.';
 
     if (!confirm(`Delete "${project.name}"?\n\n${cleanupMsg}`)) return;
 
-    // Delete GitHub repo (non-blocking — failure shouldn't prevent local cleanup)
-    if (project.githubRepo) {
+    // Only delete Houston-created repos (V1 projects where Houston scaffolded the repo)
+    if (project.githubRepo && !isImportedProject) {
       try {
         await window.api.github.deleteRepo(project.githubRepo);
       } catch (err) {
@@ -157,14 +161,14 @@ export default function HomeScreen() {
               Houston
             </h1>
             <button
-              onClick={handleNewProject}
+              onClick={handleImportProject}
               disabled={loadingSlug !== null}
               className="btn-solid-primary flex items-center space-x-2 no-drag"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              <span>NEW PROJECT</span>
+              <span>IMPORT REPO</span>
             </button>
           </div>
         </header>
@@ -185,22 +189,29 @@ export default function HomeScreen() {
               </div>
               <h2 className="text-lg font-sans font-semibold text-ink mb-2">No Projects Yet</h2>
               <p className="text-ink-muted mb-6 max-w-md text-sm">
-                Start your first project and let Claude Code help you build and deploy your MVP.
+                Import an existing GitHub repository and let Houston scan your codebase — generating docs, finding bugs, and mapping features.
               </p>
               <button
-                onClick={handleNewProject}
+                onClick={handleImportProject}
                 className="btn-solid-primary flex items-center space-x-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                <span>CREATE YOUR FIRST PROJECT</span>
+                <span>IMPORT YOUR FIRST REPO</span>
               </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {projects.map((project) => (
+              {projects.map((project) => {
+                const isOpen = openProjectSlugs.includes(project.slug);
+                return (
                 <div key={project.slug} className="relative">
+                  {isOpen && (
+                    <div className="absolute top-2 right-2 z-10 px-1.5 py-0.5 bg-spectrum-green/20 text-spectrum-green text-[10px] font-mono font-semibold rounded">
+                      OPEN
+                    </div>
+                  )}
                   <ProjectCard
                     project={project}
                     onClick={() => handleLoadProject(project.slug)}
@@ -215,7 +226,8 @@ export default function HomeScreen() {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </main>
@@ -225,7 +237,7 @@ export default function HomeScreen() {
             onDismiss={() => setShowPaywall(false)}
             onUpgradeComplete={() => {
               setShowPaywall(false);
-              startNewProject();
+              startImportProject();
             }}
           />
         )}

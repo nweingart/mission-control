@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
 
 export default function GamificationToast() {
-  const gamificationEvent = useAppStore((s) => s.gamificationEvent);
-  const clearGamificationEvent = useAppStore((s) => s.clearGamificationEvent);
+  const gamificationEvent = useProjectStore((s) => s.gamificationEvent);
+  const clearGamificationEvent = useProjectStore((s) => s.clearGamificationEvent);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {

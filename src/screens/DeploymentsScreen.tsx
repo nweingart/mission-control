@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
 import type { DeploymentRecord } from '../types';
 import HoustonCallout from '../components/HoustonCallout';
 
@@ -32,7 +32,7 @@ function StatusBadge({ status }: { status: DeploymentRecord['status'] }) {
 }
 
 export default function DeploymentsScreen() {
-  const { deployments, loadDeployments, setScreen } = useAppStore();
+  const { deployments, loadDeployments, setScreen } = useProjectStore();
 
   useEffect(() => {
     loadDeployments();

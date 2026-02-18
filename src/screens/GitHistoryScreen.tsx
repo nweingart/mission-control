@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
 import type { GitEvent, ReviewFinding } from '../types';
 import HoustonCallout from '../components/HoustonCallout';
 import { parseUnifiedDiff } from '../utils/diff-parser';
@@ -44,7 +44,7 @@ function relativeTime(timestamp: string): string {
 }
 
 export default function GitHistoryScreen() {
-  const { gitEvents, loadGitEvents } = useAppStore();
+  const { gitEvents, loadGitEvents } = useProjectStore();
 
   useEffect(() => {
     loadGitEvents();
@@ -57,7 +57,7 @@ export default function GitHistoryScreen() {
   const mergedCount = gitEvents.filter(e => e.type === 'merged').length;
   const fixedCount = gitEvents.filter(e => e.type === 'auto_fixed').length;
 
-  const setScreen = useAppStore((s) => s.setScreen);
+  const setScreen = useProjectStore((s) => s.setScreen);
 
   if (gitEvents.length === 0) {
     return (
@@ -128,7 +128,7 @@ function getTaskNumber(group: { taskId: string; events: GitEvent[] }): number | 
 // ─── TASK GROUP ──────────────────────────────────────────────────
 function TaskGroup({ group }: { group: { taskId: string; taskTitle: string; events: GitEvent[] } }) {
   const [collapsed, setCollapsed] = useState(false);
-  const projectPath = useAppStore(s => s.currentProject?.projectPath);
+  const projectPath = useProjectStore(s => s.currentProject?.projectPath);
 
   // Task-level diff state
   const [taskDiffOpen, setTaskDiffOpen] = useState(false);
@@ -249,7 +249,7 @@ function TaskGroup({ group }: { group: { taskId: string; taskTitle: string; even
 // ─── EVENT ROW ───────────────────────────────────────────────────
 function EventRow({ event, isLast }: { event: GitEvent; isLast: boolean }) {
   const { icon, color, description } = getEventDisplay(event);
-  const projectPath = useAppStore(s => s.currentProject?.projectPath);
+  const projectPath = useProjectStore(s => s.currentProject?.projectPath);
 
   const isCommitEvent = (event.type === 'committed' || event.type === 'auto_fixed') && !!event.commitHash;
 

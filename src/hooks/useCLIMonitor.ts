@@ -11,6 +11,12 @@ const EXEMPT_SCREENS = new Set(['onboarding']);
 // Screens that have their own PreflightGateOverlay — don't block globally
 const PREFLIGHT_GATE_SCREENS = new Set<Screen>(['building', 'deploying', 'prd-review']);
 
+// V2 screens that don't require any CLI tools (read-only views, local-only operations)
+const NO_CLI_SCREENS = new Set<Screen>([
+  'home', 'import', 'project-home', 'docs', 'issues', 'settings',
+  'git-history', 'deployments', 'planning', 'planning-chats',
+]);
+
 // Map screen names to STEP_REQUIREMENTS keys
 const SCREEN_TO_STEP: Partial<Record<Screen, string>> = {
   discovery: 'discovery',
@@ -49,7 +55,9 @@ export function useCLIMonitor() {
 
   // Derive which services are required for the current screen
   const stepKey = SCREEN_TO_STEP[screen];
-  const requiredServices: ServiceKey[] = stepKey ? (STEP_REQUIREMENTS[stepKey] || []) : ['claude', 'github'];
+  const requiredServices: ServiceKey[] = NO_CLI_SCREENS.has(screen)
+    ? []
+    : stepKey ? (STEP_REQUIREMENTS[stepKey] || []) : ['claude', 'github'];
 
   // Check only required services
   const requiredConnected = cliStatus

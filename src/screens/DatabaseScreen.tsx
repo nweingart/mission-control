@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
 import HoustonCallout from '../components/HoustonCallout';
 
 interface DataField {
@@ -156,7 +156,7 @@ const SOURCE_COLORS: Record<DataModel['source'], string> = {
 };
 
 export default function DatabaseScreen() {
-  const { currentProject } = useAppStore();
+  const { currentProject } = useProjectStore();
   const [models, setModels] = useState<DataModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
