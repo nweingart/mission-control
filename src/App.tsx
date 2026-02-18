@@ -8,24 +8,17 @@ import FlowTestRunner from './components/FlowTestRunner';
 import E2ETestRunner from './components/E2ETestRunner';
 import CICDTestRunner from './components/CICDTestRunner';
 import HomeScreen from './screens/HomeScreen';
-import IdeaScreen from './screens/IdeaScreen';
-import DiscoveryScreen from './screens/DiscoveryScreen';
-import PRDReviewScreen from './screens/PRDReviewScreen';
-import TasksScreen from './screens/TasksScreen';
-import BuildScreen from './screens/BuildScreen';
-import PreviewScreen from './screens/PreviewScreen';
-import DeployScreen from './screens/DeployScreen';
+import ImportScreen from './screens/ImportScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
-import Houston from './components/Houston';
-import GitHistoryScreen from './screens/GitHistoryScreen';
-import DeploymentsScreen from './screens/DeploymentsScreen';
-import GapAnalysisScreen from './screens/GapAnalysisScreen';
-import ProjectHomeScreen from './screens/ProjectHomeScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import Houston from './components/Houston';
 import ProjectLayout from './components/ProjectLayout';
+import ProjectScreenRouter from './components/ProjectScreenRouter';
+import { ProjectStoreProvider } from './store/ProjectStoreContext';
+import { getOrCreateProjectStore } from './store/projectStoreRegistry';
 
 function App() {
-  const { screen, currentProject, initialize, isLoading, error } = useAppStore();
+  const { screen, initialize, isLoading, error, openProjectSlugs, activeProjectSlug } = useAppStore();
   const { shouldBlock } = useCLIMonitor();
   const [showFlowTest, setShowFlowTest] = useState(false);
   const [showE2ETest, setShowE2ETest] = useState(false);
@@ -112,76 +105,34 @@ function App() {
     );
   }
 
-  const renderActiveScreen = () => {
-    switch (screen) {
-      case 'project-home':
-        return <ProjectHomeScreen />;
-      case 'discovery':
-        return <DiscoveryScreen />;
-      case 'prd-review':
-        return <PRDReviewScreen />;
-      case 'planning':
-        return <TasksScreen />;
-      case 'building':
-        return <BuildScreen />;
-      case 'previewing':
-        return <PreviewScreen />;
-      case 'deploying':
-        return <DeployScreen />;
-      case 'complete':
-        return <DeployScreen />;
-      case 'git-history':
-        return <GitHistoryScreen />;
-      case 'deployments':
-        return <DeploymentsScreen />;
-      case 'gap-analysis':
-        return <GapAnalysisScreen />;
-      default:
-        return <HomeScreen />;
-    }
-  };
-
-  const renderProjectScreen = () => {
-    const buildIsRunning = currentProject?.status === 'building';
-    const showBuild = screen === 'building';
-
-    return (
-      <>
-        {/* Single BuildScreen instance — stays mounted while build is active */}
-        {(buildIsRunning || showBuild) && (
-          <div className={showBuild ? 'contents' : 'hidden'}>
-            <BuildScreen />
-          </div>
-        )}
-        {/* Render other screen when not viewing build */}
-        {!showBuild && renderActiveScreen()}
-      </>
-    );
-  };
-
-  const renderScreen = () => {
-    switch (screen) {
-      case 'onboarding':
-        return <OnboardingScreen />;
-      case 'home':
-        return <HomeScreen />;
-      case 'settings':
-        return <SettingsScreen />;
-      case 'idea':
-        return <IdeaScreen />;
-      default:
-        return (
-          <ProjectLayout>
-            {renderProjectScreen()}
-          </ProjectLayout>
-        );
-    }
-  };
+  // Global screens — visible when no project is active
+  const showGlobal = !activeProjectSlug;
 
   return (
     <ErrorBoundary>
       <div className="h-screen bg-surface flex flex-col overflow-hidden relative">
-        {renderScreen()}
+        {/* Global screens */}
+        {showGlobal && (
+          <>
+            {screen === 'onboarding' && <OnboardingScreen />}
+            {screen === 'home' && <HomeScreen />}
+            {screen === 'settings' && <SettingsScreen />}
+            {screen === 'import' && <ImportScreen />}
+          </>
+        )}
+
+        {/* Per-project trees — all mounted, only active visible */}
+        {openProjectSlugs.map(slug => (
+          <div key={slug} className={slug === activeProjectSlug ? 'contents' : 'hidden'}>
+            <ProjectStoreProvider store={getOrCreateProjectStore(slug)}>
+              <ProjectLayout>
+                <ProjectScreenRouter />
+              </ProjectLayout>
+            </ProjectStoreProvider>
+          </div>
+        ))}
+
+        {/* Global overlays */}
         {shouldBlock && <ToolDisconnectedOverlay />}
         <SaveErrorToast />
         {showFlowTest && <FlowTestRunner onClose={() => setShowFlowTest(false)} />}

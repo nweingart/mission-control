@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 
-import type { Config, Project, Task, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapFinding, GapAnalysis, GamificationStats } from '../../src/types/index';
+import type { Config, Project, Task, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapFinding, GapAnalysis, GamificationStats, FeatureModule, CodeIssue, ScanSnapshot } from '../../src/types/index';
 
 export class StorageService {
   private houstonDir: string;
@@ -202,6 +202,8 @@ export class StorageService {
       status: 'idea',
       createdAt: new Date().toISOString(),
       projectPath,
+      githubRepo: '',
+      scanStatus: 'pending',
       idea,
     };
 
@@ -431,6 +433,84 @@ export class StorageService {
     const path = join(this.projectsDir, slug, 'gamification.json');
     this.createBackup(path);
     this.atomicWriteFile(path, JSON.stringify(stats, null, 2));
+  }
+
+  // V2: Features methods
+  getFeatures(slug: string): FeatureModule[] {
+    const featuresPath = join(this.projectsDir, slug, 'features.json');
+    if (!existsSync(featuresPath)) {
+      return [];
+    }
+    const content = readFileSync(featuresPath, 'utf-8');
+    return this.safeJsonParse<FeatureModule[]>(content, featuresPath) ?? [];
+  }
+
+  saveFeatures(slug: string, features: FeatureModule[]): void {
+    const featuresPath = join(this.projectsDir, slug, 'features.json');
+    this.createBackup(featuresPath);
+    this.atomicWriteFile(featuresPath, JSON.stringify(features, null, 2));
+  }
+
+  // V2: Issues methods
+  getIssues(slug: string): CodeIssue[] {
+    const issuesPath = join(this.projectsDir, slug, 'issues.json');
+    if (!existsSync(issuesPath)) {
+      return [];
+    }
+    const content = readFileSync(issuesPath, 'utf-8');
+    return this.safeJsonParse<CodeIssue[]>(content, issuesPath) ?? [];
+  }
+
+  saveIssues(slug: string, issues: CodeIssue[]): void {
+    const issuesPath = join(this.projectsDir, slug, 'issues.json');
+    this.createBackup(issuesPath);
+    this.atomicWriteFile(issuesPath, JSON.stringify(issues, null, 2));
+  }
+
+  // V2: Scan history methods
+  getScanHistory(slug: string): ScanSnapshot[] {
+    const scanPath = join(this.projectsDir, slug, 'scan-history.json');
+    if (!existsSync(scanPath)) {
+      return [];
+    }
+    const content = readFileSync(scanPath, 'utf-8');
+    return this.safeJsonParse<ScanSnapshot[]>(content, scanPath) ?? [];
+  }
+
+  saveScanHistory(slug: string, snapshots: ScanSnapshot[]): void {
+    const scanPath = join(this.projectsDir, slug, 'scan-history.json');
+    this.createBackup(scanPath);
+    this.atomicWriteFile(scanPath, JSON.stringify(snapshots, null, 2));
+  }
+
+  // V2: Import a project from an existing repo
+  importProject(name: string, githubRepo: string, projectPath: string): Project {
+    const slug = this.generateSlug(name);
+
+    const project: Project = {
+      slug,
+      name,
+      createdAt: new Date().toISOString(),
+      projectPath,
+      githubRepo,
+      scanStatus: 'pending',
+    };
+
+    // Create project directory in Houston storage
+    const houstonProjectDir = join(this.projectsDir, slug);
+    mkdirSync(houstonProjectDir, { recursive: true });
+
+    // Save meta.json atomically
+    const metaPath = join(houstonProjectDir, 'meta.json');
+    this.atomicWriteFile(metaPath, JSON.stringify(project, null, 2));
+
+    // Initialize empty collections
+    this.saveTasks(slug, []);
+    this.saveFeatures(slug, []);
+    this.saveIssues(slug, []);
+    this.saveScanHistory(slug, []);
+
+    return project;
   }
 
   // Helper methods

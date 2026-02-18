@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
 import houstonAvatar from '../assets/houston-avatar.webp';
 
 export default function HoustonGreetingToast() {
-  const houstonGreeting = useAppStore((s) => s.houstonGreeting);
-  const clearHoustonGreeting = useAppStore((s) => s.clearHoustonGreeting);
+  const houstonGreeting = useProjectStore((s) => s.houstonGreeting);
+  const clearHoustonGreeting = useProjectStore((s) => s.clearHoustonGreeting);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
   const [dismissing, setDismissing] = useState(false);
   const [hovered, setHovered] = useState(false);

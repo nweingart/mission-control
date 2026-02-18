@@ -109,6 +109,15 @@ contextBridge.exposeInMainWorld('api', {
     saveGapAnalysis: (slug: string, analyses: unknown) => ipcRenderer.invoke('storage:saveGapAnalysis', slug, analyses),
     getGamification: (slug: string) => ipcRenderer.invoke('storage:getGamification', slug),
     saveGamification: (slug: string, stats: unknown) => ipcRenderer.invoke('storage:saveGamification', slug, stats),
+
+    // V2: Features, Issues, Scan History, Import
+    getFeatures: (slug: string) => ipcRenderer.invoke('storage:getFeatures', slug),
+    saveFeatures: (slug: string, features: unknown) => ipcRenderer.invoke('storage:saveFeatures', slug, features),
+    getIssues: (slug: string) => ipcRenderer.invoke('storage:getIssues', slug),
+    saveIssues: (slug: string, issues: unknown) => ipcRenderer.invoke('storage:saveIssues', slug, issues),
+    getScanHistory: (slug: string) => ipcRenderer.invoke('storage:getScanHistory', slug),
+    saveScanHistory: (slug: string, snapshots: unknown) => ipcRenderer.invoke('storage:saveScanHistory', slug, snapshots),
+    importProject: (name: string, githubRepo: string, projectPath: string) => ipcRenderer.invoke('storage:importProject', name, githubRepo, projectPath),
   },
 
   // CLI Check

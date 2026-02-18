@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
 
 const borderColors: Record<string, string> = {
   success: 'border-l-spectrum-green',
@@ -16,7 +16,7 @@ const dotColors: Record<string, string> = {
 };
 
 function ToastItem({ toast }: { toast: { id: string; type: string; message: string; ctaLabel?: string; ctaAction?: () => void } }) {
-  const removeToast = useAppStore((s) => s.removeToast);
+  const removeToast = useProjectStore((s) => s.removeToast);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
   const isUrgent = toast.type === 'urgent';
 
@@ -70,7 +70,7 @@ function ToastItem({ toast }: { toast: { id: string; type: string; message: stri
 }
 
 export default function ToastNotification() {
-  const toasts = useAppStore((s) => s.toasts);
+  const toasts = useProjectStore((s) => s.toasts);
 
   if (toasts.length === 0) return null;
 

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore, useProjectStoreApi } from '../store/ProjectStoreContext';
 import Chat from '../components/Chat';
 import { extractBacklogSuggestions } from '../utils/planning';
 import { resilientChat, isCancelError } from '../utils/resilient-chat';
@@ -139,7 +139,8 @@ export default function PlanningChatsScreen() {
     addBacklogItem,
     deletePlanningChat,
     renamePlanningChat,
-  } = useAppStore();
+  } = useProjectStore();
+  const projectStoreApi = useProjectStoreApi();
 
   const [isLoading, setIsLoading] = useState(false);
   const [planningType, setPlanningType] = useState<PlanningType | null>(null);
@@ -187,7 +188,7 @@ export default function PlanningChatsScreen() {
       // Build context for Claude
       const prd = await window.api.storage.getPRD(currentProject.slug);
       const tasks = await window.api.storage.getTasks(currentProject.slug);
-      const currentBacklog = useAppStore.getState().backlog;
+      const currentBacklog = projectStoreApi.getState().backlog;
 
       const v1Features = tasks.map((t) => `- ${t.title}`).join('\n') || 'None specified';
       const backlogFeatures = currentBacklog.length > 0
@@ -202,7 +203,7 @@ export default function PlanningChatsScreen() {
         backlogFeatures
       );
 
-      const messages = useAppStore.getState().getActivePlanningMessages();
+      const messages = projectStoreApi.getState().getActivePlanningMessages();
       const conversationHistory = messages
         .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
         .join('\n\n');

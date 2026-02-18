@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore } from '../store/ProjectStoreContext';
 import { DESIGN_QUESTIONS, buildDesignTaskDescription } from '../constants/design-questions';
 import type { PreviewStyles } from '../constants/design-questions';
 import type { DesignPreferences } from '../types';
@@ -78,7 +78,7 @@ function MiniPreview({ styles, spacious }: { styles: PreviewStyles; spacious?: b
 }
 
 export default function DesignDuel({ onClose }: DesignDuelProps) {
-  const { updateProject, addToast, tasks, setTasks } = useAppStore();
+  const { updateProject, addToast, tasks, setTasks } = useProjectStore();
 
   const [phase, setPhase] = useState<'intro' | 'questions' | 'generating' | 'done'>('intro');
   const [currentIndex, setCurrentIndex] = useState(0);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useAppStore } from '../store/useAppStore';
+import { useProjectStore, useProjectStoreApi } from '../store/ProjectStoreContext';
 import Chat from './Chat';
 import { extractBacklogSuggestions } from '../utils/planning';
 import { resilientChat, isCancelError } from '../utils/resilient-chat';
@@ -153,7 +153,8 @@ export default function PlanningView({
     setActivePlanningChat,
     addPlanningMessage,
     loadPlanningChats,
-  } = useAppStore();
+  } = useProjectStore();
+  const projectStoreApi = useProjectStoreApi();
 
   const [isLoading, setIsLoading] = useState(false);
   const [planningType, setPlanningType] = useState<PlanningType | null>(null);
@@ -183,7 +184,7 @@ export default function PlanningView({
       await loadPlanningChats();
 
       // If no active chat, select the most recent (but don't auto-create)
-      const { planningChats: chats, activePlanningChatId: activeId } = useAppStore.getState();
+      const { planningChats: chats, activePlanningChatId: activeId } = projectStoreApi.getState();
       if (!activeId && chats.length > 0) {
         const sorted = [...chats].sort(
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
@@ -246,7 +247,7 @@ export default function PlanningView({
 
       try {
         const systemPrompt = buildSystemPrompt();
-        const messages = useAppStore.getState().getActivePlanningMessages();
+        const messages = projectStoreApi.getState().getActivePlanningMessages();
         const conversationHistory = messages
           .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
           .join('\n\n');

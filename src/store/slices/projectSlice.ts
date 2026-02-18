@@ -11,6 +11,7 @@ export interface ProjectSlice {
   setCurrentProject: (project: Project | null) => void;
   setProjects: (projects: Project[]) => void;
   createProject: (name: string, idea: string) => Promise<Project>;
+  importProject: (name: string, githubRepo: string, projectPath: string) => Promise<Project>;
   updateProject: (updates: Partial<Project>) => Promise<void>;
   loadProject: (slug: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
@@ -66,6 +67,22 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
       return project;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create project';
+      set({ error: errorMessage });
+      throw err;
+    }
+  },
+
+  importProject: async (name, githubRepo, projectPath) => {
+    try {
+      const project = await window.api.storage.importProject(name, githubRepo, projectPath);
+      set((state) => ({
+        projects: [project, ...state.projects],
+        currentProject: project,
+        error: null,
+      }));
+      return project;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to import project';
       set({ error: errorMessage });
       throw err;
     }
@@ -131,18 +148,33 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
           }
         }
 
-        // Navigate to the correct screen based on project status
-        const statusToScreen: Record<string, string> = {
-          idea: 'idea',
-          discovery: 'discovery',
-          prd_review: 'prd-review',
-          planning: 'building',
-          building: 'building',
-          previewing: 'building',
-          deploying: 'building',
-          complete: 'building',
-        };
-        const targetScreen = statusToScreen[project.status] || 'building';
+        // Navigate to the correct screen based on project state
+        let targetScreen: string;
+
+        // V2 projects: route by scanStatus
+        if (project.scanStatus === 'pending' || project.scanStatus === 'failed') {
+          targetScreen = 'scanning';
+        } else if (project.scanStatus === 'scanning') {
+          targetScreen = 'scanning';
+        } else if (project.scanStatus === 'complete') {
+          targetScreen = 'project-home';
+        } else if (project.status) {
+          // V1 legacy projects: route by old status
+          const statusToScreen: Record<string, string> = {
+            idea: 'idea',
+            discovery: 'discovery',
+            prd_review: 'prd-review',
+            planning: 'building',
+            building: 'building',
+            previewing: 'building',
+            deploying: 'building',
+            complete: 'building',
+          };
+          targetScreen = statusToScreen[project.status] || 'building';
+        } else {
+          targetScreen = 'project-home';
+        }
+
         set({ screen: targetScreen });
       }
     } catch (err) {
