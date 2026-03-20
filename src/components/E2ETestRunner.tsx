@@ -73,8 +73,10 @@ function delay(ms: number): Promise<void> {
 
 export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
   const [view, setView] = useState<ViewMode>('config');
+  // Read auto-start repo URL synchronously on first render
+  const initialRepoUrl = (window as unknown as Record<string, unknown>).__e2eRepoUrl as string | undefined;
   const [config, setConfig] = useState<E2EConfig>({
-    repoUrl: DEFAULT_REPO,
+    repoUrl: initialRepoUrl || DEFAULT_REPO,
     includeBuild: true,
     timeoutMinutes: 10,
   });
@@ -94,14 +96,6 @@ export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
 
   // Check for auto-start flag (set by --run-e2e CLI flag)
   const shouldAutoStart = (window as unknown as Record<string, unknown>).__e2eAutostart === true;
-  const autoRepoUrl = (window as unknown as Record<string, unknown>).__e2eRepoUrl as string | undefined;
-
-  // Apply auto-start repo URL on mount
-  useEffect(() => {
-    if (autoRepoUrl) {
-      setConfig(c => ({ ...c, repoUrl: autoRepoUrl }));
-    }
-  }, [autoRepoUrl]);
 
   // ─── Logging ──────────────────────────────────────────────────
 

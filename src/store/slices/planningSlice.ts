@@ -421,15 +421,26 @@ Output markdown only (plus the two estimate lines at the end).`;
     // Assign item to that sprint
     get().updateBacklogItem(itemId, { sprintId: targetSprint.id });
 
-    // Trigger PRD generation if needed
-    if (item.prdStatus !== 'complete' && item.prdStatus !== 'generating') {
+    // Quick fixes (<= 3 SP): skip PRD generation, use description directly
+    const sp = item.storyPoints ?? 3;
+    if (sp <= 3 && item.prdStatus !== 'complete') {
+      get().updateBacklogItem(itemId, {
+        prdStatus: 'complete',
+        prd: item.description,
+        estimatedTasks: 1,
+      });
+      get().addToast({
+        type: 'success',
+        message: `Quick fix added to ${targetSprint.name} — ready to build`,
+      });
+    } else if (item.prdStatus !== 'complete' && item.prdStatus !== 'generating') {
+      // Larger items: generate full PRD
       get().generateBacklogPRD(itemId);
+      get().addToast({
+        type: 'success',
+        message: `Added to ${targetSprint.name} — planning...`,
+      });
     }
-
-    get().addToast({
-      type: 'success',
-      message: `Added to ${targetSprint.name} — planning...`,
-    });
   },
 
   planAndSprintIssue: async (issue) => {
@@ -437,7 +448,6 @@ Output markdown only (plus the two estimate lines at the end).`;
     if (!currentProject) return '';
 
     const sp = issue.storyPoints ?? (issue.estimatedEffort === 'quick_fix' ? 1 : 3);
-    const isQuickFix = sp <= 3;
 
     // Create backlog item from issue
     const newId = get().addBacklogItem({
@@ -449,17 +459,7 @@ Output markdown only (plus the two estimate lines at the end).`;
       storyPoints: sp,
     });
 
-    // Quick fixes (<= 3 SP): skip PRD, use issue description directly
-    if (isQuickFix) {
-      get().updateBacklogItem(newId, {
-        prdStatus: 'complete',
-        prd: issue.description + (issue.file ? `\n\nFile: ${issue.file}` : ''),
-        storyPoints: sp,
-        estimatedTasks: 1,
-      });
-    }
-
-    // Plan & sprint the new item
+    // Plan & sprint the new item (assigns to sprint, then handles PRD)
     await get().planAndSprint(newId);
 
     // Mark issue as 'planned' in storage
@@ -478,34 +478,41 @@ Output markdown only (plus the two estimate lines at the end).`;
 
   checkAutoActivateSprints: () => {
     const { sprints, backlog, currentProject } = get();
+
+    // 1. Activate planning sprints that are ready
     const planningSprints = sprints.filter((s) => s.status === 'planning');
     for (const sprint of planningSprints) {
       const items = backlog.filter((b) => b.sprintId === sprint.id);
       const readiness = getSprintReadiness(items);
       if (readiness.isReady) {
         get().setSprintStatus(sprint.id, 'active');
-
-        // Check if all items are quick fixes (low SP) — auto-start immediately
-        const allQuickFixes = items.every(b => (b.storyPoints ?? 3) <= 3);
-        if (allQuickFixes && !get().buildSessionActive) {
-          get().addToast({
-            type: 'success',
-            message: `Quick fixes ready — auto-starting build...`,
-          });
-          // Auto-start build for quick fixes (no user click needed)
-          setTimeout(() => get().startBuild(sprint.id), 500);
-        } else {
-          get().addToast({
-            type: 'success',
-            message: `All plans ready for ${sprint.name}. Ready to start.`,
-            ctaLabel: 'Start Build',
-            ctaAction: () => get().startBuild(sprint.id),
-          });
-        }
-
         if (currentProject) {
           queueAssistantMessage(currentProject.slug, `All plans ready for ${sprint.name}. Sprint activated.`);
         }
+      }
+    }
+
+    // 2. Auto-start build on active sprints with all quick fixes ready (no build running)
+    if (get().buildSessionActive) return;
+    const activeSprints = get().sprints.filter((s) => s.status === 'active');
+    for (const sprint of activeSprints) {
+      const items = backlog.filter((b) => b.sprintId === sprint.id && b.prdStatus === 'complete');
+      if (items.length === 0) continue;
+      const allQuickFixes = items.every(b => (b.storyPoints ?? 3) <= 3);
+      if (allQuickFixes) {
+        get().addToast({
+          type: 'success',
+          message: `Quick fixes ready — auto-starting build...`,
+        });
+        setTimeout(() => get().startBuild(sprint.id), 500);
+        return; // Only auto-start one sprint at a time
+      } else {
+        get().addToast({
+          type: 'success',
+          message: `All plans ready for ${sprint.name}. Ready to start.`,
+          ctaLabel: 'Start Build',
+          ctaAction: () => get().startBuild(sprint.id),
+        });
       }
     }
   },
