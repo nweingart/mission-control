@@ -1,6 +1,7 @@
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron';
 import { homedir } from 'os';
 import type { StorageService } from '../services/storage';
+import { escapeForAppleScript } from './escape-utils';
 
 interface ShellHandlersDeps {
   storageService: StorageService;
@@ -8,16 +9,33 @@ interface ShellHandlersDeps {
 }
 
 export function registerShellHandlers({ storageService, getMainWindow }: ShellHandlersDeps) {
-  // Security: resolve a path and ensure it falls within a known project directory
+  // Security: resolve a path (following symlinks) and ensure it falls within a known project directory
   async function validateProjectPath(targetPath: string): Promise<string> {
     const path = await import('path');
+    const fs = await import('fs');
     const resolved = path.resolve(targetPath);
     const config = storageService.getConfig();
     const devRoot = path.resolve(config.developmentPath);
-    if (!resolved.startsWith(devRoot + path.sep) && resolved !== devRoot) {
-      throw new Error(`Access denied: path must be inside ${devRoot}`);
+
+    // Resolve symlinks to prevent traversal via symlink chains
+    let real: string;
+    try {
+      real = fs.realpathSync(resolved);
+    } catch {
+      // Path doesn't exist yet (e.g., creating a new file) — validate the parent
+      const parent = path.dirname(resolved);
+      try {
+        real = path.join(fs.realpathSync(parent), path.basename(resolved));
+      } catch {
+        throw new Error(`Access denied: path does not exist and parent is not resolvable`);
+      }
     }
-    return resolved;
+
+    const realDevRoot = fs.realpathSync(devRoot);
+    if (!real.startsWith(realDevRoot + path.sep) && real !== realDevRoot) {
+      throw new Error(`Access denied: path must be inside ${realDevRoot}`);
+    }
+    return real;
   }
 
   // File System (limited operations)
@@ -88,8 +106,17 @@ export function registerShellHandlers({ storageService, getMainWindow }: ShellHa
 
     for (const editor of editors) {
       try {
-        await execFileAsync('/usr/bin/which', [editor.cmd]);
-        await execFileAsync(editor.cmd, [targetPath]);
+        const { stdout } = await execFileAsync('/usr/bin/which', [editor.cmd]);
+        const editorPath = stdout.trim();
+        // Validate the resolved path is in a known safe location
+        const allowedPrefixes = ['/usr/local/bin/', '/usr/bin/', '/opt/homebrew/bin/', '/Applications/'];
+        const homeBin = `${process.env.HOME || ''}/.local/bin/`;
+        const isSafe = allowedPrefixes.some(p => editorPath.startsWith(p)) || editorPath.startsWith(homeBin);
+        if (!isSafe) {
+          console.warn(`[shell:openInEditor] Skipping ${editor.name}: resolved to untrusted path ${editorPath}`);
+          continue;
+        }
+        await execFileAsync(editorPath, [targetPath]);
         console.log(`[shell:openInEditor] Opened in ${editor.name}`);
         return { editor: editor.name };
       } catch {
@@ -113,7 +140,7 @@ export function registerShellHandlers({ storageService, getMainWindow }: ShellHa
     }
 
     if (platform() === 'darwin') {
-      const escapedCommand = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const escapedCommand = escapeForAppleScript(command);
       const script = `tell application "Terminal"
       activate
       do script "${escapedCommand}"

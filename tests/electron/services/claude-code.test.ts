@@ -71,7 +71,7 @@ describe('ClaudeCodeService', () => {
 
       const sessionId = service.spawn('/project', 'hello', onOutput, onExit);
 
-      expect(sessionId).toMatch(/^session-\d+-[a-z0-9]+$/);
+      expect(sessionId).toMatch(/^session-[a-f0-9-]+$/);
     });
 
     // -------------------------------------------------------
@@ -152,7 +152,7 @@ describe('ClaudeCodeService', () => {
 
       const sessionId = service.spawnInteractive('/project', onOutput, onExit);
 
-      expect(sessionId).toMatch(/^session-\d+-[a-z0-9]+$/);
+      expect(sessionId).toMatch(/^session-[a-f0-9-]+$/);
     });
   });
 

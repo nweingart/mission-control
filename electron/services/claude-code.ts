@@ -1,4 +1,15 @@
 import * as pty from 'node-pty';
+import { randomUUID } from 'crypto';
+
+/** Structured event from Claude's stream-json output */
+export interface ClaudeStreamEvent {
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'error' | 'done';
+  content?: string;
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+  toolResult?: string;
+  isError?: boolean;
+}
 
 interface IDisposable {
   dispose(): void;
@@ -57,12 +68,12 @@ export class ClaudeCodeService {
       const pathParts = currentPath.split(':');
       const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
 
-      // Write prompt to temp file to avoid escaping issues
+      // Write prompt to temp file to avoid escaping issues (PTY requires file-based piping)
       const fs = require('fs');
       const os = require('os');
       const path = require('path');
-      const tempFile = path.join(os.tmpdir(), `houston-prompt-${sessionId}.txt`);
-      fs.writeFileSync(tempFile, prompt, 'utf-8');
+      const tempFile = path.join(os.tmpdir(), `mc-prompt-${randomUUID()}.txt`);
+      fs.writeFileSync(tempFile, prompt, { encoding: 'utf-8', mode: 0o600 });
 
       console.log('[ClaudeCode.spawn] Spawning bash --norc --noprofile (skip profile garbage)');
 
@@ -82,9 +93,16 @@ export class ClaudeCodeService {
 
       const result = this.setupSession(sessionId, ptyProcess, projectPath, onOutput, onExit);
 
-      // TEST 1: Simple echo to verify PTY captures stdout
-      // TEST 2: Then run Claude to see if its output is captured
-      const cmd = `echo "=== TEST: PTY stdout works ==="; echo "Now running Claude..."; claude --dangerously-skip-permissions --output-format text -p "$(cat '${tempFile}')"; echo "=== Claude finished ==="; rm -f '${tempFile}'; exit`;
+      // --dangerously-skip-permissions is required: Mission Control orchestrates Claude as a
+      // sub-agent in a controlled build pipeline where every invocation is programmatic.
+      // The user has already granted trust at the Mission Control app level.
+      //
+      // Security: validate temp file path contains only safe characters before shell interpolation.
+      // The path is built from os.tmpdir() + randomUUID(), so this is defense-in-depth.
+      if (!/^[a-zA-Z0-9/_.\-]+$/.test(tempFile)) {
+        throw new Error(`Unsafe temp file path: ${tempFile}`);
+      }
+      const cmd = `echo "=== TEST: PTY stdout works ==="; echo "Now running Claude..."; claude --dangerously-skip-permissions --output-format text -p "$(cat '${tempFile}')"; EC=$?; rm -f '${tempFile}'; echo "=== Claude finished ==="; exit $EC`;
       ptyProcess.write(`${cmd}\r`);
 
       return result;
@@ -140,7 +158,9 @@ export class ClaudeCodeService {
 
       const result = this.setupSession(sessionId, ptyProcess, projectPath, onOutput, onExit);
 
-      // Disable echo then exec claude
+      // --dangerously-skip-permissions is required: Mission Control orchestrates Claude as a
+      // sub-agent in an interactive terminal session. The user has already granted
+      // trust at the Mission Control app level.
       ptyProcess.write(`stty -echo; exec claude --dangerously-skip-permissions\n`);
 
       return result;
@@ -397,22 +417,11 @@ export class ClaudeCodeService {
     prompt: string,
     onOutput?: (content: string) => void,
     inactivityTimeoutMs: number = 10 * 60 * 1000, // 10 minutes of silence before killing
-    chatId: string = `chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    chatId: string = `chat-${randomUUID()}`
   ): Promise<string> {
     console.log('[ClaudeCode.chat] Starting chat request');
     console.log('[ClaudeCode.chat] projectPath:', projectPath);
     console.log('[ClaudeCode.chat] prompt length:', prompt.length);
-
-    // Import fs and path for temp file handling
-    const fs = await import('fs');
-    const path = await import('path');
-    const os = await import('os');
-
-    // Write prompt to a temp file to avoid shell escaping issues
-    const tempDir = os.tmpdir();
-    const tempFile = path.join(tempDir, `houston-prompt-${Date.now()}.txt`);
-    fs.writeFileSync(tempFile, prompt, 'utf-8');
-    console.log('[ClaudeCode.chat] Wrote prompt to temp file:', tempFile);
 
     return new Promise((resolve, reject) => {
       let isResolved = false;
@@ -429,21 +438,29 @@ export class ClaudeCodeService {
       const pathParts = currentPath.split(':');
       const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
 
-      // Use child_process.spawn directly instead of PTY for cleaner output
+      // Spawn claude directly (no shell) and pipe prompt via stdin.
+      // This eliminates temp files and avoids shell injection entirely.
       const { spawn } = require('child_process');
 
-      // Run: cat tempfile | claude --print --dangerously-skip-permissions
       // Remove CLAUDECODE env var to avoid "nested session" error when launched from Claude Code
       const cleanEnv = { ...process.env, PATH: fullPath };
       delete cleanEnv.CLAUDECODE;
 
-      const child = spawn('bash', ['-c', `cat "${tempFile}" | claude --print --dangerously-skip-permissions`], {
+      // --dangerously-skip-permissions is required: Mission Control orchestrates Claude as a
+      // sub-agent in a controlled build pipeline where every invocation is programmatic.
+      // The user has already granted trust at the Mission Control app level.
+      const child = spawn('claude', ['--print', '--dangerously-skip-permissions'], {
         cwd: projectPath,
         env: cleanEnv,
+        shell: false,
       });
 
       this.activeChatChildren.set(chatId, child);
       console.log('[ClaudeCode.chat] Spawned child process, pid:', child.pid, 'chatId:', chatId);
+
+      // Pipe prompt via stdin and close to signal EOF
+      child.stdin.write(prompt);
+      child.stdin.end();
 
       // Activity-based timeout: resets every time stdout/stderr produces output.
       // Only kills the process if it goes silent for inactivityTimeoutMs.
@@ -454,7 +471,6 @@ export class ClaudeCodeService {
           if (!isResolved) {
             isResolved = true;
             child.kill();
-            try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
             reject(new Error(`Claude process produced no output for ${inactivityTimeoutMs / 1000} seconds`));
           }
         }, inactivityTimeoutMs);
@@ -494,9 +510,6 @@ export class ClaudeCodeService {
           timeoutHandle = null;
         }
 
-        // Clean up temp file
-        try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
-
         if (isResolved) return;
         isResolved = true;
 
@@ -516,8 +529,6 @@ export class ClaudeCodeService {
       child.on('error', (err: Error) => {
         this.activeChatChildren.delete(chatId);
         console.error('[ClaudeCode.chat] Process error:', err);
-        // Clean up temp file
-        try { fs.unlinkSync(tempFile); } catch (e) { /* ignore */ }
 
         if (timeoutHandle) {
           clearTimeout(timeoutHandle);
@@ -527,6 +538,394 @@ export class ClaudeCodeService {
           isResolved = true;
           reject(err);
         }
+      });
+    });
+  }
+
+  /**
+   * Send a prompt to Claude with structured JSON streaming output.
+   * Emits parsed ClaudeStreamEvents via the onEvent callback as they arrive.
+   * Returns the final concatenated text response.
+   */
+  async chatStreaming(
+    projectPath: string,
+    prompt: string,
+    onEvent?: (event: ClaudeStreamEvent) => void,
+    onOutput?: (content: string) => void,
+    inactivityTimeoutMs: number = 10 * 60 * 1000,
+    chatId: string = `chat-${randomUUID()}`
+  ): Promise<string> {
+    console.log('[ClaudeCode.chatStreaming] Starting streaming chat request');
+
+    return new Promise((resolve, reject) => {
+      let isResolved = false;
+      let timeoutHandle: NodeJS.Timeout | null = null;
+
+      const homedir = process.env.HOME || '';
+      const extraPaths = [`${homedir}/.local/bin`, '/opt/homebrew/bin', '/usr/local/bin'];
+      const currentPath = process.env.PATH || '';
+      const pathParts = currentPath.split(':');
+      const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
+
+      const { spawn } = require('child_process');
+      const cleanEnv = { ...process.env, PATH: fullPath };
+      delete cleanEnv.CLAUDECODE;
+
+      const child = spawn('claude', ['--print', '--verbose', '--output-format', 'stream-json', '--dangerously-skip-permissions'], {
+        cwd: projectPath,
+        env: cleanEnv,
+        shell: false,
+      });
+
+      this.activeChatChildren.set(chatId, child);
+
+      child.stdin.write(prompt);
+      child.stdin.end();
+
+      const resetTimeout = () => {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        timeoutHandle = setTimeout(() => {
+          if (!isResolved) {
+            isResolved = true;
+            child.kill();
+            reject(new Error(`Claude process produced no output for ${inactivityTimeoutMs / 1000} seconds`));
+          }
+        }, inactivityTimeoutMs);
+      };
+      resetTimeout();
+
+      let stdout = '';
+      let lineBuffer = '';
+      let fullText = '';
+
+      const parseLine = (line: string) => {
+        if (!line.trim()) return;
+        try {
+          const parsed = JSON.parse(line);
+
+          // ── New format: conversation-level events ─────────────
+          // { type: "assistant", message: { content: [{ type: "text"|"tool_use"|"thinking", ... }] } }
+          // { type: "user", message: { content: [{ type: "tool_result", ... }] } }
+          // { type: "result", result: "...", ... }
+
+          if (parsed.type === 'assistant' && parsed.message?.content) {
+            const content = parsed.message.content as Array<Record<string, unknown>>;
+            for (const block of content) {
+              if (block.type === 'text' && typeof block.text === 'string') {
+                fullText += block.text;
+                onEvent?.({ type: 'text', content: block.text });
+                onOutput?.(block.text);
+              } else if (block.type === 'thinking' && typeof block.thinking === 'string') {
+                onEvent?.({ type: 'thinking', content: block.thinking });
+              } else if (block.type === 'tool_use') {
+                onEvent?.({
+                  type: 'tool_use',
+                  toolName: block.name as string,
+                  toolInput: (block.input as Record<string, unknown>) || {},
+                });
+              }
+            }
+            return;
+          }
+
+          if (parsed.type === 'user' && parsed.message?.content) {
+            const content = parsed.message.content as Array<Record<string, unknown>>;
+            for (const block of content) {
+              if (block.type === 'tool_result') {
+                const resultStr = typeof block.content === 'string'
+                  ? block.content
+                  : Array.isArray(block.content)
+                    ? (block.content as Array<Record<string, unknown>>).map(c => c.text || c.content || '').join('')
+                    : '';
+                onEvent?.({
+                  type: 'tool_result' as ClaudeStreamEvent['type'],
+                  toolResult: resultStr,
+                  isError: block.is_error === true,
+                });
+              }
+            }
+            return;
+          }
+
+          if (parsed.type === 'result') {
+            if (typeof parsed.result === 'string') {
+              fullText = parsed.result;
+              onOutput?.(parsed.result);
+            }
+            onEvent?.({ type: 'done', content: fullText });
+            return;
+          }
+
+          if (parsed.type === 'error') {
+            onEvent?.({ type: 'error', content: parsed.error?.message || 'Unknown error', isError: true });
+            return;
+          }
+
+          // ── Legacy delta format (older CLI versions) ──────────
+          if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
+            const text = parsed.delta.text || '';
+            fullText += text;
+            onEvent?.({ type: 'text', content: text });
+            onOutput?.(text);
+          } else if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'thinking_delta') {
+            onEvent?.({ type: 'thinking', content: parsed.delta.thinking || '' });
+          } else if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
+            onEvent?.({
+              type: 'tool_use',
+              toolName: parsed.content_block.name,
+              toolInput: parsed.content_block.input,
+            });
+          } else if (parsed.type === 'message_stop') {
+            onEvent?.({ type: 'done' });
+          }
+          // Ignore: system, rate_limit_event, message_start, message_delta, content_block_start(text), content_block_stop
+        } catch {
+          // Not valid JSON — treat as raw text (fallback for --print mode without stream-json)
+          fullText += line;
+          onEvent?.({ type: 'text', content: line });
+          onOutput?.(line);
+        }
+      };
+
+      child.stdout.on('data', (data: Buffer) => {
+        const text = data.toString();
+        stdout += text;
+        resetTimeout();
+
+        // Parse JSONL: split on newlines, handle partial lines with lineBuffer
+        lineBuffer += text;
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() || ''; // Keep incomplete last line in buffer
+        for (const line of lines) {
+          parseLine(line);
+        }
+      });
+
+      let stderrText = '';
+      child.stderr.on('data', (data: Buffer) => {
+        stderrText += data.toString();
+        resetTimeout();
+      });
+
+      child.on('close', (code: number) => {
+        this.activeChatChildren.delete(chatId);
+        if (timeoutHandle) { clearTimeout(timeoutHandle); timeoutHandle = null; }
+        if (isResolved) return;
+        isResolved = true;
+
+        // Flush remaining line buffer
+        if (lineBuffer.trim()) {
+          parseLine(lineBuffer);
+          lineBuffer = '';
+        }
+
+        if (code === 0) {
+          // If stream-json wasn't supported, fullText may be empty — use raw stdout
+          const result = fullText.trim() || stdout.trim();
+          resolve(result);
+        } else {
+          const errMsg = stderrText.trim() ? `Claude exited with code ${code}: ${stderrText.trim()}` : `Claude exited with code ${code}`;
+          // Emit error event so UI can update (e.g., stop spinner, show error state)
+          // parseLine only emits done/error for structured events — a crash may not emit either
+          onEvent?.({ type: 'error', content: errMsg, isError: true });
+          reject(new Error(errMsg));
+        }
+      });
+
+      child.on('error', (err: Error) => {
+        this.activeChatChildren.delete(chatId);
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (!isResolved) { isResolved = true; reject(err); }
+      });
+    });
+  }
+
+  /**
+   * Multi-turn chat using --session-id / --resume.
+   * First call creates a session, follow-ups resume it.
+   * Returns the response and the sessionId for subsequent calls.
+   */
+  async chatWithResume(
+    projectPath: string,
+    prompt: string,
+    sessionId: string | null,
+    onEvent?: (event: ClaudeStreamEvent) => void,
+    onOutput?: (content: string) => void,
+    inactivityTimeoutMs: number = 10 * 60 * 1000,
+    chatId: string = `chat-${randomUUID()}`
+  ): Promise<{ response: string; sessionId: string }> {
+    const resolvedSessionId = sessionId || randomUUID();
+    console.log(`[ClaudeCode.chatWithResume] ${sessionId ? 'Resuming' : 'Starting'} session: ${resolvedSessionId}`);
+
+    return new Promise((resolve, reject) => {
+      let isResolved = false;
+      let timeoutHandle: NodeJS.Timeout | null = null;
+
+      const homedir = process.env.HOME || '';
+      const extraPaths = [`${homedir}/.local/bin`, '/opt/homebrew/bin', '/usr/local/bin'];
+      const currentPath = process.env.PATH || '';
+      const pathParts = currentPath.split(':');
+      const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
+
+      const { spawn } = require('child_process');
+      const cleanEnv = { ...process.env, PATH: fullPath };
+      delete cleanEnv.CLAUDECODE;
+
+      const args = [
+        '--print',
+        '--verbose',
+        '--output-format', 'stream-json',
+        '--dangerously-skip-permissions',
+      ];
+
+      if (sessionId) {
+        args.push('--resume', resolvedSessionId);
+      } else {
+        args.push('--session-id', resolvedSessionId);
+      }
+
+      const child = spawn('claude', args, {
+        cwd: projectPath,
+        env: cleanEnv,
+        shell: false,
+      });
+
+      this.activeChatChildren.set(chatId, child);
+
+      child.stdin.write(prompt);
+      child.stdin.end();
+
+      const resetTimeout = () => {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        timeoutHandle = setTimeout(() => {
+          if (!isResolved) {
+            isResolved = true;
+            child.kill();
+            reject(new Error(`Claude process produced no output for ${inactivityTimeoutMs / 1000} seconds`));
+          }
+        }, inactivityTimeoutMs);
+      };
+      resetTimeout();
+
+      let stdout = '';
+      let lineBuffer = '';
+      let fullText = '';
+
+      const parseLine = (line: string) => {
+        if (!line.trim()) return;
+        try {
+          const parsed = JSON.parse(line);
+
+          if (parsed.type === 'assistant' && parsed.message?.content) {
+            const content = parsed.message.content as Array<Record<string, unknown>>;
+            for (const block of content) {
+              if (block.type === 'text' && typeof block.text === 'string') {
+                fullText += block.text;
+                onEvent?.({ type: 'text', content: block.text });
+                onOutput?.(block.text);
+              } else if (block.type === 'thinking' && typeof block.thinking === 'string') {
+                onEvent?.({ type: 'thinking', content: block.thinking });
+              } else if (block.type === 'tool_use') {
+                onEvent?.({
+                  type: 'tool_use',
+                  toolName: block.name as string,
+                  toolInput: (block.input as Record<string, unknown>) || {},
+                });
+              }
+            }
+            return;
+          }
+
+          if (parsed.type === 'user' && parsed.message?.content) {
+            const content = parsed.message.content as Array<Record<string, unknown>>;
+            for (const block of content) {
+              if (block.type === 'tool_result') {
+                const resultStr = typeof block.content === 'string'
+                  ? block.content
+                  : Array.isArray(block.content)
+                    ? (block.content as Array<Record<string, unknown>>).map(c => c.text || c.content || '').join('')
+                    : '';
+                onEvent?.({
+                  type: 'tool_result' as ClaudeStreamEvent['type'],
+                  toolResult: resultStr,
+                  isError: block.is_error === true,
+                });
+              }
+            }
+            return;
+          }
+
+          if (parsed.type === 'result') {
+            if (typeof parsed.result === 'string') {
+              fullText = parsed.result;
+              onOutput?.(parsed.result);
+            }
+            onEvent?.({ type: 'done', content: fullText });
+            return;
+          }
+
+          if (parsed.type === 'error') {
+            onEvent?.({ type: 'error', content: parsed.error?.message || 'Unknown error', isError: true });
+            return;
+          }
+
+          // Legacy delta format
+          if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
+            const text = parsed.delta.text || '';
+            fullText += text;
+            onEvent?.({ type: 'text', content: text });
+            onOutput?.(text);
+          }
+        } catch {
+          fullText += line;
+          onEvent?.({ type: 'text', content: line });
+          onOutput?.(line);
+        }
+      };
+
+      child.stdout.on('data', (data: Buffer) => {
+        const text = data.toString();
+        stdout += text;
+        resetTimeout();
+        lineBuffer += text;
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() || '';
+        for (const line of lines) {
+          parseLine(line);
+        }
+      });
+
+      let stderrText = '';
+      child.stderr.on('data', (data: Buffer) => {
+        stderrText += data.toString();
+        resetTimeout();
+      });
+
+      child.on('close', (code: number) => {
+        this.activeChatChildren.delete(chatId);
+        if (timeoutHandle) { clearTimeout(timeoutHandle); timeoutHandle = null; }
+        if (isResolved) return;
+        isResolved = true;
+
+        if (lineBuffer.trim()) {
+          parseLine(lineBuffer);
+          lineBuffer = '';
+        }
+
+        if (code === 0) {
+          const result = fullText.trim() || stdout.trim();
+          resolve({ response: result, sessionId: resolvedSessionId });
+        } else {
+          const errMsg = stderrText.trim() ? `Claude exited with code ${code}: ${stderrText.trim()}` : `Claude exited with code ${code}`;
+          onEvent?.({ type: 'error', content: errMsg, isError: true });
+          reject(new Error(errMsg));
+        }
+      });
+
+      child.on('error', (err: Error) => {
+        this.activeChatChildren.delete(chatId);
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (!isResolved) { isResolved = true; reject(err); }
       });
     });
   }
@@ -602,7 +1001,7 @@ export class ClaudeCodeService {
       /^exit\s*$/i,
       /^logout\s*$/i,
       /^ulogout\s*$/i,
-      /HOUSTON_CHAT_EOF/,
+      /MC_CHAT_EOF/,
       // Shell errors
       /^date:\s+illegal/i,
       /^bash:\s+.*:\s+command not found/i,
@@ -825,7 +1224,6 @@ export class ClaudeCodeService {
   }
 
   private generateId(): string {
-    // Simple ID generation without external deps
-    return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `session-${randomUUID()}`;
   }
 }

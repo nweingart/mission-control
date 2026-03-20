@@ -51,6 +51,9 @@ function removeAllListeners(prefix: string) {
 // Per-task chat output handler registry for parallel execution
 const chatOutputHandlers = new Map<string, (content: string) => void>();
 
+// Per-task stream event handler registry for structured JSON streaming
+const streamEventHandlers = new Map<string, (event: unknown) => void>();
+
 // Per-task codex output handler registry (mirrors chatOutputHandlers)
 const codexOutputHandlers = new Map<string, (content: string) => void>();
 
@@ -60,6 +63,15 @@ ipcRenderer.on('codex:chatOutput', (_event, data: unknown) => {
     const { chatId, content } = data as { chatId: string; content: string };
     const handler = codexOutputHandlers.get(chatId);
     if (handler) handler(content);
+  }
+});
+
+// Route stream events to per-task handlers
+ipcRenderer.on('claude:streamEvent', (_event, data: unknown) => {
+  if (typeof data === 'object' && data !== null && 'chatId' in data && 'event' in data) {
+    const { chatId, event } = data as { chatId: string; event: unknown };
+    const handler = streamEventHandlers.get(chatId);
+    if (handler) handler(event);
   }
 });
 
@@ -140,17 +152,44 @@ contextBridge.exposeInMainWorld('api', {
       console.log('[preload] claude.spawnInteractive called, projectPath:', projectPath);
       return ipcRenderer.invoke('claude:spawnInteractive', projectPath);
     },
-    chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) =>
-      ipcRenderer.invoke('claude:chat', projectPath, prompt, inactivityTimeoutMs, chatId) as Promise<{ response: string; usage?: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number }; model?: string; costUsd?: number; durationMs?: number; numTurns?: number }>,
+    chat: async (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) => {
+      const response = await ipcRenderer.invoke('claude:chat', projectPath, prompt, inactivityTimeoutMs, chatId) as string;
+      return { response };
+    },
+    chatStreaming: async (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) => {
+      const response = await ipcRenderer.invoke('claude:chatStreaming', projectPath, prompt, inactivityTimeoutMs, chatId) as string;
+      return { response };
+    },
+    chatWithResume: async (projectPath: string, prompt: string, sessionId: string | null, inactivityTimeoutMs?: number, chatId?: string) => {
+      return await ipcRenderer.invoke('claude:chatWithResume', projectPath, prompt, sessionId, inactivityTimeoutMs, chatId) as { response: string; sessionId: string };
+    },
     onOutput: (callback: OutputCallback) => createListener('claude:output', callback),
     onChatOutput: (callback: (content: string) => void) => {
       chatOutputHandlers.set('__legacy__', callback);
     },
     onChatOutputForTask: (chatId: string, callback: (content: string) => void) => {
+      // Safety bound: if the Map grows beyond 50 entries (normal is 1-3),
+      // purge all but the 10 most recent to prevent unbounded growth from missed cleanups.
+      if (chatOutputHandlers.size > 50) {
+        const keys = Array.from(chatOutputHandlers.keys());
+        const toRemove = keys.slice(0, keys.length - 10);
+        for (const k of toRemove) chatOutputHandlers.delete(k);
+      }
       chatOutputHandlers.set(chatId, callback);
     },
     offChatOutputForTask: (chatId: string) => {
       chatOutputHandlers.delete(chatId);
+    },
+    onStreamEventForTask: (chatId: string, callback: (event: unknown) => void) => {
+      if (streamEventHandlers.size > 50) {
+        const keys = Array.from(streamEventHandlers.keys());
+        const toRemove = keys.slice(0, keys.length - 10);
+        for (const k of toRemove) streamEventHandlers.delete(k);
+      }
+      streamEventHandlers.set(chatId, callback);
+    },
+    offStreamEventForTask: (chatId: string) => {
+      streamEventHandlers.delete(chatId);
     },
     onExit: (callback: ExitCallback) => createListener('claude:exit', callback),
     sendInput: (sessionId: string, input: string) => ipcRenderer.invoke('claude:sendInput', sessionId, input),
@@ -165,14 +204,23 @@ contextBridge.exposeInMainWorld('api', {
     removeListeners: () => {
       removeAllListeners('claude:');
       chatOutputHandlers.clear();
+      streamEventHandlers.clear();
     },
   },
 
   // Codex CLI
   codex: {
-    chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) =>
-      ipcRenderer.invoke('codex:chat', projectPath, prompt, inactivityTimeoutMs, chatId),
+    chat: async (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) => {
+      const response = await ipcRenderer.invoke('codex:chat', projectPath, prompt, inactivityTimeoutMs, chatId) as string;
+      return { response };
+    },
     onChatOutputForTask: (chatId: string, callback: (content: string) => void) => {
+      // Safety bound: same as claude handler — prevent unbounded growth
+      if (codexOutputHandlers.size > 50) {
+        const keys = Array.from(codexOutputHandlers.keys());
+        const toRemove = keys.slice(0, keys.length - 10);
+        for (const k of toRemove) codexOutputHandlers.delete(k);
+      }
       codexOutputHandlers.set(chatId, callback);
     },
     offChatOutputForTask: (chatId: string) => {
@@ -233,8 +281,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('github:getWorkflowRuns', projectPath, limit),
     writeWorkflowFile: (projectPath: string, content: string) =>
       ipcRenderer.invoke('github:writeWorkflowFile', projectPath, content),
-    runShellCommand: (cwd: string, command: string) =>
-      ipcRenderer.invoke('github:runShellCommand', cwd, command) as Promise<string>,
+    runShellCommand: (cwd: string, command: string, args?: string[]) =>
+      ipcRenderer.invoke('github:runShellCommand', cwd, command, args) as Promise<string>,
     deleteRepo: (repoUrl: string) => ipcRenderer.invoke('github:deleteRepo', repoUrl),
     createWorktree: (repoPath: string, worktreePath: string, branchName: string, startPoint?: string) =>
       ipcRenderer.invoke('github:createWorktree', repoPath, worktreePath, branchName, startPoint),
