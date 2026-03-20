@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { getProjectStoreBySlug } from '../store/projectStoreRegistry';
 import type { StoreApi } from 'zustand';
@@ -88,8 +88,20 @@ export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
   const cancelledRef = useRef(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const projectSlugRef = useRef<string | null>(null);
+  const autoStartedRef = useRef(false);
 
   const store = useAppStore;
+
+  // Check for auto-start flag (set by --run-e2e CLI flag)
+  const shouldAutoStart = (window as unknown as Record<string, unknown>).__e2eAutostart === true;
+  const autoRepoUrl = (window as unknown as Record<string, unknown>).__e2eRepoUrl as string | undefined;
+
+  // Apply auto-start repo URL on mount
+  useEffect(() => {
+    if (autoRepoUrl) {
+      setConfig(c => ({ ...c, repoUrl: autoRepoUrl }));
+    }
+  }, [autoRepoUrl]);
 
   // ─── Logging ──────────────────────────────────────────────────
 
@@ -521,6 +533,15 @@ export default function E2ETestRunner({ onClose }: { onClose: () => void }) {
 
     log(`\nE2E test complete in ${(elapsed / 1000).toFixed(1)}s`);
   }, [config, log, updatePhase]);
+
+  // Auto-start when triggered by --run-e2e CLI flag
+  useEffect(() => {
+    if (shouldAutoStart && !autoStartedRef.current && !isRunning) {
+      autoStartedRef.current = true;
+      // Small delay to let the config update with the repo URL
+      setTimeout(() => runTest(), 500);
+    }
+  }, [shouldAutoStart, isRunning, runTest]);
 
   // ─── Cancel ────────────────────────────────────────────────────
 

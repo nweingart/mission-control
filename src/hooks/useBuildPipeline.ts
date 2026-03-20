@@ -1146,6 +1146,26 @@ Build this task completely. Do not work on anything else.`;
         return;
       }
       await updateProject({ status: 'previewing', hasBuiltOnce: true });
+
+      // Auto-push and create PR if git remote exists
+      if (currentProject?.projectPath) {
+        try {
+          const gitStatus = await window.api.github.checkGitStatus(currentProject.projectPath);
+          if (gitStatus.hasRemote) {
+            const freshTasks = projectStoreApi.getState().tasks;
+            const completed = freshTasks.filter((t) => t.completed);
+            const prTitle = completed.length === 1
+              ? completed[0].title
+              : `Fix ${completed.length} issues`;
+
+            await window.api.github.gitPush(currentProject.projectPath);
+            queueAssistantMessage(currentProject.slug, `Pushed changes to remote. Create a PR from the GitHub UI or CLI.`);
+          }
+        } catch (err) {
+          console.error('[BuildPipeline] Auto-push failed (non-fatal):', err);
+        }
+      }
+
       if (!isMountedRef.current) return;
       goToPreview();
     } catch (err) {

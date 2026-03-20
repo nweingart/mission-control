@@ -41,6 +41,19 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Auto-start E2E test when triggered by --run-e2e CLI flag
+  useEffect(() => {
+    window.api.onE2EAutostart((data: { repoUrl?: string }) => {
+      console.log('[E2E] Auto-start triggered', data);
+      setShowE2ETest(true);
+      // Store the repo URL for the test runner to pick up
+      if (data.repoUrl) {
+        (window as unknown as Record<string, unknown>).__e2eRepoUrl = data.repoUrl;
+      }
+      (window as unknown as Record<string, unknown>).__e2eAutostart = true;
+    });
+  }, []);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-surface">

@@ -468,7 +468,7 @@ export const buildStreamingIssuesScanPrompt = () => {
 As you examine the code, emit each discovery IMMEDIATELY when found using these tags:
 
 <DISCOVERY type="issue">
-{"title":"Short title","description":"What the issue is and why it matters","severity":"critical|warning|info","category":"bug|security|performance|dead_code","estimatedEffort":"quick_fix|moderate|significant","file":"src/file-with-issue.ts"}
+{"title":"Short title","description":"What the issue is and why it matters","severity":"critical|warning|info","category":"bug|security|performance|dead_code","estimatedEffort":"quick_fix|moderate|significant","storyPoints":2,"file":"src/file-with-issue.ts"}
 </DISCOVERY>
 
 When you identify the tech stack:
@@ -488,6 +488,7 @@ RULES:
 - Focus on real problems: actual bugs, security concerns, dead code, performance issues
 - Do NOT flag style preferences or subjective opinions as issues
 - Do NOT include a PRD, features list, or feature ideas — only issues and techStack
+- storyPoints must be a fibonacci number (1, 2, 3, 5, 8, 13). 1-2 = trivial fix, 3 = small fix, 5 = moderate, 8-13 = significant
 - Return ONLY discoveries and narration, no markdown fences or JSON blobs outside the tags`;
 };
 
@@ -563,6 +564,8 @@ const VALID_SEVERITIES = new Set(['critical', 'warning', 'info']);
 const VALID_CATEGORIES = new Set(['bug', 'security', 'performance', 'dead_code']);
 const VALID_EFFORTS = new Set(['quick_fix', 'moderate', 'significant']);
 
+const EFFORT_TO_SP: Record<string, number> = { quick_fix: 1, moderate: 3, significant: 8 };
+
 export function discoveryToCodeIssue(data: Record<string, unknown>, index: number): CodeIssue {
   const now = new Date().toISOString();
   const rawCategory = String(data.category || 'bug');
@@ -575,6 +578,10 @@ export function discoveryToCodeIssue(data: Record<string, unknown>, index: numbe
   const description = String(data.description || '');
   const fingerprint = generateIssueFingerprint(category, file, description);
 
+  // Story points: use Claude's estimate if provided, otherwise derive from effort
+  const rawSP = typeof data.storyPoints === 'number' ? data.storyPoints : null;
+  const storyPoints = rawSP && rawSP >= 1 && rawSP <= 21 ? rawSP : EFFORT_TO_SP[estimatedEffort] ?? 3;
+
   return {
     id: `issue-${Date.now()}-${index}`,
     fingerprint,
@@ -583,6 +590,7 @@ export function discoveryToCodeIssue(data: Record<string, unknown>, index: numbe
     severity,
     category,
     estimatedEffort,
+    storyPoints,
     file,
     status: 'open' as const,
     firstSeen: now,

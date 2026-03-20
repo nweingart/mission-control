@@ -30,6 +30,8 @@ export interface CodeIssue {
   severity: 'critical' | 'warning' | 'info';
   category: 'bug' | 'security' | 'performance' | 'dead_code';
   estimatedEffort: 'quick_fix' | 'moderate' | 'significant';
+  /** Fibonacci story points (1, 2, 3, 5, 8, 13). Items <= 3 SP are auto-buildable. */
+  storyPoints?: number;
   file?: string;
   status: 'open' | 'planned' | 'fixed';
   backlogItemId?: string;

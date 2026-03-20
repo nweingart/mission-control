@@ -173,6 +173,9 @@ export interface ElectronAPI {
     onExit: (callback: (data: { sessionId: string; code: number }) => void) => void;
     removeListeners: () => void;
   };
+
+  // E2E test auto-start (triggered by --run-e2e CLI flag)
+  onE2EAutostart: (callback: (data: { repoUrl?: string }) => void) => void;
 }
 
 declare global {

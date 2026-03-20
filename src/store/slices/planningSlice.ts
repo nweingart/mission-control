@@ -436,6 +436,9 @@ Output markdown only (plus the two estimate lines at the end).`;
     const { currentProject } = get();
     if (!currentProject) return '';
 
+    const sp = issue.storyPoints ?? (issue.estimatedEffort === 'quick_fix' ? 1 : 3);
+    const isQuickFix = sp <= 3;
+
     // Create backlog item from issue
     const newId = get().addBacklogItem({
       title: `Fix: ${issue.title}`,
@@ -443,7 +446,18 @@ Output markdown only (plus the two estimate lines at the end).`;
       priority: issue.severity === 'critical' ? 'high' : issue.severity === 'warning' ? 'medium' : 'low',
       type: 'bug_fix',
       estimatedEffort: issue.estimatedEffort,
+      storyPoints: sp,
     });
+
+    // Quick fixes (<= 3 SP): skip PRD, use issue description directly
+    if (isQuickFix) {
+      get().updateBacklogItem(newId, {
+        prdStatus: 'complete',
+        prd: issue.description + (issue.file ? `\n\nFile: ${issue.file}` : ''),
+        storyPoints: sp,
+        estimatedTasks: 1,
+      });
+    }
 
     // Plan & sprint the new item
     await get().planAndSprint(newId);
@@ -470,12 +484,25 @@ Output markdown only (plus the two estimate lines at the end).`;
       const readiness = getSprintReadiness(items);
       if (readiness.isReady) {
         get().setSprintStatus(sprint.id, 'active');
-        get().addToast({
-          type: 'success',
-          message: `All plans ready for ${sprint.name}. Ready to start.`,
-          ctaLabel: 'Start Build',
-          ctaAction: () => get().startBuild(sprint.id),
-        });
+
+        // Check if all items are quick fixes (low SP) — auto-start immediately
+        const allQuickFixes = items.every(b => (b.storyPoints ?? 3) <= 3);
+        if (allQuickFixes && !get().buildSessionActive) {
+          get().addToast({
+            type: 'success',
+            message: `Quick fixes ready — auto-starting build...`,
+          });
+          // Auto-start build for quick fixes (no user click needed)
+          setTimeout(() => get().startBuild(sprint.id), 500);
+        } else {
+          get().addToast({
+            type: 'success',
+            message: `All plans ready for ${sprint.name}. Ready to start.`,
+            ctaLabel: 'Start Build',
+            ctaAction: () => get().startBuild(sprint.id),
+          });
+        }
+
         if (currentProject) {
           queueAssistantMessage(currentProject.slug, `All plans ready for ${sprint.name}. Sprint activated.`);
         }

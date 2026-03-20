@@ -344,6 +344,9 @@ contextBridge.exposeInMainWorld('api', {
   // Deep Links
   onDeepLink: (callback: (url: string) => void) => createListener('deep-link', callback),
 
+  // E2E auto-start (triggered by --run-e2e CLI flag)
+  onE2EAutostart: (callback: (data: { repoUrl?: string }) => void) => createListener('e2e:autostart', callback),
+
   // Setup (for running install/auth commands)
   setup: {
     runCommand: (command: string, sessionId: string) =>

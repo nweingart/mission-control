@@ -9,7 +9,9 @@ import { GitHubService } from './services/github';
 import { registerShellHandlers } from './ipc/shell-handlers';
 import { registerSetupHandlers } from './ipc/setup-handlers';
 import { registerDevServerHandlers } from './ipc/devserver-handlers';
-import { autoUpdater } from 'electron-updater';
+// electron-updater is a CommonJS module — use default import
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
 
 // Prevent EPIPE errors from crashing the app when stdout/stderr pipes break
 // (common in Electron on macOS when the parent terminal is closed)
@@ -124,6 +126,18 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+  }
+
+  // --run-e2e flag: auto-start E2E test after app loads
+  if (process.argv.includes('--run-e2e')) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      // Extract repo URL from --repo=<url> flag if present
+      const repoArg = process.argv.find(a => a.startsWith('--repo='));
+      const repoUrl = repoArg ? repoArg.split('=')[1] : undefined;
+      setTimeout(() => {
+        safeSend('e2e:autostart', { repoUrl });
+      }, 3000); // Wait for React to hydrate
+    });
   }
 
   mainWindow.on('closed', () => {
