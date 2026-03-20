@@ -27,9 +27,9 @@ const COLUMNS: KanbanColumn[] = [
   {
     id: 'in-progress',
     title: 'In Progress',
-    color: 'text-spectrum-blue',
-    bgColor: 'bg-spectrum-blue/10',
-    borderColor: 'border-spectrum-blue/30',
+    color: 'text-accent',
+    bgColor: 'bg-accent/10',
+    borderColor: 'border-accent/30',
   },
   {
     id: 'done',
@@ -147,16 +147,16 @@ function TaskCard({ task, isActive, isPaused, columnId, taskPhase }: TaskCardPro
       className={`
         card-panel p-3 transition-all duration-200
         ${isActive ? 'border-spectrum-green ring-2 ring-spectrum-green/20' : ''}
-        ${isPaused ? 'border-spectrum-blue/40' : ''}
+        ${isPaused ? 'border-accent/40' : ''}
         ${columnId === 'done' ? 'opacity-75' : ''}
         animate-in fade-in slide-in-from-left-2
       `}
     >
       <div className="flex items-start gap-2">
         {/* Status indicator */}
-        <div className="flex-shrink-0 mt-0.5">
+        <div className="flex-shrink-0 mt-0.5" aria-hidden="true">
           {columnId === 'done' ? (
-            <svg className="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
               <path
                 fillRule="evenodd"
                 d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
@@ -164,9 +164,9 @@ function TaskCard({ task, isActive, isPaused, columnId, taskPhase }: TaskCardPro
               />
             </svg>
           ) : isActive ? (
-            <div className="w-4 h-4 border-4 border-spectrum-green border-t-transparent animate-spin" />
+            <div className="w-4 h-4 border-4 border-spectrum-green border-t-transparent animate-spin" role="status" aria-label="Building" />
           ) : isPaused ? (
-            <div className="w-4 h-4 bg-spectrum-blue rounded-full" />
+            <div className="w-4 h-4 bg-accent rounded-full" />
           ) : (
             <div className="w-4 h-4 border-2 border-border" />
           )}
@@ -195,9 +195,9 @@ function TaskCard({ task, isActive, isPaused, columnId, taskPhase }: TaskCardPro
 
       {/* Paused indicator with checkpoint label */}
       {isPaused && pausedLabel && (
-        <div className="mt-2 flex items-center gap-1 text-xs text-spectrum-blue">
+        <div className="mt-2 flex items-center gap-1 text-xs text-accent">
           <span className="relative flex h-2 w-2">
-            <span className="relative inline-flex h-2 w-2 bg-spectrum-blue rounded-full"></span>
+            <span className="relative inline-flex h-2 w-2 bg-accent rounded-full"></span>
           </span>
           {pausedLabel}
         </div>

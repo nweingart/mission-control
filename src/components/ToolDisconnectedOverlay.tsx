@@ -62,7 +62,7 @@ export default function ToolDisconnectedOverlay() {
   };
 
   return (
-    <div className="absolute inset-0 z-50 bg-surface-light/80 backdrop-blur-sm flex items-center justify-center">
+    <div className="absolute inset-0 z-50 bg-surface-light/80 backdrop-blur-sm flex items-center justify-center" role="alertdialog" aria-modal="true" aria-labelledby="tools-disconnected-heading">
       <div className="card-panel p-8 max-w-md w-full mx-4">
         {/* Header */}
         <div className="flex items-center space-x-3 mb-6">
@@ -72,7 +72,7 @@ export default function ToolDisconnectedOverlay() {
             </svg>
           </div>
           <div>
-            <h2 className="text-lg font-sans font-semibold text-ink">Tools Disconnected</h2>
+            <h2 id="tools-disconnected-heading" className="text-lg font-sans font-semibold text-ink">Tools Disconnected</h2>
             <p className="text-sm text-ink-muted">Some required tools have lost connection</p>
           </div>
         </div>

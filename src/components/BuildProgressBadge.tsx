@@ -23,19 +23,19 @@ export default function BuildProgressBadge({
                      taskPhase === 'pushing';
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" role="status" aria-label={`Build: ${activeTasks} of ${tasks.length} tasks${isBuilding ? ', in progress' : completedTasks === tasks.length && tasks.length > 0 ? ', complete' : ''}`}>
       {/* Pulsing indicator when actively building */}
       {isBuilding && (
-        <span className="relative flex h-2 w-2">
+        <span className="relative flex h-2 w-2" aria-hidden="true">
           <span className="animate-ping absolute inline-flex h-full w-full bg-spectrum-orange opacity-75"></span>
           <span className="relative inline-flex h-2 w-2 bg-spectrum-orange"></span>
         </span>
       )}
       {!isBuilding && currentTaskId && (
-        <span className="w-2 h-2 bg-ink-muted/30"></span>
+        <span className="w-2 h-2 bg-ink-muted/30" aria-hidden="true"></span>
       )}
       {!isBuilding && !currentTaskId && completedTasks === tasks.length && tasks.length > 0 && (
-        <span className="w-2 h-2 bg-success"></span>
+        <span className="w-2 h-2 bg-success" aria-hidden="true"></span>
       )}
       <span className="text-[13px] font-display uppercase tracking-wider">
         Build ({activeTasks}/{tasks.length}){parallelCount && parallelCount > 1 ? ` ×${parallelCount}` : ''}

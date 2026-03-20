@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 
 const UPGRADE_URL = 'https://gethouston.dev/pro';
@@ -42,6 +42,38 @@ export default function PaywallModal({ onDismiss, onUpgradeComplete }: PaywallMo
     }
   };
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Focus trap: keep focus inside modal and handle Escape to dismiss
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    // Auto-focus the first focusable element
+    const focusable = dialog.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (focusable.length > 0) focusable[0].focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onDismiss();
+        return;
+      }
+      if (e.key !== 'Tab' || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onDismiss]);
+
   // Auto-dismiss if subscription becomes active (e.g., deep link callback)
   if (authUser && subscriptionStatus === 'active') {
     onUpgradeComplete();
@@ -50,7 +82,7 @@ export default function PaywallModal({ onDismiss, onUpgradeComplete }: PaywallMo
 
   return (
     <div className="absolute inset-0 z-50 bg-surface-light/80 backdrop-blur-sm flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="paywall-heading">
-      <div className="card-panel p-8 max-w-md w-full mx-4">
+      <div ref={dialogRef} className="card-panel p-8 max-w-md w-full mx-4">
         {/* Header */}
         <div className="flex flex-col items-center text-center mb-6">
           <div className="w-12 h-12 bg-accent/15 flex items-center justify-center mb-4">
