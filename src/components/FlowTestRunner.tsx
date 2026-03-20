@@ -349,7 +349,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
 
       // Clear planning data and git events
       store.getState().setActivePlanningChat(null);
-      store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, oneOffBacklogItemId: null, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksCompleted: 0, totalBuilds: 0, milestones: [] }, gamificationEvent: null, assistantGreeting: null, assistantApproval: null, assistantErrorContext: null, assistantHumanTaskContext: null, toasts: [], buildPipelineResume: null, buildPipelineAutoApprove: null });
+      store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], activePlanningChatId: null, prdStreaming: {}, deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, activeBuildChatIds: [], terminalOutput: [], oneOffBacklogItemId: null, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksCompleted: 0, totalBuilds: 0, milestones: [] }, gamificationEvent: null, assistantGreeting: null, assistantApproval: null, assistantErrorContext: null, assistantHumanTaskContext: null, toasts: [], buildPipelineResume: null, buildPipelineAutoApprove: null });
 
       store.getState().setScreen('home');
 
