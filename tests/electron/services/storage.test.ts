@@ -10,6 +10,7 @@ vi.mock('fs', () => ({
   rmSync: vi.fn(),
   renameSync: vi.fn(),
   unlinkSync: vi.fn(),
+  statSync: vi.fn(() => ({ size: 100 })),
 }));
 
 vi.mock('os', () => ({
@@ -28,6 +29,7 @@ import {
   unlinkSync,
 } from 'fs';
 import { homedir } from 'os';
+import { shell } from 'electron';
 
 const mockedExistsSync = vi.mocked(existsSync);
 const mockedMkdirSync = vi.mocked(mkdirSync);
@@ -76,12 +78,12 @@ describe('StorageService', () => {
   // 1. Constructor creates directories
   // -----------------------------------------------------------------------
   describe('constructor', () => {
-    it('creates .houston and projects directories when they do not exist', () => {
+    it('creates .mission-control and projects directories when they do not exist', () => {
       mockedExistsSync.mockReturnValue(false);
       createService();
 
-      expect(mockedMkdirSync).toHaveBeenCalledWith('/mock-home/.houston', { recursive: true });
-      expect(mockedMkdirSync).toHaveBeenCalledWith('/mock-home/.houston/projects', { recursive: true });
+      expect(mockedMkdirSync).toHaveBeenCalledWith('/mock-home/.mission-control', { recursive: true });
+      expect(mockedMkdirSync).toHaveBeenCalledWith('/mock-home/.mission-control/projects', { recursive: true });
     });
 
     it('does not create directories when they already exist', () => {
@@ -97,14 +99,14 @@ describe('StorageService', () => {
   // -----------------------------------------------------------------------
   describe('getConfig', () => {
     it('returns defaults and saves config when no file exists', () => {
-      // existsSync: false for houston dirs (constructor), false for configPath
+      // existsSync: false for mission-control dirs (constructor), false for configPath
       mockedExistsSync.mockReturnValue(false);
       const service = createService();
 
       const config = service.getConfig();
 
       expect(config).toEqual({
-        developmentPath: '/mock-home/development/houston',
+        developmentPath: '/mock-home/development',
         theme: 'light',
       });
       // saveConfig should have been called (atomicWriteFile writes + renames)
@@ -146,7 +148,7 @@ describe('StorageService', () => {
       const config = service.getConfig();
 
       expect(config).toEqual({
-        developmentPath: '/mock-home/development/houston',
+        developmentPath: '/mock-home/development',
         theme: 'light',
       });
       consoleSpy.mockRestore();
@@ -221,7 +223,7 @@ describe('StorageService', () => {
       // Then rename the temp file to the config path
       expect(mockedRenameSync).toHaveBeenCalledWith(
         expect.stringContaining('.tmp.'),
-        '/mock-home/.houston/config.json',
+        '/mock-home/.mission-control/config.json',
       );
     });
   });
@@ -346,9 +348,9 @@ describe('StorageService', () => {
       expect(project.status).toBe('idea');
       expect(project.idea).toBe('An idea');
 
-      // Should create houston project dir and development dir
+      // Should create mission-control project dir and development dir
       expect(mockedMkdirSync).toHaveBeenCalledWith(
-        '/mock-home/.houston/projects/my-cool-project',
+        '/mock-home/.mission-control/projects/my-cool-project',
         { recursive: true },
       );
       expect(mockedMkdirSync).toHaveBeenCalledWith(
@@ -422,7 +424,7 @@ describe('StorageService', () => {
   // 15-17. deleteProject
   // -----------------------------------------------------------------------
   describe('deleteProject', () => {
-    it('removes houston metadata directory', () => {
+    it('removes mission-control metadata directory', () => {
       const service = createService();
       const projectData = {
         slug: 'my-project',
@@ -437,14 +439,14 @@ describe('StorageService', () => {
 
       service.deleteProject('my-project', false);
 
-      // Should remove the houston metadata dir
+      // Should remove the mission-control metadata dir
       expect(mockedRmSync).toHaveBeenCalledWith(
-        '/mock-home/.houston/projects/my-project',
+        '/mock-home/.mission-control/projects/my-project',
         { recursive: true, force: true },
       );
     });
 
-    it('removes generated code when deleteGeneratedCode is true', () => {
+    it('removes generated code when deleteGeneratedCode is true', async () => {
       const service = createService();
       const projectData = {
         slug: 'my-project',
@@ -457,15 +459,13 @@ describe('StorageService', () => {
       mockedExistsSync.mockReturnValue(true);
       mockedReadFileSync.mockReturnValue(JSON.stringify(projectData));
 
-      service.deleteProject('my-project', true);
+      await service.deleteProject('my-project', true);
 
-      // Should remove both the generated code and houston metadata
+      // Should trash the generated code directory
+      expect(shell.trashItem).toHaveBeenCalledWith('/dev/my-project');
+      // Should remove mission-control metadata
       expect(mockedRmSync).toHaveBeenCalledWith(
-        '/dev/my-project',
-        { recursive: true, force: true },
-      );
-      expect(mockedRmSync).toHaveBeenCalledWith(
-        '/mock-home/.houston/projects/my-project',
+        '/mock-home/.mission-control/projects/my-project',
         { recursive: true, force: true },
       );
     });
@@ -488,7 +488,7 @@ describe('StorageService', () => {
       // rmSync should only be called for the metadata directory, not the project path
       const rmCalls = mockedRmSync.mock.calls.map((c) => String(c[0]));
       expect(rmCalls).not.toContain('/dev/my-project');
-      expect(rmCalls).toContain('/mock-home/.houston/projects/my-project');
+      expect(rmCalls).toContain('/mock-home/.mission-control/projects/my-project');
     });
   });
 
