@@ -37,7 +37,12 @@ export interface UseDiscoveryStreamReturn {
   getResults: () => DiscoveryResults;
 }
 
-export function useDiscoveryStream(): UseDiscoveryStreamReturn {
+export interface DiscoveryStreamOptions {
+  /** Called immediately when a new issue is discovered during streaming */
+  onIssueDiscovered?: (issue: CodeIssue) => void;
+}
+
+export function useDiscoveryStream(options?: DiscoveryStreamOptions): UseDiscoveryStreamReturn {
   const [discoveries, setDiscoveries] = useState<ParsedDiscovery[]>([]);
   const [scanMeta, setScanMeta] = useState<ScanMeta | null>(null);
   const [agentStatus, setAgentStatus] = useState<DiscoveryStreamStatus>('idle');
@@ -45,6 +50,10 @@ export function useDiscoveryStream(): UseDiscoveryStreamReturn {
   const [issues, setIssues] = useState<CodeIssue[]>([]);
   const [features, setFeatures] = useState<FeatureModule[]>([]);
   const [techStack, setTechStack] = useState<TechStack | null>(null);
+
+  // Stable ref for the callback to avoid re-creating handleStreamEvent
+  const onIssueDiscoveredRef = useRef(options?.onIssueDiscovered);
+  onIssueDiscoveredRef.current = options?.onIssueDiscovered;
 
   const { dispatch, props: timelineProps, reset: resetSteps } = useAgentSteps({
     showToolCalls: true,
@@ -160,6 +169,8 @@ export function useDiscoveryStream(): UseDiscoveryStreamReturn {
             if (parsed.type === 'issue') {
               const issue = discoveryToCodeIssue(parsed.data, idx);
               setIssues(prev => { const next = [...prev, issue]; issuesRef.current = next; return next; });
+              // Fire callback immediately so callers can act on the issue (e.g. auto-triage)
+              onIssueDiscoveredRef.current?.(issue);
             } else if (parsed.type === 'techStack') {
               const ts = {
                 languages: (parsed.data.languages as string[]) || [],

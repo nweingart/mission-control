@@ -50,11 +50,23 @@ export default function ScanningScreen() {
   const [planningIssueIds, setPlanningIssueIds] = useState<Set<string>>(new Set());
   const [plannedIssueIds, setPlannedIssueIds] = useState<Set<string>>(new Set());
 
-  // Auto-triage guard
-  const autoTriageStarted = useRef(false);
+  // Track which issues have been triaged to avoid double-processing
+  const triagedIssueIds = useRef<Set<string>>(new Set());
 
-  // Streaming discovery hook (replaces output + showTerminal)
-  const discoveryStream = useDiscoveryStream();
+  // Incremental auto-triage: fires on each issue as it streams in
+  const handleIssueDiscovered = useCallback((issue: CodeIssue) => {
+    if (triagedIssueIds.current.has(issue.id)) return;
+    // Auto-triage critical issues immediately (low SP = instant build path)
+    if (issue.severity === 'critical' && issue.status === 'open') {
+      triagedIssueIds.current.add(issue.id);
+      planAndSprintIssue(issue).catch(err => {
+        console.error('Incremental auto-triage failed:', err);
+      });
+    }
+  }, [planAndSprintIssue]);
+
+  // Streaming discovery hook with incremental triage callback
+  const discoveryStream = useDiscoveryStream({ onIssueDiscovered: handleIssueDiscovered });
   const discoveryFeedRef = useRef<HTMLDivElement>(null);
 
   // Elapsed timer for "still working" indicator
@@ -70,15 +82,15 @@ export default function ScanningScreen() {
   }, [status]);
 
   const autoTriageCriticalIssues = useCallback(async (issues: CodeIssue[]) => {
-    if (autoTriageStarted.current) return;
-    const criticalOpen = issues.filter((i) => i.severity === 'critical' && i.status === 'open');
-    if (criticalOpen.length === 0) return;
-    autoTriageStarted.current = true;
+    // Filter out issues already triaged incrementally
+    const untriaged = issues.filter((i) => i.severity === 'critical' && i.status === 'open' && !triagedIssueIds.current.has(i.id));
+    if (untriaged.length === 0) return;
 
-    const ids = new Set(criticalOpen.map((i) => i.id));
+    const ids = new Set(untriaged.map((i) => i.id));
     setPlanningIssueIds(ids);
 
-    for (const issue of criticalOpen) {
+    for (const issue of untriaged) {
+      triagedIssueIds.current.add(issue.id);
       try {
         await planAndSprintIssue(issue);
         setPlannedIssueIds((prev) => new Set(prev).add(issue.id));
@@ -420,8 +432,14 @@ export default function ScanningScreen() {
       setStatus('complete');
       // Stay on scanning view so user can see discoveries; they'll click "Continue to Triage"
 
-      // Auto-triage critical issues
-      autoTriageCriticalIssues(finalIssues);
+      // Catch any critical issues that weren't triaged during streaming
+      // (e.g., if the streaming parser missed a tag or the issue was in the final batch)
+      const untriagedCritical = finalIssues.filter(
+        i => i.severity === 'critical' && i.status === 'open' && !triagedIssueIds.current.has(i.id)
+      );
+      if (untriagedCritical.length > 0) {
+        autoTriageCriticalIssues(untriagedCritical);
+      }
 
       // Fire Phase 2 in background (don't await)
       runPhase2(
