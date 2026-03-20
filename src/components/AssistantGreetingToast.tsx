@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../store/ProjectStoreContext';
-import houstonAvatar from '../assets/houston-avatar.webp';
+import mcAvatar from '../assets/mc-avatar.webp';
 
-export default function HoustonGreetingToast() {
-  const houstonGreeting = useProjectStore((s) => s.houstonGreeting);
-  const clearHoustonGreeting = useProjectStore((s) => s.clearHoustonGreeting);
+export default function AssistantGreetingToast() {
+  const assistantGreeting = useProjectStore((s) => s.assistantGreeting);
+  const clearAssistantGreeting = useProjectStore((s) => s.clearAssistantGreeting);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
   const [dismissing, setDismissing] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -12,13 +12,13 @@ export default function HoustonGreetingToast() {
   const dismiss = () => {
     setDismissing(true);
     setTimeout(() => {
-      clearHoustonGreeting();
+      clearAssistantGreeting();
       setDismissing(false);
     }, 250); // matches slide-out-left duration
   };
 
   useEffect(() => {
-    if (!houstonGreeting || hovered) return;
+    if (!assistantGreeting || hovered) return;
 
     if (timerRef.current) clearTimeout(timerRef.current);
 
@@ -27,14 +27,14 @@ export default function HoustonGreetingToast() {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [houstonGreeting, hovered]);
+  }, [assistantGreeting, hovered]);
 
   // Reset dismissing state when new greeting arrives
   useEffect(() => {
-    if (houstonGreeting) setDismissing(false);
-  }, [houstonGreeting]);
+    if (assistantGreeting) setDismissing(false);
+  }, [assistantGreeting]);
 
-  if (!houstonGreeting) return null;
+  if (!assistantGreeting) return null;
 
   return (
     <div
@@ -48,15 +48,15 @@ export default function HoustonGreetingToast() {
         timerRef.current = setTimeout(dismiss, 3000);
       }}
     >
-      <div className="card-panel border-l-4 border-l-spectrum-blue p-4 shadow-lg">
+      <div className="card-panel border-l-4 border-l-accent p-4 shadow-lg">
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-spectrum-blue flex-shrink-0">
-            <img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
+          <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-accent flex-shrink-0">
+            <img src={mcAvatar} alt="Assistant" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-mono text-ink-muted uppercase tracking-wider mb-0.5">Houston</p>
-            <p className="text-sm font-medium text-ink leading-snug">{houstonGreeting}</p>
+            <p className="text-[11px] font-mono text-ink-muted uppercase tracking-wider mb-0.5">Assistant</p>
+            <p className="text-sm font-medium text-ink leading-snug">{assistantGreeting}</p>
           </div>
 
           <button

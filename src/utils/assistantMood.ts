@@ -1,6 +1,6 @@
 import type { TaskPhase } from '../types';
 
-export type HoustonMood = 'celebrating' | 'alert' | 'working' | 'greeting' | 'idle';
+export type AssistantMood = 'celebrating' | 'alert' | 'working' | 'greeting' | 'idle';
 
 interface MoodParams {
   gamificationEvent: { type: 'milestone' | 'rank_up'; label: string } | null;
@@ -10,7 +10,7 @@ interface MoodParams {
   isGreeting: boolean;
 }
 
-export function deriveHoustonMood(params: MoodParams): HoustonMood {
+export function deriveAssistantMood(params: MoodParams): AssistantMood {
   if (params.gamificationEvent) return 'celebrating';
   if (params.buildTaskPhase === 'error') return 'alert';
   if (params.buildSessionActive || params.isLoading) return 'working';
@@ -18,18 +18,18 @@ export function deriveHoustonMood(params: MoodParams): HoustonMood {
   return 'idle';
 }
 
-export function getMoodButtonClasses(mood: HoustonMood): string {
+export function getMoodButtonClasses(mood: AssistantMood): string {
   switch (mood) {
     case 'celebrating':
-      return 'border-houston-green shadow-glow-green animate-houston-bounce';
+      return 'border-mc-green shadow-glow-green animate-mc-bounce';
     case 'alert':
-      return 'border-houston-red shadow-glow-red animate-houston-blink';
+      return 'border-mc-red shadow-glow-red animate-mc-blink';
     case 'working':
-      return 'border-spectrum-blue animate-houston-pulse';
+      return 'border-accent animate-mc-pulse';
     case 'greeting':
-      return 'border-spectrum-blue shadow-glow-blue animate-houston-nod';
+      return 'border-accent shadow-glow-green animate-mc-nod';
     case 'idle':
     default:
-      return 'border-spectrum-blue shadow-glow-blue';
+      return 'border-accent shadow-glow-green';
   }
 }

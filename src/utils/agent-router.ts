@@ -4,6 +4,7 @@ export type PipelineRole = 'builder' | 'reviewer';
 
 export interface AgentAPI {
   chat: (projectPath: string, prompt: string, timeoutMs?: number, chatId?: string) => Promise<ChatResult>;
+  chatWithResume?: (projectPath: string, prompt: string, sessionId: string | null, inactivityTimeoutMs?: number, chatId?: string) => Promise<{ response: string; sessionId: string }>;
   onChatOutputForTask: (chatId: string, cb: (content: string) => void) => void;
   offChatOutputForTask: (chatId: string) => void;
   cancelChat: (chatId?: string) => Promise<void>;

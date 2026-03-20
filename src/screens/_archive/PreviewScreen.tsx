@@ -445,7 +445,7 @@ export default function PreviewScreen() {
         <div className="max-w-md w-full p-6">
           <h2 className="text-lg font-sans font-bold text-ink mb-2">Setup required before preview</h2>
           <p className="text-sm text-ink-muted mb-4">
-            Complete these tasks to start the preview. Houston can guide you through them.
+            Complete these tasks to start the preview. The assistant can guide you through them.
           </p>
           <div className="space-y-2 mb-6">
             {blockingTasks.map((task) => (
@@ -461,13 +461,13 @@ export default function PreviewScreen() {
           </div>
           <div className="flex flex-col items-center gap-3">
             <button
-              onClick={() => (window as unknown as { openHouston?: () => void }).openHouston?.()}
+              onClick={() => window.openAssistant?.()}
               className="btn-solid-primary flex items-center space-x-2 px-6 py-3"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              <span>Open Houston</span>
+              <span>Open Assistant</span>
             </button>
             <button
               onClick={() => {
@@ -563,9 +563,9 @@ export default function PreviewScreen() {
         {/* Content Area */}
         <main className="flex-1 overflow-y-auto p-6">
           {showDemoDataBanner && setupSkipped && (
-            <div className="mx-0 mb-4 p-4 bg-houston-amber/10 border border-houston-amber/30 flex items-center justify-between">
+            <div className="mx-0 mb-4 p-4 bg-mc-amber/10 border border-mc-amber/30 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <svg className="w-5 h-5 text-houston-amber flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-mc-amber flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <p className="text-sm text-ink">
@@ -816,18 +816,18 @@ export default function PreviewScreen() {
           {activeTab === 'planning' && (
             <div className="space-y-4">
               <div className="card-panel p-6">
-                <h2 className="text-base font-sans font-semibold text-ink mb-2">Plan with Houston</h2>
+                <h2 className="text-base font-sans font-semibold text-ink mb-2">Plan with Assistant</h2>
                 <p className="text-ink-muted text-sm mb-4">
                   Plan future features and improvements for your project.
                 </p>
                 <button
-                  onClick={() => (window as unknown as { openHouston?: () => void }).openHouston?.()}
+                  onClick={() => window.openAssistant?.()}
                   className="btn-solid-primary flex items-center space-x-2 px-4 py-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
-                  <span>Open Houston</span>
+                  <span>Open Assistant</span>
                 </button>
               </div>
 

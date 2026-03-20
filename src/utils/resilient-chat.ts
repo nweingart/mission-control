@@ -24,11 +24,17 @@ interface ResilientChatOptions {
   retryAction?: () => void;
   /** Which agent to use — defaults to 'claude' */
   agent?: AgentProvider;
+  /** Use structured JSON streaming (emits events via onStreamEventForTask) */
+  streaming?: boolean;
+  /** Called when a retry generates a new chatId — use to re-subscribe stream listeners */
+  onChatIdChange?: (newChatId: string) => void;
 }
 
 interface ResilientChatResult {
   promise: Promise<string>;
   cancel: () => void;
+  /** The chatId used — needed to subscribe to streaming events via onStreamEventForTask / onChatOutputForTask */
+  chatId: string;
 }
 
 // ── Core function ──────────────────────────────────────────
@@ -44,14 +50,20 @@ export function resilientChat(
     onRetryAttempt,
     retryAction,
     agent = 'claude',
+    streaming = false,
+    onChatIdChange,
   } = options;
 
-  // Select the correct API based on agent
-  const chatFn = agent === 'codex' ? window.api.codex.chat : window.api.claude.chat;
+  // Select the correct API based on agent and streaming mode
+  const chatFn = agent === 'codex'
+    ? window.api.codex.chat
+    : streaming
+      ? window.api.claude.chatStreaming
+      : window.api.claude.chat;
   const cancelFn = agent === 'codex' ? window.api.codex.cancelChat : window.api.claude.cancelChat;
 
   let cancelled = false;
-  let currentChatId = '';
+  let currentChatId = 'chat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
 
   const cancel = () => {
     cancelled = true;
@@ -64,7 +76,10 @@ export function resilientChat(
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (cancelled) throw new Error('cancelled');
 
-      currentChatId = 'chat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      if (attempt > 0) {
+        currentChatId = 'chat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+        onChatIdChange?.(currentChatId);
+      }
       try {
         const result = await chatFn(projectPath, prompt, inactivityTimeoutMs, currentChatId);
         return result.response;
@@ -94,7 +109,7 @@ export function resilientChat(
     throw new Error('unreachable');
   })();
 
-  return { promise, cancel };
+  return { promise, cancel, chatId: currentChatId };
 }
 
 // ── Presets ────────────────────────────────────────────────

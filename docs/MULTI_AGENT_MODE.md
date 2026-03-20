@@ -2,7 +2,7 @@
 
 ## Context
 
-Houston currently uses Claude Code CLI as the sole AI agent for its build pipeline. Each task goes through: build (Claude writes code) -> review (Claude reviews the diff) -> fix (Claude fixes issues). These are three **independent** `window.api.claude.chat()` calls -- not a conversation. This means we can route each call to a different agent without changing the pipeline's structure.
+Mission Control currently uses Claude Code CLI as the sole AI agent for its build pipeline. Each task goes through: build (Claude writes code) -> review (Claude reviews the diff) -> fix (Claude fixes issues). These are three **independent** `window.api.claude.chat()` calls -- not a conversation. This means we can route each call to a different agent without changing the pipeline's structure.
 
 This plan adds an opt-in "Multi-Agent Mode" where the user configures which agent (Claude or Codex) handles the **builder** role (writes code) and which handles the **reviewer** role (reviews + fixes). Default behavior is preserved -- single-agent Claude when the feature is off.
 

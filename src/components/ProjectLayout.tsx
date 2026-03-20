@@ -5,7 +5,7 @@ import { getProjectStoreBySlug } from '../store/projectStoreRegistry';
 import type { ProjectStatus, Screen } from '../types';
 import StreakDisplay from './StreakDisplay';
 import GamificationToast from './GamificationToast';
-import HoustonGreetingToast from './HoustonGreetingToast';
+import AssistantGreetingToast from './AssistantGreetingToast';
 import ToastNotification from './ToastNotification';
 
 type Tab = 'plan' | 'docs' | 'ship' | 'data' | 'settings';
@@ -25,8 +25,8 @@ const dockItems: { key: Tab | 'build'; label: string; color: string; activeColor
   {
     key: 'plan',
     label: 'Plan',
-    color: 'text-houston-blue',
-    activeColor: 'bg-houston-blue-soft text-houston-blue-deep',
+    color: 'text-mc-green',
+    activeColor: 'bg-mc-green-soft text-mc-green-deep',
     icon: (
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -36,8 +36,8 @@ const dockItems: { key: Tab | 'build'; label: string; color: string; activeColor
   {
     key: 'docs',
     label: 'Docs',
-    color: 'text-houston-amber',
-    activeColor: 'bg-houston-amber-soft text-houston-amber',
+    color: 'text-mc-amber',
+    activeColor: 'bg-mc-amber-soft text-mc-amber',
     icon: (
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -47,8 +47,8 @@ const dockItems: { key: Tab | 'build'; label: string; color: string; activeColor
   {
     key: 'build',
     label: 'Build',
-    color: 'text-houston-red',
-    activeColor: 'bg-houston-red-soft text-houston-red',
+    color: 'text-mc-red',
+    activeColor: 'bg-mc-red-soft text-mc-red',
     icon: (
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -59,8 +59,8 @@ const dockItems: { key: Tab | 'build'; label: string; color: string; activeColor
   {
     key: 'ship',
     label: 'Ship',
-    color: 'text-houston-red',
-    activeColor: 'bg-houston-red-soft text-houston-red',
+    color: 'text-mc-red',
+    activeColor: 'bg-mc-red-soft text-mc-red',
     icon: (
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -71,8 +71,8 @@ const dockItems: { key: Tab | 'build'; label: string; color: string; activeColor
   {
     key: 'data',
     label: 'Data',
-    color: 'text-houston-green',
-    activeColor: 'bg-houston-green-soft text-houston-green',
+    color: 'text-mc-green',
+    activeColor: 'bg-mc-green-soft text-mc-green',
     icon: (
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
@@ -149,15 +149,16 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
               <button
                 key={slug}
                 onClick={() => switchProject(slug)}
+                aria-current={isActive ? 'page' : undefined}
                 className={`group relative flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                   isActive
-                    ? 'bg-houston-blue-soft text-houston-blue-deep'
+                    ? 'bg-mc-green-soft text-mc-green-deep'
                     : 'text-ink-muted hover:text-ink hover:bg-surface-hover'
                 }`}
               >
                 {/* Build status dot */}
                 {buildActive && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-houston-amber animate-pulse" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-mc-amber animate-pulse" />
                 )}
                 <span className="truncate max-w-[120px]">{name}</span>
                 {/* Close button */}
@@ -188,7 +189,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           onClick={() => { if (!isOnDashboard) goToProjectHome(); setProjectHomeTab('settings'); }}
           className={`no-drag p-1.5 rounded-lg transition-colors ${
             isOnDashboard && projectHomeTab === 'settings'
-              ? 'text-secondary bg-houston-blue-soft'
+              ? 'text-secondary bg-mc-green-soft'
               : 'text-ink-muted hover:text-secondary hover:bg-surface-hover'
           }`}
           title="Settings"
@@ -202,7 +203,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
 
       {/* Toasts */}
       <GamificationToast />
-      <HoustonGreetingToast />
+      <AssistantGreetingToast />
       <ToastNotification />
 
       {/* Child screen */}

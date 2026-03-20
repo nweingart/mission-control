@@ -460,7 +460,7 @@ function ChatListItem({
     }
   };
 
-  const handleCancelRename = (e: React.MouseEvent) => {
+  const handleCancelRename = (e: React.SyntheticEvent) => {
     e.stopPropagation();
     setEditTitle(chat.title);
     setIsRenaming(false);
@@ -478,7 +478,7 @@ function ChatListItem({
             autoFocus
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
-                handleCancelRename(e as unknown as React.MouseEvent);
+                handleCancelRename(e);
               }
             }}
           />

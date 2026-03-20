@@ -194,7 +194,7 @@ const { response, usage } = await window.api.claude.chat(cwd, prompt, timeout);
 - `src/hooks/useBuildPipeline.ts` — build, review, fix calls (3 call sites)
 - `src/screens/TasksScreen.tsx` — task generation (1 call site)
 - `src/screens/DiscoveryScreen.tsx` — discovery chat (if applicable)
-- `src/components/onboarding/StageHouston.tsx` — mini-chat (1 call site)
+- `src/components/onboarding/StageAssistant.tsx` — mini-chat (1 call site)
 - Any other screen that calls `claude.chat()`
 
 This is a one-time migration — all callers destructure `{ response }` and optionally `{ usage }`.
@@ -358,7 +358,7 @@ This is deferred because we need baseline token data first to know if it's worth
 | `src/hooks/useBuildPipeline.ts` | Destructure `{ response, usage }` from all `chat()` calls. Track per-task token usage. Compute aggregate `BuildMetrics`. |
 | `src/screens/BuildScreen.tsx` | Add real-time token counter. Add per-task token display. Add post-build summary. |
 | `src/screens/TasksScreen.tsx` | Update `chat()` call to destructure `{ response }`. |
-| `src/components/onboarding/StageHouston.tsx` | Update `chat()` call to destructure `{ response }`. |
+| `src/components/onboarding/StageAssistant.tsx` | Update `chat()` call to destructure `{ response }`. |
 | `src/store/slices/tasksSlice.ts` | No structural changes — `tokenUsage` persists automatically via existing serialization. |
 
 ---

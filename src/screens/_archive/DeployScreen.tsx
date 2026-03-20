@@ -5,7 +5,7 @@ import PreflightGateOverlay from '../components/PreflightGateOverlay';
 import { usePreflightCheck } from '../hooks/usePreflightCheck';
 import confetti from 'canvas-confetti';
 import type { ServiceKey } from '../constants/preflight-requirements';
-import HoldToLaunchButton from '../components/HoldToLaunchButton';
+import HoldToStartButton from '../components/HoldToStartButton';
 
 type DeployStep =
   | 'setup'
@@ -451,8 +451,8 @@ export default function DeployScreen() {
                 <p className="text-ink-secondary mb-4">
                   Commit and push your latest changes to GitHub.
                 </p>
-                <HoldToLaunchButton
-                  onLaunch={startRedeploy}
+                <HoldToStartButton
+                  onStart={startRedeploy}
                   label="Hold to Push"
                   disabled={isDeploying}
                 />
@@ -553,9 +553,9 @@ export default function DeployScreen() {
             </button>
 
             {deployStep === 'setup' && !isRedeploy && (
-              <HoldToLaunchButton
-                onLaunch={startFirstDeploy}
-                label="Hold to Launch"
+              <HoldToStartButton
+                onStart={startFirstDeploy}
+                label="Hold to Start"
                 disabled={isDeploying}
               />
             )}

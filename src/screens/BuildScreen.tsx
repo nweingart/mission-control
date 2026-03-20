@@ -1,15 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useProjectStore, useProjectStoreApi } from '../store/ProjectStoreContext';
 import { useBuildPipeline } from '../hooks/useBuildPipeline';
 import { usePreflightCheck } from '../hooks/usePreflightCheck';
 import ProgressBar from '../components/ProgressBar';
-import KanbanBoard from '../components/KanbanBoard';
+import { TaskTree, CostTracker, TerminalOutput, AgentStatusBar, TimelineToolCallList } from 'agent-native';
+import type { AgentStatus, ToolCall } from 'agent-native';
+import { tasksToTaskNodes, buildMetricsToCostEntries } from '../utils/agent-native-adapters';
 import BuildProgressBadge from '../components/BuildProgressBadge';
 import PreflightGateOverlay from '../components/PreflightGateOverlay';
 import DesignDuel from '../components/DesignDuel';
+import DecisionPoint from '../components/DecisionPoint';
 import type { ServiceKey } from '../constants/preflight-requirements';
 import type { AgentRoleConfig } from '../types';
-import houstonAvatar from '../assets/houston-avatar.webp';
+import { queueAssistantMessage } from '../utils/assistant-chat-state';
+import mcAvatar from '../assets/mc-avatar.webp';
 
 function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -20,9 +24,11 @@ function formatTokenCount(n: number): string {
 export default function BuildScreen() {
   const currentProject = useProjectStore(s => s.currentProject);
   const tasks = useProjectStore(s => s.tasks);
-  const houstonApproval = useProjectStore(s => s.houstonApproval);
-  const clearHoustonApproval = useProjectStore(s => s.clearHoustonApproval);
-  const notifyHoustonHumanTasks = useProjectStore(s => s.notifyHoustonHumanTasks);
+  const oneOffBacklogItemId = useProjectStore(s => s.oneOffBacklogItemId);
+  const backlog = useProjectStore(s => s.backlog);
+  const assistantApproval = useProjectStore(s => s.assistantApproval);
+  const clearAssistantApproval = useProjectStore(s => s.clearAssistantApproval);
+  const notifyAssistantHumanTasks = useProjectStore(s => s.notifyAssistantHumanTasks);
   const projectStoreApi = useProjectStoreApi();
 
 
@@ -51,6 +57,18 @@ export default function BuildScreen() {
   const humanTasksTriggeredRef = useRef(false);
   const designDuelAutoShownRef = useRef(false);
   const [showDesignDuel, setShowDesignDuel] = useState(false);
+
+  // Elapsed timer for "still working" indicator
+  const [buildElapsedSec, setBuildElapsedSec] = useState(0);
+  useEffect(() => {
+    if (!pipeline.sessionActive) {
+      setBuildElapsedSec(0);
+      return;
+    }
+    const start = Date.now();
+    const interval = setInterval(() => setBuildElapsedSec(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(interval);
+  }, [pipeline.sessionActive]);
 
   const {
     taskPhase,
@@ -83,7 +101,18 @@ export default function BuildScreen() {
     handleNavigateBack,
     setAutoApprove,
     requestStopAfterTier,
+    resolveDecision,
   } = pipeline;
+
+  // ─── Memoized agent-native data ────────────────────────────
+  const taskNodes = useMemo(
+    () => tasksToTaskNodes(tasks, activeTasksMap, currentTaskId, taskPhase),
+    [tasks, activeTasksMap, currentTaskId, taskPhase],
+  );
+  const costEntries = useMemo(
+    () => buildMetrics ? buildMetricsToCostEntries(buildMetrics) : [],
+    [buildMetrics],
+  );
 
   // ─── Smart progress computation ─────────────────────────────
   const allDone = completedTasks === tasks.length && tasks.length > 0;
@@ -102,19 +131,17 @@ export default function BuildScreen() {
     if (requiredServices === null) return; // Wait for config to load
     buildStartedRef.current = true;
     preflight.runGuarded(() => runAllTasks());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentProject, tasks.length, allDone, requiredServices]);
+  }, [currentProject, tasks.length, allDone, requiredServices, preflight, runAllTasks]);
 
-  // Auto-trigger Houston for pending human tasks
+  // Auto-trigger assistant for pending human tasks
   useEffect(() => {
     if (humanTasksTriggeredRef.current) return;
     const pendingHumanTasks = currentProject?.humanTasks?.filter((t) => t.status === 'pending');
     if (pendingHumanTasks && pendingHumanTasks.length > 0) {
       humanTasksTriggeredRef.current = true;
-      notifyHoustonHumanTasks(pendingHumanTasks);
+      notifyAssistantHumanTasks(pendingHumanTasks);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentProject?.humanTasks]);
+  }, [currentProject?.humanTasks, notifyAssistantHumanTasks]);
 
   // Auto-show Design Duel on mount if no preferences exist
   useEffect(() => {
@@ -134,8 +161,7 @@ export default function BuildScreen() {
     if (hasUncompletedDesignTask) {
       handleRetry();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allDone, tasks]);
+  }, [allDone, tasks, projectStoreApi, handleRetry]);
 
   // Compute human task progress for badge
   const humanTasks = currentProject?.humanTasks ?? [];
@@ -152,8 +178,7 @@ export default function BuildScreen() {
     if (preflightNeeded) {
       midOpPreflight.retry();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preflightNeeded]);
+  }, [preflightNeeded, midOpPreflight]);
 
   const handlePreflightRetry = async () => {
     if (preflightNeeded) {
@@ -176,14 +201,20 @@ export default function BuildScreen() {
 
   // ─── Approval gate handlers ─────────────────────────────────
   const handleContinueOne = () => {
-    clearHoustonApproval();
+    clearAssistantApproval();
     togglePause(); // resume pipeline for one task
+    if (currentProject?.slug) {
+      queueAssistantMessage(currentProject.slug, 'Continuing to the next tier (via Build screen).');
+    }
   };
 
   const handleAutoContinueAll = () => {
-    clearHoustonApproval();
+    clearAssistantApproval();
     setAutoApprove(true);
     togglePause(); // resume pipeline — won't pause again
+    if (currentProject?.slug) {
+      queueAssistantMessage(currentProject.slug, 'Auto-continuing all remaining tiers (via Build screen).');
+    }
   };
 
   // ─── Progress bar label ─────────────────────────────────────
@@ -218,7 +249,7 @@ export default function BuildScreen() {
           <div className={`ml-4 flex items-center gap-1.5 px-3 py-1 text-xs font-medium ${
             completedHumanTasks === humanTasks.length
               ? 'bg-success/10 text-success'
-              : 'bg-houston-amber/10 text-houston-amber'
+              : 'bg-mc-amber/10 text-mc-amber'
           }`}>
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -268,18 +299,33 @@ export default function BuildScreen() {
           </div>
         )}
         {/* Real-time token counter */}
-        {(buildTokens.input > 0 || buildTokens.output > 0 || buildCostUsd > 0) && (
-          <div className="ml-auto flex items-center gap-2 px-3 py-1 text-xs font-mono text-ink-muted">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-            </svg>
-            <span>{formatTokenCount(buildTokens.input)} in / {formatTokenCount(buildTokens.output)} out</span>
-            {buildCostUsd > 0 && (
-              <span className="text-ink-muted/60">(${buildCostUsd.toFixed(2)})</span>
-            )}
+        {(buildTokens.input > 0 || buildTokens.output > 0 || sessionActive) && (
+          <div className="ml-auto">
+            <AgentStatusBar
+              status={(sessionActive ? (paused ? 'waiting' : 'acting') : allDone ? 'complete' : 'idle') as AgentStatus}
+              tokenUsage={buildTokens.input > 0 || buildTokens.output > 0 ? { input: buildTokens.input, output: buildTokens.output } : undefined}
+              cost={buildCostUsd > 0 ? buildCostUsd : undefined}
+              classNames={{
+                root: 'flex items-center gap-3 px-3 py-1 text-xs',
+              }}
+            />
           </div>
         )}
       </div>
+
+      {/* One-off mode banner */}
+      {oneOffBacklogItemId && (() => {
+        const item = backlog.find(b => b.id === oneOffBacklogItemId);
+        return (
+          <div className="bg-accent/10 border-b border-accent/20 px-6 py-2 flex items-center gap-2 text-sm">
+            <svg className="w-4 h-4 text-accent flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span className="text-accent font-medium">One-off task</span>
+            <span className="text-ink-muted">{item ? `"${item.title}"` : ''} — will return to planning when done</span>
+          </div>
+        );
+      })()}
 
       {/* Content — both tabs always mounted, visibility toggled via CSS */}
       <main className="flex-1 overflow-hidden flex flex-col relative">
@@ -295,137 +341,172 @@ export default function BuildScreen() {
 
             {/* Post-build summary (shown when all done and metrics available) */}
             {allDone && buildMetrics && buildMetrics.totalTokens.input > 0 && (
-              <div className="mb-4 bg-surface border border-accent/20 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  <span className="text-sm font-medium text-ink">Build Summary</span>
-                  <span className="text-xs text-ink-muted ml-auto">
-                    {Math.round(buildMetrics.wallClockMs / 60000)} min
-                  </span>
+              <div className="bg-surface-light rounded-xl border border-border p-4 mb-4">
+                <h3 className="font-display uppercase text-xs tracking-widest text-ink-muted mb-3">Build Summary</h3>
+                <div className="flex items-center gap-4 text-sm mb-3">
+                  <span className="text-ink-secondary">{Math.round(buildMetrics.wallClockMs / 60000)} min</span>
+                  <span className="text-success">{buildMetrics.tasksCompleted} completed</span>
+                  {buildMetrics.tasksFailed > 0 && <span className="text-error">{buildMetrics.tasksFailed} failed</span>}
                 </div>
-                <div className="grid grid-cols-3 gap-4 text-xs">
-                  <div>
-                    <div className="text-ink-muted mb-1">Token Usage</div>
-                    <div className="font-mono text-ink">
-                      {formatTokenCount(buildMetrics.totalTokens.input)} in / {formatTokenCount(buildMetrics.totalTokens.output)} out
-                    </div>
-                    {buildMetrics.totalCostUsd > 0 && (
-                      <div className="font-mono text-ink-muted mt-0.5">${buildMetrics.totalCostUsd.toFixed(2)} total</div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="text-ink-muted mb-1">Tasks</div>
-                    <div className="text-ink">
-                      {buildMetrics.tasksCompleted} completed
-                      {buildMetrics.tasksFailed > 0 && <span className="text-error ml-1">({buildMetrics.tasksFailed} failed)</span>}
-                    </div>
-                    {buildMetrics.tasksRetried > 0 && (
-                      <div className="text-ink-muted mt-0.5">{buildMetrics.tasksRetried} retries</div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="text-ink-muted mb-1">Avg per Task</div>
-                    <div className="font-mono text-ink">
-                      {buildMetrics.taskMetrics.length > 0
-                        ? `${formatTokenCount(Math.round(buildMetrics.totalTokens.input / buildMetrics.taskMetrics.length))} in`
-                        : '\u2014'}
-                    </div>
-                  </div>
-                </div>
-                {/* Top consumers */}
-                {buildMetrics.taskMetrics.length > 1 && (
-                  <div className="mt-3 pt-3 border-t border-border">
-                    <div className="text-xs text-ink-muted mb-1.5">Largest tasks by tokens</div>
-                    {[...buildMetrics.taskMetrics]
-                      .sort((a, b) => b.tokens.total.input - a.tokens.total.input)
-                      .slice(0, 3)
-                      .map((tm, i) => (
-                        <div key={tm.taskId} className="flex justify-between text-xs py-0.5">
-                          <span className="text-ink truncate mr-2">{i + 1}. {tm.taskTitle}</span>
-                          <span className="font-mono text-ink-muted flex-shrink-0">{formatTokenCount(tm.tokens.total.input)} in</span>
-                        </div>
-                      ))}
-                  </div>
-                )}
+                <CostTracker
+                  entries={costEntries}
+                  showTable
+                  showSummary
+                  groupBy="model"
+                  classNames={{
+                    root: 'bg-transparent',
+                    table: 'text-xs',
+                  }}
+                />
               </div>
             )}
 
-            {/* Current task with status badge */}
+            {/* Current task with live output */}
             {activeTasksMap.size > 1 ? (
-              <div className="mb-4 bg-surface border border-border p-4">
+              <div className="mb-4 space-y-2">
                 <span className="text-sm text-ink-muted">Building {activeTasksMap.size} tasks in parallel:</span>
-                <div className="mt-2 space-y-1">
-                  {Array.from(activeTasksMap.values()).map(status => {
-                    // Extract last non-empty line of output for a compact status preview
-                    const lastLine = status.output
-                      ? status.output.trimEnd().split('\n').filter(Boolean).pop()?.slice(0, 120) || ''
-                      : '';
-                    return (
-                      <div key={status.taskId} className="py-1">
-                        <div className="flex items-center gap-2 text-sm">
-                          <div className="w-3 h-3 border-2 border-spectrum-green border-t-transparent animate-spin flex-shrink-0" />
-                          <span className="text-ink truncate">{tasks.find(t => t.id === status.taskId)?.title}</span>
-                          <span className="text-xs text-ink-muted capitalize flex-shrink-0">{status.phase}...</span>
-                        </div>
-                        {lastLine && (
-                          <div className="ml-5 mt-0.5 text-xs font-mono text-ink-muted/60 truncate">{lastLine}</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                {Array.from(activeTasksMap.values()).map(status => {
+                  const taskTitle = tasks.find(t => t.id === status.taskId)?.title || status.taskId;
+                  const outputLines = status.output
+                    ? status.output.split('\n').filter(Boolean)
+                    : [];
+                  return (
+                    <div key={status.taskId}>
+                      {status.pendingDecision && (
+                        <DecisionPoint
+                          taskId={status.taskId}
+                          taskTitle={taskTitle}
+                          decision={status.pendingDecision}
+                          onResolve={resolveDecision}
+                        />
+                      )}
+                      <TerminalOutput
+                        lines={outputLines}
+                        isStreaming={status.phase !== 'complete' && status.phase !== 'error' && status.phase !== 'awaiting_decision'}
+                        title={`${taskTitle} — ${status.phase === 'awaiting_decision' ? 'Decision needed' : status.phase}`}
+                        maxHeight={200}
+                        collapsible
+                        defaultExpanded={activeTasksMap.size <= 3}
+                        classNames={{
+                          root: 'border border-border rounded overflow-hidden',
+                          header: 'bg-surface-light px-3 py-1.5 text-xs',
+                          body: 'text-xs',
+                        }}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <div className="mb-4 bg-surface border border-border p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-sm text-ink-muted">Current Task:</span>
-                    <h3 className="font-medium text-ink">
-                      {currentTask?.title || 'All tasks complete!'}
-                    </h3>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    {sessionActive && (
-                      <span className="flex items-center text-spectrum-green text-sm">
-                        <span className="relative flex h-2 w-2 mr-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full bg-spectrum-green opacity-75"></span>
-                          <span className="relative inline-flex h-2 w-2 bg-spectrum-green"></span>
+              <div className="mb-4">
+                <div className="bg-surface border border-border p-4 mb-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-ink-muted">Current Task:</span>
+                      <h3 className="font-medium text-ink">
+                        {currentTask?.title || 'All tasks complete!'}
+                      </h3>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      {sessionActive && (
+                        <span className="flex items-center text-spectrum-green text-sm">
+                          <span className="relative flex h-2 w-2 mr-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full bg-spectrum-green opacity-75"></span>
+                            <span className="relative inline-flex h-2 w-2 bg-spectrum-green"></span>
+                          </span>
+                          Active
                         </span>
-                        Active
-                      </span>
-                    )}
-                    {currentTask && (
-                      <span className="px-3 py-1 text-xs font-medium bg-spectrum-green/10 text-spectrum-green">
-                        {paused ? 'Paused'
-                          : taskPhase === 'building' ? 'Building...'
-                          : taskPhase === 'reviewing' ? 'Reviewing...'
-                          : taskPhase === 'fixing' ? 'Fixing...'
-                          : taskPhase === 'merging' ? 'Merging...'
-                          : taskPhase === 'branching' ? 'Branching...'
-                          : taskPhase === 'committing' ? 'Committing...'
-                          : taskPhase === 'pushing' ? 'Pushing...'
-                          : taskPhase === 'error' ? 'Error'
-                          : taskPhase}
-                      </span>
-                    )}
+                      )}
+                      {currentTask && (
+                        <span className={`px-3 py-1 text-xs font-medium ${
+                          taskPhase === 'awaiting_decision'
+                            ? 'bg-amber-500/10 text-amber-400'
+                            : taskPhase === 'error'
+                            ? 'bg-red-500/10 text-red-400'
+                            : 'bg-spectrum-green/10 text-spectrum-green'
+                        }`}>
+                          {paused ? 'Paused'
+                            : taskPhase === 'building' ? 'Building...'
+                            : taskPhase === 'awaiting_decision' ? 'Decision needed'
+                            : taskPhase === 'reviewing' ? 'Reviewing...'
+                            : taskPhase === 'fixing' ? 'Fixing...'
+                            : taskPhase === 'merging' ? 'Merging...'
+                            : taskPhase === 'branching' ? 'Branching...'
+                            : taskPhase === 'committing' ? 'Committing...'
+                            : taskPhase === 'pushing' ? 'Pushing...'
+                            : taskPhase === 'error' ? 'Error'
+                            : taskPhase}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
+                {/* Decision point for single active task */}
+                {currentTask && taskPhase === 'awaiting_decision' && currentTask.pendingDecision && (
+                  <DecisionPoint
+                    taskId={currentTask.id}
+                    taskTitle={currentTask.title}
+                    decision={currentTask.pendingDecision}
+                    onResolve={resolveDecision}
+                  />
+                )}
+                {/* Live output + tool calls for single active task */}
+                {currentTask && sessionActive && (() => {
+                  const activeStatus = activeTasksMap.get(currentTask.id);
+                  const outputLines = activeStatus?.output
+                    ? activeStatus.output.split('\n').filter(Boolean)
+                    : [];
+                  const taskToolCalls: ToolCall[] = (activeStatus?.toolCalls || []).map((tc) => ({
+                    id: tc.id,
+                    name: tc.name,
+                    input: tc.input,
+                    status: tc.status,
+                    startedAt: tc.startedAt,
+                  }));
+                  return (
+                    <>
+                      {taskToolCalls.length > 0 && (
+                        <div className="mb-2">
+                          <TimelineToolCallList
+                            toolCalls={taskToolCalls}
+                            classNames={{
+                              root: 'border border-border rounded overflow-hidden bg-surface-light p-3',
+                            }}
+                          />
+                        </div>
+                      )}
+                      {outputLines.length > 0 && (
+                        <TerminalOutput
+                          lines={outputLines}
+                          isStreaming={taskPhase === 'building' || taskPhase === 'reviewing' || taskPhase === 'fixing'}
+                          title={`${currentTask.title} — ${taskPhase}`}
+                          maxHeight={250}
+                          collapsible
+                          defaultExpanded
+                          classNames={{
+                            root: 'border border-border rounded overflow-hidden',
+                            header: 'bg-surface-light px-3 py-1.5 text-xs',
+                            body: 'text-xs',
+                          }}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
 
-            {/* Houston approval banner — pause between tiers */}
-            {paused && houstonApproval && (
-              <div className="mb-4 bg-spectrum-blue/10 border border-spectrum-blue/30 p-4">
+            {/* Approval banner — pause between tiers */}
+            {paused && assistantApproval && (
+              <div className="mb-4 bg-accent/10 border border-accent/30 p-4">
                 <div className="flex items-start">
-                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-spectrum-blue mr-3 flex-shrink-0">
-                    <img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
+                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-accent mr-3 flex-shrink-0">
+                    <img src={mcAvatar} alt="Assistant" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-ink">
-                      <span className="font-medium">"{houstonApproval.taskTitle}"</span> completed.{' '}
-                      {houstonApproval.remaining} {houstonApproval.remaining === 1 ? 'task' : 'tasks'} remaining.
+                      <span className="font-medium">"{assistantApproval.taskTitle}"</span> completed.{' '}
+                      {assistantApproval.remaining} {assistantApproval.remaining === 1 ? 'task' : 'tasks'} remaining.
                     </p>
                     <p className="text-xs text-ink-muted mt-1">
                       Review the changes, then continue to the next tier.
@@ -557,32 +638,43 @@ export default function BuildScreen() {
               </div>
             )}
 
-            {/* Full-width Kanban Board */}
-            <div className="flex-1 min-h-0">
-              <KanbanBoard
-                tasks={tasks}
-                activeTasksMap={activeTasksMap}
-                currentTaskId={currentTaskId}
-                taskPhase={taskPhase}
+            {/* Task Tree */}
+            <div className="flex-1 min-h-0 overflow-auto">
+              <TaskTree
+                tasks={taskNodes}
+                defaultExpandAll
+                showElapsedTime
+                classNames={{
+                  root: 'px-2',
+                  label: 'text-sm font-medium',
+                  description: 'text-xs text-ink-muted',
+                }}
               />
             </div>
 
             {/* Footer status */}
             <div className="mt-4 flex justify-between items-center">
-              <div className="text-sm text-ink-muted">
-                {stopRequested
-                  ? `Finishing tier ${currentTier + 1}, then stopping...`
-                  : paused
-                  ? 'Build paused'
-                  : taskPhase === 'building'
-                  ? 'Claude is working on this task...'
-                  : taskPhase === 'reviewing'
-                  ? 'Reviewing code changes...'
-                  : taskPhase === 'fixing'
-                  ? 'Auto-fixing review findings...'
-                  : taskPhase === 'error'
-                  ? 'Pipeline encountered an error.'
-                  : `${taskPhase}...`}
+              <div className="text-sm text-ink-muted flex items-center gap-3">
+                <span>
+                  {stopRequested
+                    ? `Finishing tier ${currentTier + 1}, then stopping...`
+                    : paused
+                    ? 'Build paused'
+                    : taskPhase === 'building'
+                    ? 'Claude is working on this task...'
+                    : taskPhase === 'reviewing'
+                    ? 'Reviewing code changes...'
+                    : taskPhase === 'fixing'
+                    ? 'Auto-fixing review findings...'
+                    : taskPhase === 'error'
+                    ? 'Pipeline encountered an error.'
+                    : `${taskPhase}...`}
+                </span>
+                {sessionActive && buildElapsedSec >= 10 && (
+                  <span className="font-mono text-xs text-ink-muted/60">
+                    {Math.floor(buildElapsedSec / 60)}:{(buildElapsedSec % 60).toString().padStart(2, '0')}
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-3">

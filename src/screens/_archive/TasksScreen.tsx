@@ -523,7 +523,7 @@ Do not include any other text, just the JSON object.`;
                                             </span>
                                           ))}
                                           {task.modifies?.map(f => (
-                                            <span key={f} className="text-[10px] font-mono px-1.5 py-0.5 bg-spectrum-blue/10 text-spectrum-blue">
+                                            <span key={f} className="text-[10px] font-mono px-1.5 py-0.5 bg-accent/10 text-accent">
                                               ~{f.split('/').pop()}
                                             </span>
                                           ))}
@@ -569,7 +569,7 @@ Do not include any other text, just the JSON object.`;
               {humanTasks.length > 0 && (
                 <div className="mt-8">
                   <h3 className="text-sm font-sans font-semibold text-ink-muted uppercase tracking-wider mb-3">
-                    Setup Tasks — things you'll do while Houston builds
+                    Setup Tasks — things you'll do during the build
                   </h3>
                   <div className="space-y-2">
                     {humanTasks.map((ht) => (
@@ -584,7 +584,7 @@ Do not include any other text, just the JSON object.`;
                           <p className="text-xs text-ink-muted mt-0.5">{ht.description}</p>
                         </div>
                         {ht.blocksPreview && (
-                          <span className="px-2 py-0.5 text-xs font-medium bg-houston-amber/10 text-houston-amber flex-shrink-0 mt-0.5">
+                          <span className="px-2 py-0.5 text-xs font-medium bg-mc-amber/10 text-mc-amber flex-shrink-0 mt-0.5">
                             Required for preview
                           </span>
                         )}

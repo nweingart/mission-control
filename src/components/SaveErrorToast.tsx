@@ -12,10 +12,10 @@ export default function SaveErrorToast() {
     // Clear any existing timer
     if (timerRef.current) clearTimeout(timerRef.current);
 
-    // Auto-dismiss after 4 seconds
+    // Auto-dismiss after 8 seconds (save errors now only appear after retry exhaustion)
     timerRef.current = setTimeout(() => {
       setSaveError(null);
-    }, 4000);
+    }, 8000);
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -25,7 +25,7 @@ export default function SaveErrorToast() {
   if (!saveError) return null;
 
   return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 max-w-md card-panel border-l-4 border-l-error p-4 z-50 animate-slide-down">
+    <div role="alert" className="fixed top-4 left-1/2 -translate-x-1/2 max-w-md card-panel border-l-4 border-l-error p-4 z-50 animate-slide-down">
       <div className="flex items-start gap-3">
         <svg className="w-5 h-5 text-error flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />

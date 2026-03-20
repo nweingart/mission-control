@@ -58,7 +58,7 @@ export interface ScanDiff {
   summary: string;
 }
 
-export type ScanStatus = 'pending' | 'scanning' | 'complete' | 'failed';
+export type ScanStatus = 'pending' | 'scanning' | 'issues_ready' | 'complete' | 'failed';
 
 // ── Project ────────────────────────────────────────────────
 
@@ -133,6 +133,22 @@ export interface HumanTask {
   };
 }
 
+export type InteractionDepth = 'small' | 'medium' | 'large';
+
+export interface DecisionRequest {
+  id: string;
+  question: string;
+  context: string;
+  options?: string[];
+  timestamp: number;
+}
+
+export interface ResolvedDecision extends DecisionRequest {
+  response: string;
+  resolvedBy: 'user' | 'auto';
+  resolvedAt: number;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -153,6 +169,11 @@ export interface Task {
 
   // Token tracking (Phase 4)
   tokenUsage?: TaskTokenUsage;
+
+  // Interaction depth (controls human-in-the-loop behavior)
+  interactionDepth?: InteractionDepth;
+  pendingDecision?: DecisionRequest | null;
+  decisionHistory?: ResolvedDecision[];
 }
 
 export interface TokenCount {
@@ -266,6 +287,7 @@ export interface Config {
   devMode?: boolean;
   multiAgentEnabled?: boolean;
   agentRoles?: AgentRoleConfig;
+  pauseBetweenTiers?: boolean;
 }
 
 export interface ReviewFinding {
@@ -292,6 +314,7 @@ export type TaskPhase =
   | 'idle'
   | 'branching'
   | 'building'
+  | 'awaiting_decision'
   | 'committing'
   | 'reviewing'
   | 'fixing'
@@ -300,6 +323,14 @@ export type TaskPhase =
   | 'complete'
   | 'error';
 
+export interface BuildToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  status: 'pending' | 'running' | 'complete' | 'error';
+  startedAt?: number;
+}
+
 export interface TaskPipelineStatus {
   taskId: string;
   phase: TaskPhase;
@@ -307,6 +338,9 @@ export interface TaskPipelineStatus {
   worktreePath: string;
   chatId: string;
   output: string;
+  toolCalls?: BuildToolCall[];
+  pendingDecision?: DecisionRequest | null;
+  decisionHistory?: ResolvedDecision[];
 }
 
 export type PlanningType = 'bug_fix' | 'feature_refactor' | 'new_feature';
@@ -325,8 +359,10 @@ export interface BacklogItem {
   prdStatus?: 'pending' | 'generating' | 'complete' | 'failed';
   estimatedTasks?: number;
   storyPoints?: number;
+  estimatedEffort?: 'quick_fix' | 'moderate' | 'significant';
   sprintId?: string;
   notes?: string;
+  interactionDepth?: InteractionDepth;
 }
 
 export interface Sprint {
@@ -383,15 +419,18 @@ export interface GapAnalysis {
   timestamp: string;
 }
 
-export type MissionRank = 'Cadet' | 'Flight Controller' | 'Mission Specialist' | 'Mission Commander' | 'Houston Actual';
+export type UserRank = 'Beginner' | 'Contributor' | 'Builder' | 'Lead' | 'Expert';
+
+/** @deprecated Use UserRank instead */
+export type MissionRank = UserRank;
 
 export interface GamificationStats {
   streakCount: number;
   lastActivityDate: string | null;
   streakFreezeUsedThisWeek: boolean;
   lastFreezeWeek: string | null;
-  totalTasksLanded: number;
-  totalLaunches: number;
+  totalTasksCompleted: number;
+  totalBuilds: number;
   milestones: string[];
 }
 

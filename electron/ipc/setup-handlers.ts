@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import * as pty from 'node-pty';
 import { homedir } from 'os';
 import { buildEnhancedPath } from './env';
+import { escapeForAppleScript } from './escape-utils';
 
 interface SetupHandlersDeps {
   setupSessions: Map<string, pty.IPty>;
@@ -97,7 +98,7 @@ export function registerSetupHandlers({ setupSessions, safeSend }: SetupHandlers
     }
 
     if (process.platform === 'darwin') {
-      const escapedCommand = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const escapedCommand = escapeForAppleScript(command);
       const script = `tell application "Terminal"
       activate
       do script "${escapedCommand}"

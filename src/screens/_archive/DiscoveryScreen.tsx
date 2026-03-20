@@ -185,7 +185,7 @@ export default function DiscoveryScreen() {
         // Show connection error — no offline fallback
         addChatMessage({
           role: 'assistant',
-          content: `Unable to connect to Claude. Houston requires an internet connection to work.\n\nPlease check your connection and try again.`,
+          content: `Unable to connect to Claude. Mission Control requires an internet connection to work.\n\nPlease check your connection and try again.`,
         });
         setError('Claude connection unavailable. Please check your internet connection.');
       } finally {

@@ -14,9 +14,9 @@ interface DevServerHandlersDeps {
 
 export function registerDevServerHandlers({ state, safeSend }: DevServerHandlersDeps) {
   ipcMain.handle('devServer:start', async (event, projectPath: string) => {
-    const { exec } = await import('child_process');
+    const { execFile } = await import('child_process');
     const { promisify } = await import('util');
-    const execAsync = promisify(exec);
+    const execFileAsync = promisify(execFile);
 
     // Kill existing dev server session if running
     if (state.session) {
@@ -29,16 +29,21 @@ export function registerDevServerHandlers({ state, safeSend }: DevServerHandlers
 
     const killPort = async (port: number) => {
       try {
-        const { stdout } = await execAsync(`/usr/sbin/lsof -ti:${port}`);
+        const { stdout } = await execFileAsync('/usr/sbin/lsof', ['-ti:' + port]);
         const pids = stdout.trim().split('\n').filter(p => p);
         if (pids.length > 0) {
           console.log(`[devServer:start] Found PIDs on port ${port}:`, pids);
           for (const pid of pids) {
+            const numPid = Number(pid);
+            if (!Number.isInteger(numPid) || numPid <= 0) {
+              console.log(`[devServer:start] Skipping invalid PID: ${pid}`);
+              continue;
+            }
             try {
-              await execAsync(`kill -9 ${pid}`);
-              console.log(`[devServer:start] Killed PID ${pid}`);
+              process.kill(numPid, 'SIGKILL');
+              console.log(`[devServer:start] Killed PID ${numPid}`);
             } catch (killErr) {
-              console.log(`[devServer:start] Could not kill PID ${pid}:`, killErr);
+              console.log(`[devServer:start] Could not kill PID ${numPid}:`, killErr);
             }
           }
         } else {

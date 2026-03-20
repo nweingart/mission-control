@@ -23,14 +23,14 @@ export default function GamificationToast() {
 
   if (!gamificationEvent) return null;
 
-  const borderColor = gamificationEvent.type === 'rank_up' ? 'border-l-houston-blue' : 'border-l-houston-amber';
+  const borderColor = gamificationEvent.type === 'rank_up' ? 'border-l-mc-green' : 'border-l-mc-amber';
 
   return (
     <div className={`fixed top-4 left-1/2 -translate-x-1/2 max-w-md card-panel border-l-4 ${borderColor} p-4 z-50 animate-slide-down`}>
       <div className="flex items-center gap-3">
-        {/* Houston avatar */}
+        {/* Assistant avatar */}
         <div className="w-8 h-8 rounded-full bg-surface-hover flex items-center justify-center flex-shrink-0">
-          <svg className="w-5 h-5 text-houston-blue" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <svg className="w-5 h-5 text-mc-green" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10" />
             <path d="M8 14s1.5 2 4 2 4-2 4-2" />
             <line x1="9" y1="9" x2="9.01" y2="9" />
