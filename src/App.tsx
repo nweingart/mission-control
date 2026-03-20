@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { useCLIMonitor } from './hooks/useCLIMonitor';
 import ErrorBoundary from './components/ErrorBoundary';
 import ToolDisconnectedOverlay from './components/ToolDisconnectedOverlay';
 import SaveErrorToast from './components/SaveErrorToast';
+import E2ETestRunner from './components/E2ETestRunner';
 import HomeScreen from './screens/HomeScreen';
 import ImportScreen from './screens/ImportScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
@@ -22,10 +23,23 @@ function App() {
   const openProjectSlugs = useAppStore(s => s.openProjectSlugs);
   const activeProjectSlug = useAppStore(s => s.activeProjectSlug);
   const { shouldBlock } = useCLIMonitor();
+  const [showE2ETest, setShowE2ETest] = useState(false);
 
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // Cmd+Shift+E to toggle E2E test runner
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey && e.shiftKey && e.key === 'E') {
+        e.preventDefault();
+        setShowE2ETest(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   if (isLoading) {
     return (
@@ -87,6 +101,7 @@ function App() {
         {/* Global overlays */}
         {shouldBlock && <ToolDisconnectedOverlay />}
         <SaveErrorToast />
+        {showE2ETest && <E2ETestRunner onClose={() => setShowE2ETest(false)} />}
         <Assistant />
       </div>
     </ErrorBoundary>
