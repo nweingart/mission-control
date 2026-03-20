@@ -179,9 +179,6 @@ declare global {
   interface Window {
     api: ElectronAPI;
     openAssistant?: () => void;
-    openFlowTest?: () => void;
-    openE2ETest?: () => void;
-    openCICDTest?: () => void;
   }
 }
 

@@ -1,12 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { useCLIMonitor } from './hooks/useCLIMonitor';
 import ErrorBoundary from './components/ErrorBoundary';
 import ToolDisconnectedOverlay from './components/ToolDisconnectedOverlay';
 import SaveErrorToast from './components/SaveErrorToast';
-import FlowTestRunner from './components/FlowTestRunner';
-import E2ETestRunner from './components/E2ETestRunner';
-import CICDTestRunner from './components/CICDTestRunner';
 import HomeScreen from './screens/HomeScreen';
 import ImportScreen from './screens/ImportScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
@@ -25,51 +22,10 @@ function App() {
   const openProjectSlugs = useAppStore(s => s.openProjectSlugs);
   const activeProjectSlug = useAppStore(s => s.activeProjectSlug);
   const { shouldBlock } = useCLIMonitor();
-  const [showFlowTest, setShowFlowTest] = useState(false);
-  const [showE2ETest, setShowE2ETest] = useState(false);
-  const [showCICDTest, setShowCICDTest] = useState(false);
 
   useEffect(() => {
     initialize();
   }, [initialize]);
-
-  // Cmd+Shift+T to toggle flow test, Cmd+Shift+E for E2E test
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey && e.shiftKey && e.key === 'T') {
-        e.preventDefault();
-        setShowFlowTest(prev => !prev);
-      }
-      if (e.metaKey && e.shiftKey && e.key === 'E') {
-        e.preventDefault();
-        setShowE2ETest(prev => !prev);
-      }
-      if (e.metaKey && e.shiftKey && e.key === 'D') {
-        e.preventDefault();
-        setShowCICDTest(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  // Expose test triggers for settings screen
-  useEffect(() => {
-    window.openFlowTest = () => setShowFlowTest(true);
-    window.openE2ETest = () => setShowE2ETest(true);
-    return () => {
-      delete window.openFlowTest;
-      delete window.openE2ETest;
-    };
-  }, []);
-
-  // Expose CI/CD test trigger for HomeScreen settings menu
-  useEffect(() => {
-    window.openCICDTest = () => setShowCICDTest(true);
-    return () => {
-      delete window.openCICDTest;
-    };
-  }, []);
 
   if (isLoading) {
     return (
@@ -131,9 +87,6 @@ function App() {
         {/* Global overlays */}
         {shouldBlock && <ToolDisconnectedOverlay />}
         <SaveErrorToast />
-        {showFlowTest && <FlowTestRunner onClose={() => setShowFlowTest(false)} />}
-        {showE2ETest && <E2ETestRunner onClose={() => setShowE2ETest(false)} />}
-        {showCICDTest && <CICDTestRunner onClose={() => setShowCICDTest(false)} />}
         <Assistant />
       </div>
     </ErrorBoundary>

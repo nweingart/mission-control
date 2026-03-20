@@ -272,28 +272,6 @@ export default function SettingsScreen() {
             )}
           </section>
 
-          {/* Debug / Test */}
-          <section className="card-panel p-5 space-y-1">
-            <h2 className="text-sm font-semibold text-ink mb-3">Debug</h2>
-            <button
-              onClick={() => window.openFlowTest?.()}
-              className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink hover:bg-surface-hover transition-colors"
-            >
-              Run Flow Test
-            </button>
-            <button
-              onClick={() => window.openE2ETest?.()}
-              className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink hover:bg-surface-hover transition-colors"
-            >
-              Run E2E Test
-            </button>
-            <button
-              onClick={() => window.openCICDTest?.()}
-              className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink hover:bg-surface-hover transition-colors"
-            >
-              Run CI/CD Test
-            </button>
-          </section>
         </div>
       </main>
     </div>
