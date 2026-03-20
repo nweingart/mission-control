@@ -249,17 +249,64 @@
 
 ---
 
-## Fix Priority
+## Remaining Low-Severity Items
 
-| Priority | Items | Rationale |
-|----------|-------|-----------|
-| **P0** | 1a, 1b, 1c, 1d | Security — command injection and path traversal |
-| **P1** | 2a, 2b, 3a, 3b | Performance + data integrity — re-renders and race conditions |
-| **P2** | 1e, 1g, 2c, 3c, 3d, 4a, 4b | Reliability — error handling and cleanup |
-| **P3** | 5a, 5b, 6a, 6b, 6c, 7a | Code quality and maintainability |
-| **P4** | 8a-8e, 6d, 6e | Polish — accessibility and organization |
+These were identified in re-audit but are low-priority:
+- `safeSend()` swallows IPC send errors (returns boolean, no re-throw)
+- `shell.trashItem()` failure in `deleteProject` doesn't prevent metadata deletion
+- Dev server `killPort()` doesn't fallback to `netstat`/`ss` on Linux
+- Editor allowlist is macOS-specific (falls back to Finder on other platforms)
+- `gh auth` status detection is string-based (may not work with localized CLI output)
+- PowerShell execution policy not handled on Windows
+- Linux terminal detection is brittle (doesn't check DISPLAY/WAYLAND_DISPLAY)
+- Git timeout is uniform 2 minutes (large clones may need more)
+- `activeChatChildren` Map has no bounds (unlikely to grow large in practice)
+- Preload API is a single large object (organizational, no functional impact)
+- Types file is monolithic (organizational, no functional impact)
 
-## Previously Fixed (from prior audit 2026-02-16)
+---
+
+## Fixed in This Audit (2026-03-20)
+
+### P0 — Security (`754805b`)
+- 1a: Shell injection — temp file path validated, args arrays for spawn
+- 1b: Symlink traversal — `realpathSync` before `startsWith` check
+- 1c: Editor injection — allowlist of trusted directories for `which` output
+- 1d: Command splitting — `runShellCommand` accepts pre-split args, all 5 callers migrated
+
+### P1 — Performance + Data Integrity (`e5be8d9`)
+- 2a: Zustand selectors — 18 components converted from destructuring to individual selectors
+- 2b: Persistence races — 7 slices migrated from `persistFireAndForget` to debounced `persistQueued`
+
+### P2 — Reliability (`716bcbd`)
+- 1e: Deep link URL validation — validates `missioncontrol://` protocol
+- 2c: Cross-slice `setScreen` — `appSlice` now uses `get().setScreen()`
+- 3d: Worktree cleanup on SIGINT/SIGTERM — signal handlers registered in main
+- 4a: Load failure toasts — surfaces per-resource failures as warnings
+- 4b: Structured error codes — `ErrorCode` type, `CLAUDE_RATE_LIMIT` and `DISK_FULL` categories
+
+### P3 — Code Quality (`40e08d6`)
+- 5a: `useMemo` on DeploymentsScreen sort, GitHistoryScreen groupByTask
+- 5b: Markdown components extracted to module-level constant in Chat.tsx
+- 6a: PATH logic centralized — 7 duplications replaced with `buildEnhancedPath()`
+- 6b: Dead `handleDeepLink` placeholder removed from App.tsx
+- 6c: Duplicate `.dark` CSS block removed (saved ~1.4 kB)
+
+### P4 — Accessibility (`f4f5df4`)
+- 8a: ARIA roles/labels on StatusLight, BuildProgressBadge, ProgressRing, CompletionToast, ErrorBoundary, App loading/error, ToolDisconnectedOverlay
+- 8b: Color-only indicators now have `role="status"` with text labels
+- 8c: PaywallModal focus trap with Tab cycling and Escape dismiss
+- Toast container has `aria-live="polite"` for screen reader announcements
+
+### Re-audit Hardening (`4b3f3aa`)
+- Orphaned temp file cleanup on PTY spawn failure
+- PTY resize dimensions clamped to safe bounds (1-1000 cols, 1-500 rows)
+- `deleteRepo` URL parsed with `new URL()` instead of string replacement
+- 10MB diff size limit to prevent memory exhaustion
+- 50MB JSON file size guard in storage reads
+- `buildPrompt()` stale closure fixed — slug captured at call time
+
+## Previously Fixed (prior audit 2026-02-16)
 
 - Type duplication between `src/types/` and `electron/services/storage.ts` — replaced with `import type`
 - Silent catch blocks in deploy flow — catch blocks now surface errors to UI
