@@ -2,6 +2,7 @@ import { StateCreator } from 'zustand';
 import type { AppState } from '../useAppStore';
 import type { ChatMessage } from '../../types';
 import { MAX_CHAT_MESSAGES } from '../storeTypes';
+import { persistQueued } from '../../utils/persist';
 
 export interface ChatSlice {
   chatMessages: ChatMessage[];
@@ -31,10 +32,7 @@ export const createChatSlice: StateCreator<AppState, [], [], ChatSlice> = (set, 
       return { chatMessages: updated.length > MAX_CHAT_MESSAGES ? updated.slice(-MAX_CHAT_MESSAGES) : updated };
     });
     if (currentProject) {
-      window.api.storage.saveChatHistory(currentProject.slug, get().chatMessages).catch((err) => {
-        console.error('Failed to save chat history:', err);
-        set({ saveError: 'Failed to save chat history. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'chatMessages', get().chatMessages, window.api.storage.saveChatHistory);
     }
   },
 

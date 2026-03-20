@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 
 export default function ImportScreen() {
-  const { importProject, openProject, goToHome } = useAppStore();
+  const importProject = useAppStore(s => s.importProject);
+  const openProject = useAppStore(s => s.openProject);
+  const goToHome = useAppStore(s => s.goToHome);
   const [repoUrl, setRepoUrl] = useState('');
   const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);

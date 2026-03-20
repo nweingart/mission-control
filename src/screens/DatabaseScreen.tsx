@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useProjectStore } from '../store/ProjectStoreContext';
-import HoustonCallout from '../components/HoustonCallout';
+import AssistantCallout from '../components/AssistantCallout';
 
 interface DataField {
   name: string;
@@ -150,13 +150,13 @@ const SOURCE_LABELS: Record<SourceFilter, string> = {
 };
 
 const SOURCE_COLORS: Record<DataModel['source'], string> = {
-  prd: 'bg-houston-amber/15 text-houston-amber',
-  prisma: 'bg-houston-blue/15 text-houston-blue',
-  typescript: 'bg-houston-green/15 text-houston-green',
+  prd: 'bg-mc-amber/15 text-mc-amber',
+  prisma: 'bg-accent/15 text-accent',
+  typescript: 'bg-mc-green/15 text-mc-green',
 };
 
 export default function DatabaseScreen() {
-  const { currentProject } = useProjectStore();
+  const currentProject = useProjectStore(s => s.currentProject);
   const [models, setModels] = useState<DataModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
@@ -238,7 +238,7 @@ export default function DatabaseScreen() {
   if (models.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center">
-        <HoustonCallout message="No data models found. Add a Prisma schema, TypeScript interfaces, or describe your data model in the PRD to see them here." />
+        <AssistantCallout message="No data models found. Add a Prisma schema, TypeScript interfaces, or describe your data model in the PRD to see them here." />
       </div>
     );
   }

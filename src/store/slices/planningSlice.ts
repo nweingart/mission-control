@@ -1,13 +1,19 @@
 import { StateCreator } from 'zustand';
 import type { AppState } from '../useAppStore';
-import type { BacklogItem, Sprint, SprintStatus } from '../../types';
+import type { BacklogItem, Sprint, SprintStatus, CodeIssue } from '../../types';
 import { resilientChat } from '../../utils/resilient-chat';
+import { persistQueued } from '../../utils/persist';
+import { getSprintReadiness } from '../../utils/missionReadiness';
+import { queueAssistantMessage } from '../../utils/assistant-chat-state';
+import { classifyInteractionDepth } from '../../utils/interaction-depth';
 
 export interface PlanningSlice {
   backlog: BacklogItem[];
   sprints: Sprint[];
+  /** Streaming PRD content per backlog item ID (while generating) */
+  prdStreaming: Record<string, string>;
 
-  addBacklogItem: (item: Omit<BacklogItem, 'id' | 'createdAt'>) => void;
+  addBacklogItem: (item: Omit<BacklogItem, 'id' | 'createdAt'>) => string;
   updateBacklogItem: (id: string, updates: Partial<BacklogItem>) => void;
   removeBacklogItem: (id: string) => void;
   reorderBacklog: (items: BacklogItem[]) => void;
@@ -24,11 +30,19 @@ export interface PlanningSlice {
   initializeSprintsIfNeeded: () => void;
 
   generateBacklogPRD: (itemId: string) => Promise<void>;
+  retryFailedPRDs: (sprintId: string) => void;
+  ensureAllPRDsGenerating: (sprintId: string) => void;
+  planAndSprint: (itemId: string) => Promise<void>;
+  planAndSprintIssue: (issue: CodeIssue) => Promise<string>;
+  checkAutoActivateSprints: () => void;
+  startBuild: (sprintId: string) => void;
+  checkSprintOverflow: (sprintId: string) => void;
 }
 
 export const PLANNING_INITIAL_STATE = {
   backlog: [] as BacklogItem[],
   sprints: [] as Sprint[],
+  prdStreaming: {} as Record<string, string>,
 };
 
 export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> = (set, get) => ({
@@ -45,26 +59,32 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
     };
     set((state) => ({ backlog: [...state.backlog, newItem] }));
     if (currentProject) {
-      window.api.storage.saveBacklog(currentProject.slug, get().backlog).catch((err) => {
-        console.error('Failed to save backlog:', err);
-        set({ saveError: 'Failed to save backlog. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'backlog', get().backlog, window.api.storage.saveBacklog);
       get().generateBacklogPRD(newItem.id);
     }
+    return newItem.id;
   },
 
   updateBacklogItem: (id, updates) => {
-    const { currentProject } = get();
+    const { currentProject, backlog } = get();
     set((state) => ({
       backlog: state.backlog.map((item) =>
         item.id === id ? { ...item, ...updates } : item
       ),
     }));
     if (currentProject) {
-      window.api.storage.saveBacklog(currentProject.slug, get().backlog).catch((err) => {
-        console.error('Failed to save backlog:', err);
-        set({ saveError: 'Failed to save backlog. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'backlog', get().backlog, window.api.storage.saveBacklog);
+    }
+    // When prdStatus changes to complete, check if sprint can auto-activate
+    if (updates.prdStatus === 'complete') {
+      get().checkAutoActivateSprints();
+    }
+    // When storyPoints change, check for sprint overflow
+    if (updates.storyPoints !== undefined) {
+      const item = get().backlog.find((b) => b.id === id);
+      if (item?.sprintId) {
+        get().checkSprintOverflow(item.sprintId);
+      }
     }
   },
 
@@ -74,10 +94,7 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
       backlog: state.backlog.filter((item) => item.id !== id),
     }));
     if (currentProject) {
-      window.api.storage.saveBacklog(currentProject.slug, get().backlog).catch((err) => {
-        console.error('Failed to save backlog:', err);
-        set({ saveError: 'Failed to save backlog. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'backlog', get().backlog, window.api.storage.saveBacklog);
     }
   },
 
@@ -85,10 +102,7 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
     const { currentProject } = get();
     set({ backlog: items });
     if (currentProject) {
-      window.api.storage.saveBacklog(currentProject.slug, items).catch((err) => {
-        console.error('Failed to save backlog:', err);
-        set({ saveError: 'Failed to save backlog. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'backlog', items, window.api.storage.saveBacklog);
     }
   },
 
@@ -129,10 +143,7 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
     };
     set((state) => ({ sprints: [...state.sprints, newSprint] }));
     if (currentProject) {
-      window.api.storage.saveSprints(currentProject.slug, get().sprints).catch((err) => {
-        console.error('Failed to save sprints:', err);
-        set({ saveError: 'Failed to save sprints. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'sprints', get().sprints, window.api.storage.saveSprints);
     }
   },
 
@@ -142,10 +153,7 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
       sprints: state.sprints.map((s) => s.id === id ? { ...s, ...updates } : s),
     }));
     if (currentProject) {
-      window.api.storage.saveSprints(currentProject.slug, get().sprints).catch((err) => {
-        console.error('Failed to save sprints:', err);
-        set({ saveError: 'Failed to save sprints. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'sprints', get().sprints, window.api.storage.saveSprints);
     }
   },
 
@@ -155,10 +163,7 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
       sprints: state.sprints.map((s) => s.id === id ? { ...s, name } : s),
     }));
     if (currentProject) {
-      window.api.storage.saveSprints(currentProject.slug, get().sprints).catch((err) => {
-        console.error('Failed to save sprints:', err);
-        set({ saveError: 'Failed to save sprints. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'sprints', get().sprints, window.api.storage.saveSprints);
     }
   },
 
@@ -176,29 +181,50 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
       backlog: updatedBacklog,
     }));
     if (currentProject) {
-      window.api.storage.saveSprints(currentProject.slug, get().sprints).catch((err) => {
-        console.error('Failed to save sprints:', err);
-      });
-      window.api.storage.saveBacklog(currentProject.slug, get().backlog).catch((err) => {
-        console.error('Failed to save backlog:', err);
-      });
+      persistQueued(currentProject.slug, 'sprints', get().sprints, window.api.storage.saveSprints);
+      persistQueued(currentProject.slug, 'backlog', get().backlog, window.api.storage.saveBacklog);
     }
   },
 
   setSprintStatus: (id, status) => {
     const { currentProject, backlog } = get();
+
+    // Gate: block transition to 'active' if not ready
+    if (status === 'active') {
+      const sprintItems = backlog.filter((b) => b.sprintId === id);
+      const readiness = getSprintReadiness(sprintItems);
+      if (!readiness.isReady) {
+        if (readiness.isBlocked) {
+          get().addToast({
+            type: 'warning',
+            message: readiness.blockReason || 'Sprint not ready',
+            ctaLabel: 'Retry Failed',
+            ctaAction: () => get().retryFailedPRDs(id),
+          });
+        } else {
+          get().addToast({
+            type: 'warning',
+            message: readiness.blockReason || 'Sprint not ready',
+          });
+        }
+        return;
+      }
+    }
+
     set((state) => ({
       sprints: state.sprints.map((s) => s.id === id ? { ...s, status } : s),
     }));
     if (currentProject) {
-      window.api.storage.saveSprints(currentProject.slug, get().sprints).catch((err) => {
-        console.error('Failed to save sprints:', err);
-      });
+      persistQueued(currentProject.slug, 'sprints', get().sprints, window.api.storage.saveSprints);
     }
     if (status === 'completed') {
       const sprintItems = backlog.filter((b) => b.sprintId === id);
       for (const _item of sprintItems) {
-        get().recordActivity('task_landed');
+        get().recordActivity('task_completed');
+      }
+      const completedSprint = get().sprints.find((s) => s.id === id);
+      if (currentProject && completedSprint) {
+        queueAssistantMessage(currentProject.slug, `${completedSprint.name} complete! Ready to deploy or start the next sprint?`);
       }
     }
   },
@@ -230,9 +256,7 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
         });
         set({ sprints: migratedSprints });
         if (migrated) {
-          window.api.storage.saveSprints(currentProject.slug, migratedSprints).catch((err) => {
-            console.error('Failed to save migrated sprints:', err);
-          });
+          persistQueued(currentProject.slug, 'sprints', migratedSprints, window.api.storage.saveSprints);
         }
       } catch (err) {
         console.error('Failed to load sprints:', err);
@@ -248,14 +272,14 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
     const now = new Date().toISOString();
     const sprint1: Sprint = {
       id: `sprint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      name: 'Mission 1',
+      name: 'Sprint 1',
       order: 1,
       createdAt: now,
       status: 'planning',
     };
     const sprint2: Sprint = {
       id: `sprint-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`,
-      name: 'Mission 2',
+      name: 'Sprint 2',
       order: 2,
       createdAt: now,
       status: 'planning',
@@ -266,13 +290,9 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
     );
 
     set({ sprints: [sprint1, sprint2], backlog: updatedBacklog });
-    window.api.storage.saveSprints(currentProject.slug, [sprint1, sprint2]).catch((err) => {
-      console.error('Failed to save initial sprints:', err);
-    });
+    persistQueued(currentProject.slug, 'sprints', [sprint1, sprint2], window.api.storage.saveSprints);
     if (updatedBacklog.some((item, i) => item !== backlog[i])) {
-      window.api.storage.saveBacklog(currentProject.slug, updatedBacklog).catch((err) => {
-        console.error('Failed to save backlog with sprint assignments:', err);
-      });
+      persistQueued(currentProject.slug, 'backlog', updatedBacklog, window.api.storage.saveBacklog);
     }
   },
 
@@ -286,7 +306,17 @@ export const createPlanningSlice: StateCreator<AppState, [], [], PlanningSlice> 
 
     try {
       const mainPrd = await window.api.storage.getPRD(currentProject.slug);
-      const prompt = `Write a focused mini-PRD for the following feature. Keep it concise (300-500 words). Include: Overview, User Stories (3-5), Technical Considerations, and Acceptance Criteria.
+
+      let depthInstruction: string;
+      if (item.estimatedEffort === 'quick_fix') {
+        depthInstruction = `Write a brief implementation note (100-200 words). Just describe what needs to change and where. No user stories needed.`;
+      } else if (item.estimatedEffort === 'significant') {
+        depthInstruction = `Write a detailed implementation plan (500-800 words). Include architecture considerations, potential risks, and a breakdown of sub-tasks.`;
+      } else {
+        depthInstruction = `Write a focused mini-PRD (300-500 words). Include: Overview, User Stories (3-5), Technical Considerations, and Acceptance Criteria.`;
+      }
+
+      const prompt = `${depthInstruction}
 
 Project: ${currentProject.name}
 ${mainPrd ? `\nExisting PRD context:\n${mainPrd.substring(0, 2000)}\n` : ''}
@@ -300,8 +330,30 @@ STORY_POINTS: <fibonacci story points 1-21 estimating total Claude Code effort>
 
 Output markdown only (plus the two estimate lines at the end).`;
 
-      const { promise } = resilientChat.standard(currentProject.projectPath, prompt);
-      const prdContent = await promise;
+      const { promise, chatId } = resilientChat.standard(currentProject.projectPath, prompt, { streaming: true });
+
+      // Subscribe to streaming chunks for live preview
+      window.api.claude.onChatOutputForTask(chatId, (chunk: string) => {
+        set((state) => ({
+          prdStreaming: { ...state.prdStreaming, [itemId]: (state.prdStreaming[itemId] || '') + chunk },
+        }));
+      });
+
+      const timeoutMs = 90_000;
+      const prdContent = await Promise.race([
+        promise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Plan generation timed out after 90s')), timeoutMs)
+        ),
+      ]);
+
+      // Clean up streaming subscription and state
+      window.api.claude.offChatOutputForTask(chatId);
+      set((state) => {
+        const next = { ...state.prdStreaming };
+        delete next[itemId];
+        return { prdStreaming: next };
+      });
 
       let estimatedTasks: number | undefined;
       let storyPoints: number | undefined;
@@ -314,13 +366,202 @@ Output markdown only (plus the two estimate lines at the end).`;
       cleanPrd = prdContent.replace(/\n?ESTIMATED_TASKS:\s*\d+/g, '').replace(/\n?STORY_POINTS:\s*\d+/g, '').trim();
 
       get().updateBacklogItem(itemId, { prd: cleanPrd, prdStatus: 'complete', estimatedTasks, storyPoints });
+      get().addToast({ type: 'success', message: `Plan ready: ${item.title}` });
     } catch (err) {
       console.error('Failed to generate backlog PRD:', err);
       get().updateBacklogItem(itemId, { prdStatus: 'failed' });
+      set((state) => {
+        const next = { ...state.prdStreaming };
+        delete next[itemId];
+        return { prdStreaming: next };
+      });
       get().addToast({
         type: 'warning',
         message: 'Could not generate mini-PRD. You can retry from the backlog.',
       });
     }
+  },
+
+  retryFailedPRDs: (sprintId) => {
+    const { backlog } = get();
+    const failed = backlog.filter((b) => b.sprintId === sprintId && b.prdStatus === 'failed');
+    if (failed.length === 0) return;
+    get().addToast({ type: 'success', message: `Retrying ${failed.length} failed ${failed.length === 1 ? 'plan' : 'plans'}...` });
+    for (const item of failed) {
+      get().generateBacklogPRD(item.id);
+    }
+  },
+
+  ensureAllPRDsGenerating: (sprintId) => {
+    const { backlog } = get();
+    const pending = backlog.filter(
+      (b) => b.sprintId === sprintId && (!b.prdStatus || b.prdStatus === 'pending')
+    );
+    for (const item of pending) {
+      get().generateBacklogPRD(item.id);
+    }
+  },
+
+  planAndSprint: async (itemId) => {
+    const { sprints, backlog } = get();
+    const item = backlog.find((b) => b.id === itemId);
+    if (!item) return;
+
+    // Find first sprint with status 'planning' or 'active' (by order)
+    const sortedSprints = [...sprints].sort((a, b) => a.order - b.order);
+    let targetSprint = sortedSprints.find((s) => s.status === 'planning' || s.status === 'active');
+
+    // If none exist, create "Sprint 1"
+    if (!targetSprint) {
+      get().addSprint('Sprint 1');
+      const updatedSprints = get().sprints;
+      targetSprint = updatedSprints[updatedSprints.length - 1];
+    }
+
+    // Assign item to that sprint
+    get().updateBacklogItem(itemId, { sprintId: targetSprint.id });
+
+    // Trigger PRD generation if needed
+    if (item.prdStatus !== 'complete' && item.prdStatus !== 'generating') {
+      get().generateBacklogPRD(itemId);
+    }
+
+    get().addToast({
+      type: 'success',
+      message: `Added to ${targetSprint.name} — planning...`,
+    });
+  },
+
+  planAndSprintIssue: async (issue) => {
+    const { currentProject } = get();
+    if (!currentProject) return '';
+
+    // Create backlog item from issue
+    const newId = get().addBacklogItem({
+      title: `Fix: ${issue.title}`,
+      description: issue.description + (issue.file ? `\n\nFile: ${issue.file}` : ''),
+      priority: issue.severity === 'critical' ? 'high' : issue.severity === 'warning' ? 'medium' : 'low',
+      type: 'bug_fix',
+      estimatedEffort: issue.estimatedEffort,
+    });
+
+    // Plan & sprint the new item
+    await get().planAndSprint(newId);
+
+    // Mark issue as 'planned' in storage
+    try {
+      const issues = await window.api.storage.getIssues(currentProject.slug);
+      const updatedIssues = issues.map((i: CodeIssue) =>
+        i.id === issue.id ? { ...i, status: 'planned' as const, backlogItemId: newId } : i
+      );
+      await window.api.storage.saveIssues(currentProject.slug, updatedIssues);
+    } catch (err) {
+      console.error('Failed to mark issue as planned:', err);
+    }
+
+    return newId;
+  },
+
+  checkAutoActivateSprints: () => {
+    const { sprints, backlog, currentProject } = get();
+    const planningSprints = sprints.filter((s) => s.status === 'planning');
+    for (const sprint of planningSprints) {
+      const items = backlog.filter((b) => b.sprintId === sprint.id);
+      const readiness = getSprintReadiness(items);
+      if (readiness.isReady) {
+        get().setSprintStatus(sprint.id, 'active');
+        get().addToast({
+          type: 'success',
+          message: `All plans ready for ${sprint.name}. Ready to start.`,
+          ctaLabel: 'Start Build',
+          ctaAction: () => get().startBuild(sprint.id),
+        });
+        if (currentProject) {
+          queueAssistantMessage(currentProject.slug, `All plans ready for ${sprint.name}. Sprint activated.`);
+        }
+      }
+    }
+  },
+
+  startBuild: (sprintId) => {
+    const { sprints, backlog, buildSessionActive } = get();
+    if (buildSessionActive) {
+      get().addToast({ type: 'warning', message: 'A build is already running.' });
+      return;
+    }
+    const sprint = sprints.find((s) => s.id === sprintId);
+    if (!sprint || sprint.status !== 'active') {
+      get().addToast({ type: 'warning', message: 'Sprint must be active to start.' });
+      return;
+    }
+    const items = backlog.filter((b) => b.sprintId === sprintId && b.prdStatus === 'complete');
+    if (items.length === 0) {
+      get().addToast({ type: 'warning', message: 'No planned items to start.' });
+      return;
+    }
+    const tasks = items.map((item) => ({
+      id: `mission-${item.id}-${Date.now()}`,
+      title: item.title,
+      description: item.prd || item.description,
+      completed: false,
+      interactionDepth: item.interactionDepth ?? classifyInteractionDepth(item),
+    }));
+    get().setTasksTransient(tasks);
+    get().setOneOffBacklogItemId(null);
+    get().goToBuilding();
+  },
+
+  checkSprintOverflow: (sprintId) => {
+    const { sprints, backlog } = get();
+    const sprint = sprints.find((s) => s.id === sprintId);
+    if (!sprint || sprint.status !== 'planning') return;
+
+    const items = backlog.filter((b) => b.sprintId === sprintId);
+    const totalSP = items.reduce((sum, b) => sum + (b.storyPoints || 0), 0);
+    const cap = 21;
+    if (totalSP <= cap) return;
+
+    // Sort by priority: high stays, medium/low overflow
+    const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    const sorted = [...items].sort((a, b) => (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
+
+    let runningTotal = 0;
+    const keepItems: string[] = [];
+    const overflowItems: BacklogItem[] = [];
+
+    for (const item of sorted) {
+      const sp = item.storyPoints || 0;
+      if (runningTotal + sp <= cap) {
+        runningTotal += sp;
+        keepItems.push(item.id);
+      } else {
+        overflowItems.push(item);
+      }
+    }
+
+    if (overflowItems.length === 0) return;
+
+    // Find or create next sprint
+    const sortedSprints = [...sprints].sort((a, b) => a.order - b.order);
+    const currentIdx = sortedSprints.findIndex((s) => s.id === sprintId);
+    let nextSprint = sortedSprints.find((s, i) => i > currentIdx && s.status === 'planning');
+
+    if (!nextSprint) {
+      const nextOrder = (sortedSprints[sortedSprints.length - 1]?.order ?? 0) + 1;
+      get().addSprint(`Sprint ${nextOrder}`);
+      nextSprint = get().sprints.find((s) => s.order === nextOrder);
+    }
+
+    if (!nextSprint) return;
+
+    // Move overflow items
+    for (const item of overflowItems) {
+      get().updateBacklogItem(item.id, { sprintId: nextSprint.id });
+    }
+
+    get().addToast({
+      type: 'success',
+      message: `${overflowItems.length} overflow ${overflowItems.length === 1 ? 'item' : 'items'} moved to ${nextSprint.name}`,
+    });
   },
 });

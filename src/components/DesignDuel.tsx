@@ -3,7 +3,7 @@ import { useProjectStore } from '../store/ProjectStoreContext';
 import { DESIGN_QUESTIONS, buildDesignTaskDescription } from '../constants/design-questions';
 import type { PreviewStyles } from '../constants/design-questions';
 import type { DesignPreferences } from '../types';
-import houstonAvatar from '../assets/houston-avatar.webp';
+import mcAvatar from '../assets/mc-avatar.webp';
 
 interface DesignDuelProps {
   onClose: () => void;
@@ -78,7 +78,10 @@ function MiniPreview({ styles, spacious }: { styles: PreviewStyles; spacious?: b
 }
 
 export default function DesignDuel({ onClose }: DesignDuelProps) {
-  const { updateProject, addToast, tasks, setTasks } = useProjectStore();
+  const updateProject = useProjectStore(s => s.updateProject);
+  const addToast = useProjectStore(s => s.addToast);
+  const tasks = useProjectStore(s => s.tasks);
+  const setTasks = useProjectStore(s => s.setTasks);
 
   const [phase, setPhase] = useState<'intro' | 'questions' | 'generating' | 'done'>('intro');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -141,11 +144,11 @@ export default function DesignDuel({ onClose }: DesignDuelProps) {
         {phase === 'intro' && (
           <div className="p-8 flex flex-col items-center text-center">
             <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-accent mb-4">
-              <img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
+              <img src={mcAvatar} alt="Assistant" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
             </div>
             <h2 className="text-xl font-bold text-ink mb-2">Design Duel</h2>
             <p className="text-sm text-ink-muted mb-6 max-w-sm">
-              While your app builds, let's pick your design style. 10 quick A/B choices — Houston will generate a
+              While your app builds, let's pick your design style. 10 quick A/B choices — we'll generate a
               tailored design system for your project.
             </p>
             <button

@@ -11,7 +11,7 @@ export interface PreflightFailure {
 export type PreflightStatus = 'idle' | 'checking' | 'blocked' | 'passed';
 
 export function usePreflightCheck(requiredServices: ServiceKey[]) {
-  const { setCLIStatus } = useAppStore();
+  const setCLIStatus = useAppStore(s => s.setCLIStatus);
   const [status, setStatus] = useState<PreflightStatus>('idle');
   const [failures, setFailures] = useState<PreflightFailure[]>([]);
   const pendingOperationRef = useRef<(() => Promise<unknown>) | null>(null);

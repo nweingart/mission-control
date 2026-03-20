@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import houstonAvatar from '../../assets/houston-avatar.webp';
+import mcAvatar from '../../assets/mc-avatar.webp';
 
 interface StageWorkspaceProps {
   onComplete: () => void;
 }
 
-const DEFAULT_PATH = '~/development/houston';
+const DEFAULT_PATH = '~/development';
 
 export default function StageWorkspace({ onComplete }: StageWorkspaceProps) {
-  const { completeOnboardingStage } = useAppStore();
+  const completeOnboardingStage = useAppStore(s => s.completeOnboardingStage);
   const [directoryPath, setDirectoryPath] = useState(DEFAULT_PATH);
   const [hasAnimated, setHasAnimated] = useState(false);
 
@@ -30,19 +30,19 @@ export default function StageWorkspace({ onComplete }: StageWorkspaceProps) {
 
   return (
     <div className="max-w-xl w-full">
-      {/* Houston avatar — wakes up */}
+      {/* Assistant avatar — wakes up */}
       <div className="flex flex-col items-center mb-8">
         <div
-          className={`w-20 h-20 rounded-full overflow-hidden border-4 border-spectrum-blue mb-4 ${
-            !hasAnimated ? 'animate-houston-wake-up' : ''
+          className={`w-20 h-20 rounded-full overflow-hidden border-4 border-accent mb-4 ${
+            !hasAnimated ? 'animate-mc-wake-up' : ''
           }`}
           onAnimationEnd={() => setHasAnimated(true)}
         >
-          <img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
+          <img src={mcAvatar} alt="Assistant" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
         </div>
         <div className="card-panel p-4 max-w-md text-center">
           <p className="text-sm text-ink leading-relaxed">
-            I'm online! Let's set up your workspace. This is where all your projects will live.
+            I'm online! Let's set up your workspace. This is where your imported repos will live.
           </p>
         </div>
       </div>

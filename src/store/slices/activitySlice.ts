@@ -2,6 +2,7 @@ import { StateCreator } from 'zustand';
 import type { AppState } from '../useAppStore';
 import type { GitEvent, DeploymentRecord, GapAnalysis } from '../../types';
 import { MAX_GIT_EVENTS, MAX_DEPLOYMENTS, MAX_GAP_ANALYSES } from '../storeTypes';
+import { persistQueued } from '../../utils/persist';
 
 export interface ActivitySlice {
   gitEvents: GitEvent[];
@@ -50,11 +51,7 @@ export const createActivitySlice: StateCreator<AppState, [], [], ActivitySlice> 
       const updated = [...state.gitEvents, newEvent];
       return { gitEvents: updated.length > MAX_GIT_EVENTS ? updated.slice(-MAX_GIT_EVENTS) : updated };
     });
-    const slug = currentProject.slug;
-    window.api.storage.saveGitEvents(slug, get().gitEvents).catch((err) => {
-      console.error('Failed to save git events:', err);
-      set({ saveError: 'Failed to save git events. Your changes may not persist.' });
-    });
+    persistQueued(currentProject.slug, 'gitEvents', get().gitEvents, window.api.storage.saveGitEvents);
   },
 
   saveGitEvents: async () => {
@@ -99,11 +96,7 @@ export const createActivitySlice: StateCreator<AppState, [], [], ActivitySlice> 
       const updated = [...state.deployments, record];
       return { deployments: updated.length > MAX_DEPLOYMENTS ? updated.slice(-MAX_DEPLOYMENTS) : updated };
     });
-    const slug = currentProject.slug;
-    window.api.storage.saveDeployments(slug, get().deployments).catch((err) => {
-      console.error('Failed to save deployments:', err);
-      set({ saveError: 'Failed to save deployments. Your changes may not persist.' });
-    });
+    persistQueued(currentProject.slug, 'deployments', get().deployments, window.api.storage.saveDeployments);
     if (record.status === 'success') {
       get().addToast({ type: 'success', message: 'Deploy successful.', ctaLabel: 'View Logs', ctaAction: () => get().goToDeployments() });
     } else if (record.status === 'failed') {
@@ -120,11 +113,7 @@ export const createActivitySlice: StateCreator<AppState, [], [], ActivitySlice> 
         d.id === id ? { ...d, ...updates } : d
       ),
     }));
-    const slug = currentProject.slug;
-    window.api.storage.saveDeployments(slug, get().deployments).catch((err) => {
-      console.error('Failed to save deployments:', err);
-      set({ saveError: 'Failed to save deployments. Your changes may not persist.' });
-    });
+    persistQueued(currentProject.slug, 'deployments', get().deployments, window.api.storage.saveDeployments);
     if (updates.status && updates.status !== oldStatus) {
       if (updates.status === 'success') {
         get().addToast({ type: 'success', message: 'Deploy successful.', ctaLabel: 'View', ctaAction: () => get().goToDeployments() });
@@ -176,11 +165,7 @@ export const createActivitySlice: StateCreator<AppState, [], [], ActivitySlice> 
       const updated = [...state.gapAnalyses, analysis];
       return { gapAnalyses: updated.length > MAX_GAP_ANALYSES ? updated.slice(-MAX_GAP_ANALYSES) : updated };
     });
-    const slug = currentProject.slug;
-    window.api.storage.saveGapAnalysis(slug, get().gapAnalyses).catch((err) => {
-      console.error('Failed to save gap analyses:', err);
-      set({ saveError: 'Failed to save gap analyses. Your changes may not persist.' });
-    });
+    persistQueued(currentProject.slug, 'gapAnalyses', get().gapAnalyses, window.api.storage.saveGapAnalysis);
   },
 
   saveGapAnalyses: async () => {
