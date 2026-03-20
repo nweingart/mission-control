@@ -29,6 +29,7 @@ export class StorageService {
     this.defaultDevelopmentPath = join(homeDir, 'development');
 
     this.ensureDirectories();
+    this.cleanupOldBackups();
   }
 
   private ensureDirectories(): void {
@@ -38,6 +39,40 @@ export class StorageService {
     if (!existsSync(this.projectsDir)) {
       mkdirSync(this.projectsDir, { recursive: true });
     }
+  }
+
+  /** Remove .bak files older than 7 days to prevent unbounded accumulation */
+  private cleanupOldBackups(): void {
+    try {
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      this.cleanupBackupsInDir(this.appDir, cutoff);
+      if (existsSync(this.projectsDir)) {
+        const projects = readdirSync(this.projectsDir, { withFileTypes: true });
+        for (const entry of projects) {
+          if (entry.isDirectory()) {
+            this.cleanupBackupsInDir(join(this.projectsDir, entry.name), cutoff);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Storage] Backup cleanup failed (non-fatal):', err);
+    }
+  }
+
+  private cleanupBackupsInDir(dir: string, cutoffMs: number): void {
+    try {
+      const entries = readdirSync(dir);
+      for (const entry of entries) {
+        if (!entry.endsWith('.bak')) continue;
+        const fullPath = join(dir, entry);
+        try {
+          const stat = statSync(fullPath);
+          if (stat.mtimeMs < cutoffMs) {
+            unlinkSync(fullPath);
+          }
+        } catch { /* skip unreadable files */ }
+      }
+    } catch { /* dir unreadable — skip */ }
   }
 
   // Windows reserved file names that cannot be used as slugs

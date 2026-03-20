@@ -4,6 +4,23 @@ import { contextBridge, ipcRenderer } from 'electron';
 type OutputCallback = (data: { sessionId?: string; type: 'stdout' | 'stderr'; content: string }) => void;
 type ExitCallback = (data: { sessionId: string; code: number }) => void;
 
+/** Validate that an IPC message has the expected fields with the expected types */
+function validateIPC<T>(data: unknown, shape: Record<string, string>, channel: string): T | null {
+  if (typeof data !== 'object' || data === null) {
+    console.warn(`[IPC:${channel}] Expected object, got ${typeof data}`);
+    return null;
+  }
+  const obj = data as Record<string, unknown>;
+  for (const [key, expectedType] of Object.entries(shape)) {
+    if (expectedType === 'any') continue; // skip validation for unknown/any fields
+    if (!(key in obj) || typeof obj[key] !== expectedType) {
+      console.warn(`[IPC:${channel}] Field "${key}" expected ${expectedType}, got ${typeof obj[key]}`);
+      return null;
+    }
+  }
+  return data as T;
+}
+
 // Use a Map for efficient listener management - one listener per channel
 const listenerMap = new Map<string, (...args: unknown[]) => void>();
 
@@ -59,31 +76,31 @@ const codexOutputHandlers = new Map<string, (content: string) => void>();
 
 // Route codex chat output to per-task handlers
 ipcRenderer.on('codex:chatOutput', (_event, data: unknown) => {
-  if (typeof data === 'object' && data !== null && 'chatId' in data && 'content' in data) {
-    const { chatId, content } = data as { chatId: string; content: string };
-    const handler = codexOutputHandlers.get(chatId);
-    if (handler) handler(content);
+  const msg = validateIPC<{ chatId: string; content: string }>(data, { chatId: 'string', content: 'string' }, 'codex:chatOutput');
+  if (msg) {
+    const handler = codexOutputHandlers.get(msg.chatId);
+    if (handler) handler(msg.content);
   }
 });
 
 // Route stream events to per-task handlers
 ipcRenderer.on('claude:streamEvent', (_event, data: unknown) => {
-  if (typeof data === 'object' && data !== null && 'chatId' in data && 'event' in data) {
-    const { chatId, event } = data as { chatId: string; event: unknown };
-    const handler = streamEventHandlers.get(chatId);
-    if (handler) handler(event);
+  const msg = validateIPC<{ chatId: string; event: unknown }>(data, { chatId: 'string', event: 'any' }, 'claude:streamEvent');
+  if (msg) {
+    const handler = streamEventHandlers.get(msg.chatId);
+    if (handler) handler(msg.event);
   }
 });
 
 // Single raw listener that routes based on chatId
 ipcRenderer.on('claude:chatOutput', (_event, data: unknown) => {
-  if (typeof data === 'object' && data !== null && 'chatId' in data && 'content' in data) {
-    const { chatId, content } = data as { chatId: string; content: string };
-    const handler = chatOutputHandlers.get(chatId);
-    if (handler) handler(content);
+  const msg = validateIPC<{ chatId: string; content: string }>(data, { chatId: 'string', content: 'string' }, 'claude:chatOutput');
+  if (msg) {
+    const handler = chatOutputHandlers.get(msg.chatId);
+    if (handler) handler(msg.content);
     // Also fire legacy handler if one exists
     const legacy = chatOutputHandlers.get('__legacy__');
-    if (legacy && chatId !== '__legacy__') legacy(content);
+    if (legacy && msg.chatId !== '__legacy__') legacy(msg.content);
   } else if (typeof data === 'string') {
     // Backward compat: old-format string message
     const legacy = chatOutputHandlers.get('__legacy__');

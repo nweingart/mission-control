@@ -9,6 +9,7 @@ import { GitHubService } from './services/github';
 import { registerShellHandlers } from './ipc/shell-handlers';
 import { registerSetupHandlers } from './ipc/setup-handlers';
 import { registerDevServerHandlers } from './ipc/devserver-handlers';
+import { autoUpdater } from 'electron-updater';
 
 // Prevent EPIPE errors from crashing the app when stdout/stderr pipes break
 // (common in Electron on macOS when the parent terminal is closed)
@@ -20,6 +21,30 @@ for (const stream of [process.stdout, process.stderr]) {
     });
   }
 }
+
+// Crash logging: write unhandled errors to ~/.mission-control/crash.log
+// This provides visibility into production crashes without requiring Sentry setup.
+// TODO: Wire up Sentry or similar when ready for hosted error reporting.
+function logCrash(type: string, error: Error | unknown) {
+  try {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const crashPath = path.join(os.homedir(), '.mission-control', 'crash.log');
+    const timestamp = new Date().toISOString();
+    const msg = error instanceof Error ? `${error.message}\n${error.stack}` : String(error);
+    const entry = `[${timestamp}] ${type}: ${msg}\n\n`;
+    fs.appendFileSync(crashPath, entry, 'utf-8');
+  } catch { /* can't log the logger failing */ }
+}
+process.on('uncaughtException', (err) => {
+  logCrash('uncaughtException', err);
+  console.error('[CRASH] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  logCrash('unhandledRejection', reason);
+  console.error('[CRASH] Unhandled rejection:', reason);
+});
 
 // Track active setup PTY sessions
 const setupSessions: Map<string, pty.IPty> = new Map();
@@ -144,6 +169,20 @@ function createWindow() {
 // App lifecycle
 app.whenReady().then(() => {
   createWindow();
+
+  // Auto-update: check for updates silently after launch
+  // In development, autoUpdater will skip (no published releases)
+  autoUpdater.logger = {
+    info: (msg: string) => console.log('[updater]', msg),
+    warn: (msg: string) => console.warn('[updater]', msg),
+    error: (msg: string) => console.error('[updater]', msg),
+  } as unknown as typeof autoUpdater.logger;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    // Non-fatal: dev builds, no internet, etc.
+    console.log('[updater] Update check skipped:', err?.message || err);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
