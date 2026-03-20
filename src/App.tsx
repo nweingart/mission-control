@@ -76,7 +76,7 @@ function App() {
       <div className="flex items-center justify-center h-screen bg-surface">
         <div className="text-center">
           {/* Pixel-style square loader */}
-          <div className="w-12 h-12 border-4 border-ink-muted border-t-transparent mx-auto animate-spin" />
+          <div className="w-12 h-12 border-4 border-ink-muted border-t-transparent mx-auto animate-spin" role="status" aria-label="Loading" />
           <p className="mt-4 font-sans font-medium text-sm text-ink-muted">Loading...</p>
         </div>
       </div>
@@ -85,9 +85,9 @@ function App() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen bg-surface">
+      <div className="flex items-center justify-center h-screen bg-surface" role="alert">
         <div className="card-panel text-center p-8 max-w-md">
-          <div className="text-error font-display text-3xl mb-4">!</div>
+          <div className="text-error font-display text-3xl mb-4" aria-hidden="true">!</div>
           <h2 className="font-sans font-bold text-lg text-ink mb-3">Something Went Wrong</h2>
           <p className="text-ink-muted mb-4 text-sm">{error}</p>
           <button

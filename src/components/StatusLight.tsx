@@ -1,9 +1,9 @@
 type BacklogStatus = 'todo' | 'in_progress' | 'done';
 
 const statusLabels: Record<BacklogStatus, string> = {
-  todo: 'On the Pad',
-  in_progress: 'In Orbit',
-  done: 'Landed',
+  todo: 'To Do',
+  in_progress: 'In Progress',
+  done: 'Done',
 };
 
 interface StatusLightProps {
@@ -20,7 +20,7 @@ export default function StatusLight({ status, showLabel = true, size = 'md' }: S
       case 'todo':
         return `${px} rounded-full border border-ink-muted/40 bg-transparent`;
       case 'in_progress':
-        return `${px} rounded-full bg-spectrum-blue animate-pulse-orbit`;
+        return `${px} rounded-full bg-accent animate-pulse-glow`;
       case 'done':
         return `${px} rounded-full bg-spectrum-green`;
       default:
@@ -32,8 +32,10 @@ export default function StatusLight({ status, showLabel = true, size = 'md' }: S
     <span
       className="flex items-center gap-1.5"
       title={statusLabels[status]}
+      role="status"
+      aria-label={statusLabels[status]}
     >
-      <span className={`flex-shrink-0 transition-all duration-300 ${lightClass}`} />
+      <span className={`flex-shrink-0 transition-all duration-300 ${lightClass}`} aria-hidden="true" />
       {showLabel && (
         <span className="text-xs font-display font-medium text-ink-muted">
           {statusLabels[status]}

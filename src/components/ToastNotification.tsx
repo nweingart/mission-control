@@ -3,16 +3,16 @@ import { useProjectStore } from '../store/ProjectStoreContext';
 
 const borderColors: Record<string, string> = {
   success: 'border-l-spectrum-green',
-  warning: 'border-l-houston-amber',
-  error: 'border-l-houston-red',
-  urgent: 'border-l-houston-red',
+  warning: 'border-l-mc-amber',
+  error: 'border-l-mc-red',
+  urgent: 'border-l-mc-red',
 };
 
 const dotColors: Record<string, string> = {
   success: 'bg-spectrum-green',
-  warning: 'bg-houston-amber',
-  error: 'bg-houston-red',
-  urgent: 'bg-houston-red',
+  warning: 'bg-mc-amber',
+  error: 'bg-mc-red',
+  urgent: 'bg-mc-red',
 };
 
 function ToastItem({ toast }: { toast: { id: string; type: string; message: string; ctaLabel?: string; ctaAction?: () => void } }) {
@@ -30,8 +30,9 @@ function ToastItem({ toast }: { toast: { id: string; type: string; message: stri
 
   return (
     <div
+      role="alert"
       className={`card-panel border-l-4 ${borderColors[toast.type]} p-4 animate-slide-down ${
-        isUrgent ? 'bg-houston-red-soft' : ''
+        isUrgent ? 'bg-mc-red-soft' : ''
       }`}
     >
       <div className="flex items-center gap-3">
@@ -48,7 +49,7 @@ function ToastItem({ toast }: { toast: { id: string; type: string; message: stri
               toast.ctaAction?.();
               removeToast(toast.id);
             }}
-            className="text-xs font-semibold text-spectrum-blue hover:text-spectrum-blue/80 transition-colors flex-shrink-0"
+            className="text-xs font-semibold text-accent hover:text-accent/80 transition-colors flex-shrink-0"
           >
             {toast.ctaLabel}
           </button>
@@ -75,7 +76,7 @@ export default function ToastNotification() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-md">
+    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-md" aria-live="polite">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} />
       ))}

@@ -34,7 +34,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-surface-card flex items-center justify-center p-6">
+        <div className="min-h-screen bg-surface-card flex items-center justify-center p-6" role="alert">
           <div className="card-panel max-w-md w-full p-6 text-center">
             <div className="w-16 h-16 bg-error/15 flex items-center justify-center mx-auto mb-4">
               <svg

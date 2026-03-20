@@ -27,12 +27,17 @@ export default function ProgressRing({ completed, total, size = 48, strokeWidth 
     prevCompleteRef.current = isComplete;
   }, [isComplete]);
 
-  const strokeColor = isComplete ? 'rgb(var(--color-spectrum-green))' : 'rgb(var(--color-spectrum-blue))';
+  const strokeColor = isComplete ? 'rgb(var(--color-spectrum-green))' : 'rgb(var(--color-accent))';
 
   return (
     <div
       className={`relative flex-shrink-0 ${justCompleted ? 'animate-sprint-complete' : ''}`}
       style={{ width: size, height: size }}
+      role="progressbar"
+      aria-valuenow={completed}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-label={`${completed} of ${total} complete`}
     >
       <svg width={size} height={size}>
         {/* Background circle */}
