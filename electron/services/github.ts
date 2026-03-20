@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { buildEnhancedPath } from '../ipc/env';
 
 type OutputCallback = (data: { type: 'stdout' | 'stderr'; content: string }) => void;
 
@@ -25,19 +26,10 @@ interface RepoResult {
 const GIT_TIMEOUT = 2 * 60 * 1000;
 
 function getEnv(): Record<string, string> {
-  const homedir = process.env.HOME || require('os').homedir();
-  const extraPaths = [
-    `${homedir}/.local/bin`,
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-  ];
-  const currentPath = process.env.PATH || '';
-  const fullPath = [...extraPaths, ...currentPath.split(':')].join(':');
-
   return {
     ...process.env as Record<string, string>,
-    HOME: homedir,
-    PATH: fullPath,
+    HOME: process.env.HOME || require('os').homedir(),
+    PATH: buildEnhancedPath(),
     GIT_TERMINAL_PROMPT: '0',
   };
 }

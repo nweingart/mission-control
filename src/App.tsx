@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { useCLIMonitor } from './hooks/useCLIMonitor';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -70,15 +70,6 @@ function App() {
       delete window.openCICDTest;
     };
   }, []);
-
-  // Handle mc:// deep links
-  const handleDeepLink = useCallback(async (_url: string) => {
-    // Deep link handling placeholder
-  }, []);
-
-  useEffect(() => {
-    window.api.onDeepLink(handleDeepLink);
-  }, [handleDeepLink]);
 
   if (isLoading) {
     return (

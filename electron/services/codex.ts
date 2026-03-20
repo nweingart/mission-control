@@ -1,4 +1,6 @@
 import type { ChildProcess } from 'child_process';
+import { randomUUID } from 'crypto';
+import { buildEnhancedPath } from '../ipc/env';
 
 export interface ChatResult {
   response: string;
@@ -30,7 +32,7 @@ export class CodexService {
     prompt: string,
     onOutput?: (content: string) => void,
     inactivityTimeoutMs: number = 10 * 60 * 1000,
-    chatId: string = `codex-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    chatId: string = `codex-chat-${randomUUID()}`
   ): Promise<ChatResult> {
     console.log('[CodexService.chat] Starting chat request');
     console.log('[CodexService.chat] projectPath:', projectPath);
@@ -47,16 +49,7 @@ export class CodexService {
       let isResolved = false;
       let timeoutHandle: NodeJS.Timeout | null = null;
 
-      // Ensure PATH includes common locations for codex CLI
-      const homedir = process.env.HOME || '';
-      const extraPaths = [
-        `${homedir}/.local/bin`,
-        '/opt/homebrew/bin',
-        '/usr/local/bin',
-      ];
-      const currentPath = process.env.PATH || '';
-      const pathParts = currentPath.split(':');
-      const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
+      const fullPath = buildEnhancedPath();
 
       const { spawn } = require('child_process');
 
@@ -64,7 +57,10 @@ export class CodexService {
       // Remove CLAUDECODE env var to avoid conflicts
       delete cleanEnv.CLAUDECODE;
 
-      // Codex CLI: exec mode with JSON output and auto-approval
+      // Codex CLI: exec mode with JSON output and auto-approval.
+      // --dangerously-bypass-approvals-and-sandbox is required: Mission Control orchestrates
+      // Codex as a sub-agent in a controlled build pipeline where every invocation is
+      // programmatic. The user has already granted trust at the Mission Control app level.
       const child = spawn('codex', [
         'exec',
         '--json',

@@ -26,8 +26,9 @@ vi.mock('fs', () => ({
 }));
 
 vi.mock('os', () => ({
-  default: { tmpdir: () => '/tmp' },
+  default: { tmpdir: () => '/tmp', homedir: () => '/home/test' },
   tmpdir: () => '/tmp',
+  homedir: () => '/home/test',
 }));
 
 vi.mock('path', () => ({
