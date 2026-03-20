@@ -5,9 +5,12 @@ vi.mock('electron', () => ({
   app: {
     getPath: (name: string) => {
       if (name === 'home') return '/mock-home';
-      if (name === 'userData') return '/mock-home/.houston';
+      if (name === 'userData') return '/mock-home/.mission-control';
       return `/mock-${name}`;
     },
+  },
+  shell: {
+    trashItem: vi.fn().mockResolvedValue(undefined),
   },
   BrowserWindow: vi.fn(),
   ipcMain: {
