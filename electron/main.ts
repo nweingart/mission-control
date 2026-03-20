@@ -129,14 +129,23 @@ function createWindow() {
   }
 
   // --run-e2e flag: auto-start E2E test after app loads
+  console.log('[main.ts] argv:', process.argv.join(' '));
   if (process.argv.includes('--run-e2e')) {
+    console.log('[main.ts] --run-e2e flag detected');
     mainWindow.webContents.on('did-finish-load', () => {
       // Extract repo URL from --repo=<url> flag if present
       const repoArg = process.argv.find(a => a.startsWith('--repo='));
       const repoUrl = repoArg ? repoArg.split('=')[1] : undefined;
-      setTimeout(() => {
-        safeSend('e2e:autostart', { repoUrl });
-      }, 3000); // Wait for React to hydrate
+      // Wait for React to fully hydrate (loading screen + initialize)
+      const sendAutostart = () => {
+        console.log('[main.ts] Sending e2e:autostart event');
+        const sent = safeSend('e2e:autostart', { repoUrl });
+        if (!sent) {
+          console.log('[main.ts] safeSend returned false, retrying in 2s...');
+          setTimeout(sendAutostart, 2000);
+        }
+      };
+      setTimeout(sendAutostart, 5000);
     });
   }
 

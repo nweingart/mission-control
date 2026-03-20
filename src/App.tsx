@@ -62,6 +62,8 @@ function App() {
           <div className="w-12 h-12 border-4 border-ink-muted border-t-transparent mx-auto animate-spin" role="status" aria-label="Loading" />
           <p className="mt-4 font-sans font-medium text-sm text-ink-muted">Loading...</p>
         </div>
+        {/* E2E overlay renders even during loading (triggered by --run-e2e) */}
+        {showE2ETest && <E2ETestRunner onClose={() => setShowE2ETest(false)} />}
       </div>
     );
   }

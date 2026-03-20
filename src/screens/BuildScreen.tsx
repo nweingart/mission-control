@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useProjectStore, useProjectStoreApi } from '../store/ProjectStoreContext';
-import { useBuildPipeline } from '../hooks/useBuildPipeline';
+import { useBuildPipelineContext } from '../hooks/BuildPipelineContext';
 import { usePreflightCheck } from '../hooks/usePreflightCheck';
 import ProgressBar from '../components/ProgressBar';
 import { TaskTree, CostTracker, TerminalOutput, AgentStatusBar, TimelineToolCallList } from 'agent-native';
@@ -52,7 +52,7 @@ export default function BuildScreen() {
   }, []);
 
   const preflight = usePreflightCheck(requiredServices ?? ['claude', 'github']);
-  const pipeline = useBuildPipeline();
+  const pipeline = useBuildPipelineContext();
   const buildStartedRef = useRef(false);
   const humanTasksTriggeredRef = useRef(false);
   const designDuelAutoShownRef = useRef(false);
@@ -122,16 +122,8 @@ export default function BuildScreen() {
   const activeTasks = completedTasks + inFlightCount;
   const progress = tasks.length > 0 ? (activeTasks / tasks.length) * 100 : 0;
 
-  // Auto-start build on mount (replaces the old modal)
-  // Gates on requiredServices being loaded from config to avoid racing with defaults.
-  useEffect(() => {
-    if (buildStartedRef.current) return;
-    if (!currentProject || tasks.length === 0) return;
-    if (allDone) return;
-    if (requiredServices === null) return; // Wait for config to load
-    buildStartedRef.current = true;
-    preflight.runGuarded(() => runAllTasks());
-  }, [currentProject, tasks.length, allDone, requiredServices, preflight, runAllTasks]);
+  // Build auto-starts from useBuildPipeline (runs at ProjectLayout level).
+  // No need to start here — BuildScreen only renders the UI.
 
   // Auto-trigger assistant for pending human tasks
   useEffect(() => {

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useProjectStore } from '../store/ProjectStoreContext';
+import { BuildPipelineProvider } from '../hooks/BuildPipelineContext';
 import { getProjectStoreBySlug } from '../store/projectStoreRegistry';
 import type { ProjectStatus, Screen } from '../types';
 import StreakDisplay from './StreakDisplay';
@@ -121,6 +122,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   };
 
   return (
+    <BuildPipelineProvider>
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Nav bar */}
       <nav className="bg-surface-light border-b border-border px-4 py-2 drag-region header-with-traffic-lights flex items-center gap-4">
@@ -256,5 +258,6 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       </nav>
 
     </div>
+    </BuildPipelineProvider>
   );
 }

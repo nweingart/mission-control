@@ -1239,6 +1239,26 @@ Build this task completely. Do not work on anything else.`;
     }
   }, []);
 
+  // Auto-start build when tasks appear (from startBuild → setTasksTransient → goToBuilding)
+  // This runs at the ProjectLayout level so it fires regardless of which screen is active.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    if (!currentProject || tasks.length === 0) return;
+    if (tasks.every(t => t.completed)) return;
+    if (sessionActive) return;
+    autoStartedRef.current = true;
+    // Start immediately — preflight was already checked at scan time
+    runAllTasks();
+  }, [currentProject, tasks, sessionActive, runAllTasks]);
+
+  // Reset auto-start flag when build completes so next sprint can auto-start
+  useEffect(() => {
+    if (tasks.length === 0) {
+      autoStartedRef.current = false;
+    }
+  }, [tasks.length]);
+
   return {
     // State
     taskPhase,
