@@ -39,7 +39,7 @@ export const APP_INITIAL_STATE = {
   subscriptionStatus: null as 'active' | 'inactive' | null,
 };
 
-export const createAppSlice: StateCreator<AppState, [], [], AppSlice> = (set) => ({
+export const createAppSlice: StateCreator<AppState, [], [], AppSlice> = (set, get) => ({
   ...APP_INITIAL_STATE,
 
   setError: (error) => set({ error }),
@@ -65,7 +65,7 @@ export const createAppSlice: StateCreator<AppState, [], [], AppSlice> = (set) =>
     try {
       const config = await window.api.storage.getConfig();
       await window.api.storage.saveConfig({ ...config, hasCompletedOnboarding: false, hasSetWorkspace: false });
-      set({ screen: 'onboarding' } as Partial<AppState>);
+      get().setScreen('onboarding');
     } catch (err) {
       console.error('Failed to reset onboarding:', err);
     }

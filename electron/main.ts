@@ -161,6 +161,17 @@ app.on('window-all-closed', () => {
 // Handle missioncontrol:// deep links (macOS)
 app.on('open-url', (event, url) => {
   event.preventDefault();
+  // Validate the URL before forwarding to renderer
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'missioncontrol:') {
+      console.warn('[deep-link] Blocked non-missioncontrol URL:', parsed.protocol);
+      return;
+    }
+  } catch {
+    console.warn('[deep-link] Invalid URL received:', url);
+    return;
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.focus();
     mainWindow.webContents.send('deep-link', url);
@@ -172,6 +183,21 @@ app.on('before-quit', () => {
   claudeCodeService.killAll();
   codexService.cancelChat();
 });
+
+// Clean up stale worktrees on signal-based exit (force-quit, Ctrl-C)
+function cleanupWorktreesSync() {
+  try {
+    const fs = require('fs');
+    const { execSync } = require('child_process');
+    const worktreeRoot = '/tmp/mc-worktrees';
+    if (fs.existsSync(worktreeRoot)) {
+      execSync(`rm -rf ${worktreeRoot}`, { timeout: 5000 });
+      console.log('[cleanup] Removed stale worktrees');
+    }
+  } catch { /* best effort on exit */ }
+}
+process.on('SIGINT', () => { cleanupWorktreesSync(); process.exit(0); });
+process.on('SIGTERM', () => { cleanupWorktreesSync(); process.exit(0); });
 
 // IPC Handlers - Storage
 ipcMain.handle('storage:getConfig', () => storageService.getConfig());

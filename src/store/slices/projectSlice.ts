@@ -133,10 +133,20 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
           get().loadGamification(),
         ]);
 
-        const labels = ['tasks', 'chatHistory', 'gitEvents', 'deployments', 'gapAnalyses', 'backlog', 'sprints', 'planningChats', 'gamification'];
+        const labels = ['tasks', 'chat history', 'git events', 'deployments', 'gap analyses', 'backlog', 'sprints', 'planning chats', 'gamification'];
+        const failedLabels: string[] = [];
         results.forEach((r, i) => {
-          if (r.status === 'rejected') console.error(`Failed to load ${labels[i]}:`, r.reason);
+          if (r.status === 'rejected') {
+            console.error(`Failed to load ${labels[i]}:`, r.reason);
+            failedLabels.push(labels[i]);
+          }
         });
+        if (failedLabels.length > 0) {
+          get().addToast({
+            type: 'warning',
+            message: `Failed to load: ${failedLabels.join(', ')}. Some data may be missing.`,
+          });
+        }
 
         // Post-load hooks (depend on store state now being set)
         try { get().initializeSprintsIfNeeded(); } catch (err) { console.error('Failed to initialize sprints:', err); }
