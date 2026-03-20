@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useProjectStore } from '../store/ProjectStoreContext';
 import type { DeploymentRecord } from '../types';
-import HoustonCallout from '../components/HoustonCallout';
+import AssistantCallout from '../components/AssistantCallout';
 
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
@@ -21,7 +21,7 @@ function StatusBadge({ status }: { status: DeploymentRecord['status'] }) {
     failed: 'bg-error/15 text-error',
     deploying: 'bg-accent/15 text-accent',
     watching: 'bg-accent/15 text-accent',
-    pushing: 'bg-spectrum-blue/15 text-spectrum-blue',
+    pushing: 'bg-accent/15 text-accent',
   };
 
   return (
@@ -32,7 +32,9 @@ function StatusBadge({ status }: { status: DeploymentRecord['status'] }) {
 }
 
 export default function DeploymentsScreen() {
-  const { deployments, loadDeployments, setScreen } = useProjectStore();
+  const deployments = useProjectStore(s => s.deployments);
+  const loadDeployments = useProjectStore(s => s.loadDeployments);
+  const setScreen = useProjectStore(s => s.setScreen);
 
   useEffect(() => {
     loadDeployments();
@@ -50,8 +52,8 @@ export default function DeploymentsScreen() {
             <h2 className="text-xl font-bold text-ink">Deployments</h2>
             <p className="text-xs text-ink-muted mt-0.5">No deployments yet</p>
           </div>
-          <HoustonCallout
-            message="Nothing launched yet."
+          <AssistantCallout
+            message="No deployments yet."
             ctaLabel="View Build"
             onCtaClick={() => setScreen('building')}
           />

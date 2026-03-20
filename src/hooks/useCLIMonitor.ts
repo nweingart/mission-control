@@ -26,7 +26,9 @@ const SCREEN_TO_STEP: Partial<Record<Screen, string>> = {
 };
 
 export function useCLIMonitor() {
-  const { screen, cliStatus, setCLIStatus } = useAppStore();
+  const screen = useAppStore(s => s.screen);
+  const cliStatus = useAppStore(s => s.cliStatus);
+  const setCLIStatus = useAppStore(s => s.setCLIStatus);
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
 
   useEffect(() => {

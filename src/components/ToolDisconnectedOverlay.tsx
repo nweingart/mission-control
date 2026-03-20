@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 
 export default function ToolDisconnectedOverlay() {
-  const { cliStatus, setCLIStatus, setScreen } = useAppStore();
+  const cliStatus = useAppStore(s => s.cliStatus);
+  const setCLIStatus = useAppStore(s => s.setCLIStatus);
+  const setScreen = useAppStore(s => s.setScreen);
   const [isRechecking, setIsRechecking] = useState(false);
 
   if (!cliStatus) return null;

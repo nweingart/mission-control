@@ -29,6 +29,12 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     try {
       set({ isLoading: true, error: null });
 
+      // Wire up the persistence queue's error handler to the store
+      const { configurePersistenceQueue } = await import('../../lib/persistenceQueue');
+      configurePersistenceQueue({
+        onError: (message) => set({ saveError: message }),
+      });
+
       const config = await window.api.storage.getConfig();
 
       const cliStatus = await window.api.cli.checkAll();
@@ -114,23 +120,27 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
       if (project) {
         set({ currentProject: project, error: null });
 
-        // Load associated data (don't fail if these fail)
-        try { await get().loadTasks(); } catch (err) { console.error('Failed to load tasks:', err); }
-        try { await get().loadChatHistory(); } catch (err) { console.error('Failed to load chat history:', err); }
-        try { await get().loadGitEvents(); } catch (err) { console.error('Failed to load git events:', err); }
-        try { await get().loadDeployments(); } catch (err) { console.error('Failed to load deployments:', err); }
-        try { await get().loadGapAnalyses(); } catch (err) { console.error('Failed to load gap analyses:', err); }
-        try { await get().loadBacklog(); } catch (err) { console.error('Failed to load backlog:', err); }
-        try { await get().loadSprints(); } catch (err) { console.error('Failed to load sprints:', err); }
+        // Load all associated data in parallel (don't fail if individual loads fail)
+        const results = await Promise.allSettled([
+          get().loadTasks(),
+          get().loadChatHistory(),
+          get().loadGitEvents(),
+          get().loadDeployments(),
+          get().loadGapAnalyses(),
+          get().loadBacklog(),
+          get().loadSprints(),
+          get().loadPlanningChats(),
+          get().loadGamification(),
+        ]);
 
+        const labels = ['tasks', 'chatHistory', 'gitEvents', 'deployments', 'gapAnalyses', 'backlog', 'sprints', 'planningChats', 'gamification'];
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') console.error(`Failed to load ${labels[i]}:`, r.reason);
+        });
+
+        // Post-load hooks (depend on store state now being set)
         try { get().initializeSprintsIfNeeded(); } catch (err) { console.error('Failed to initialize sprints:', err); }
-
-        try { await get().loadPlanningChats(); } catch (err) { console.error('Failed to load planning chats:', err); }
-
-        try {
-          await get().loadGamification();
-          get().checkAndUpdateStreak();
-        } catch (err) { console.error('Failed to load gamification:', err); }
+        try { get().checkAndUpdateStreak(); } catch (err) { console.error('Failed to check streak:', err); }
 
         // Check sprint deadlines for warning toasts
         const loadedSprints = get().sprints.filter((s) => s.status !== 'completed' && s.deadline);
@@ -152,7 +162,7 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
         let targetScreen: string;
 
         // V2 projects: route by scanStatus
-        if (project.scanStatus === 'pending' || project.scanStatus === 'failed') {
+        if (project.scanStatus === 'pending' || project.scanStatus === 'failed' || project.scanStatus === 'issues_ready') {
           targetScreen = 'scanning';
         } else if (project.scanStatus === 'scanning') {
           targetScreen = 'scanning';

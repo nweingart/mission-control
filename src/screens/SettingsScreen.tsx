@@ -3,7 +3,11 @@ import { useAppStore } from '../store/useAppStore';
 import type { AgentRoleConfig, AgentProvider } from '../types';
 
 export default function SettingsScreen() {
-  const { setScreen, resetOnboarding, authUser, subscriptionStatus, signOut } = useAppStore();
+  const setScreen = useAppStore(s => s.setScreen);
+  const resetOnboarding = useAppStore(s => s.resetOnboarding);
+  const authUser = useAppStore(s => s.authUser);
+  const subscriptionStatus = useAppStore(s => s.subscriptionStatus);
+  const signOut = useAppStore(s => s.signOut);
   const [isManaging, setIsManaging] = useState(false);
 
   // Multi-agent mode state
@@ -12,10 +16,14 @@ export default function SettingsScreen() {
   const [codexStatus, setCodexStatus] = useState<{ installed: boolean; authenticated: boolean } | null>(null);
   const [codexChecking, setCodexChecking] = useState(false);
 
+  // Build behavior state
+  const [pauseBetweenTiers, setPauseBetweenTiers] = useState(false);
+
   useEffect(() => {
     window.api.storage.getConfig().then((config) => {
       setMultiAgentEnabled(config.multiAgentEnabled ?? false);
       setAgentRoles(config.agentRoles ?? { builder: 'claude', reviewer: 'claude' });
+      setPauseBetweenTiers(config.pauseBetweenTiers ?? false);
     });
     // Fast check (--version) for initial display
     window.api.cli.checkCodex().then(setCodexStatus);
@@ -48,6 +56,13 @@ export default function SettingsScreen() {
     await saveMultiAgentConfig(multiAgentEnabled, newRoles);
   };
 
+  const handleTogglePauseBetweenTiers = async () => {
+    const newValue = !pauseBetweenTiers;
+    setPauseBetweenTiers(newValue);
+    const config = await window.api.storage.getConfig();
+    await window.api.storage.saveConfig({ ...config, pauseBetweenTiers: newValue });
+  };
+
   const handleResetOnboarding = () => {
     if (window.confirm('Reset onboarding walkthrough? You will see the intro screens again.')) {
       resetOnboarding();
@@ -64,7 +79,7 @@ export default function SettingsScreen() {
   };
 
   const handleSignOut = async () => {
-    if (window.confirm('Sign out of Houston Pro?')) {
+    if (window.confirm('Sign out of Mission Control Pro?')) {
       await signOut();
     }
   };
@@ -158,6 +173,29 @@ export default function SettingsScreen() {
             </button>
           </section>
 
+          {/* Build Behavior */}
+          <section className="card-panel p-5 space-y-3">
+            <h2 className="text-sm font-semibold text-ink mb-3">Build Behavior</h2>
+            <div className="flex items-center justify-between px-3 py-2.5">
+              <div>
+                <div className="text-sm text-ink">Pause Between Build Tiers</div>
+                <div className="text-xs text-ink-muted mt-0.5">When enabled, builds pause after each tier for manual review</div>
+              </div>
+              <button
+                onClick={handleTogglePauseBetweenTiers}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  pauseBetweenTiers ? 'bg-accent' : 'bg-ink-muted/30'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                    pauseBetweenTiers ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+          </section>
+
           {/* Multi-Agent Mode */}
           <section className="card-panel p-5 space-y-3">
             <h2 className="text-sm font-semibold text-ink mb-3">Multi-Agent Mode</h2>
@@ -238,19 +276,19 @@ export default function SettingsScreen() {
           <section className="card-panel p-5 space-y-1">
             <h2 className="text-sm font-semibold text-ink mb-3">Debug</h2>
             <button
-              onClick={() => (window as unknown as { openFlowTest?: () => void }).openFlowTest?.()}
+              onClick={() => window.openFlowTest?.()}
               className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink hover:bg-surface-hover transition-colors"
             >
               Run Flow Test
             </button>
             <button
-              onClick={() => (window as unknown as { openE2ETest?: () => void }).openE2ETest?.()}
+              onClick={() => window.openE2ETest?.()}
               className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink hover:bg-surface-hover transition-colors"
             >
               Run E2E Test
             </button>
             <button
-              onClick={() => (window as unknown as { openCICDTest?: () => void }).openCICDTest?.()}
+              onClick={() => window.openCICDTest?.()}
               className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-ink hover:bg-surface-hover transition-colors"
             >
               Run CI/CD Test

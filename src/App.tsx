@@ -11,14 +11,19 @@ import HomeScreen from './screens/HomeScreen';
 import ImportScreen from './screens/ImportScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import SettingsScreen from './screens/SettingsScreen';
-import Houston from './components/Houston';
+import Assistant from './components/Assistant';
 import ProjectLayout from './components/ProjectLayout';
 import ProjectScreenRouter from './components/ProjectScreenRouter';
 import { ProjectStoreProvider } from './store/ProjectStoreContext';
 import { getOrCreateProjectStore } from './store/projectStoreRegistry';
 
 function App() {
-  const { screen, initialize, isLoading, error, openProjectSlugs, activeProjectSlug } = useAppStore();
+  const screen = useAppStore(s => s.screen);
+  const initialize = useAppStore(s => s.initialize);
+  const isLoading = useAppStore(s => s.isLoading);
+  const error = useAppStore(s => s.error);
+  const openProjectSlugs = useAppStore(s => s.openProjectSlugs);
+  const activeProjectSlug = useAppStore(s => s.activeProjectSlug);
   const { shouldBlock } = useCLIMonitor();
   const [showFlowTest, setShowFlowTest] = useState(false);
   const [showE2ETest, setShowE2ETest] = useState(false);
@@ -50,23 +55,23 @@ function App() {
 
   // Expose test triggers for settings screen
   useEffect(() => {
-    (window as unknown as { openFlowTest?: () => void }).openFlowTest = () => setShowFlowTest(true);
-    (window as unknown as { openE2ETest?: () => void }).openE2ETest = () => setShowE2ETest(true);
+    window.openFlowTest = () => setShowFlowTest(true);
+    window.openE2ETest = () => setShowE2ETest(true);
     return () => {
-      delete (window as unknown as { openFlowTest?: () => void }).openFlowTest;
-      delete (window as unknown as { openE2ETest?: () => void }).openE2ETest;
+      delete window.openFlowTest;
+      delete window.openE2ETest;
     };
   }, []);
 
   // Expose CI/CD test trigger for HomeScreen settings menu
   useEffect(() => {
-    (window as unknown as { openCICDTest?: () => void }).openCICDTest = () => setShowCICDTest(true);
+    window.openCICDTest = () => setShowCICDTest(true);
     return () => {
-      delete (window as unknown as { openCICDTest?: () => void }).openCICDTest;
+      delete window.openCICDTest;
     };
   }, []);
 
-  // Handle houston:// deep links
+  // Handle mc:// deep links
   const handleDeepLink = useCallback(async (_url: string) => {
     // Deep link handling placeholder
   }, []);
@@ -81,7 +86,7 @@ function App() {
         <div className="text-center">
           {/* Pixel-style square loader */}
           <div className="w-12 h-12 border-4 border-ink-muted border-t-transparent mx-auto animate-spin" />
-          <p className="mt-4 font-sans font-medium text-sm text-ink-muted">Loading Houston...</p>
+          <p className="mt-4 font-sans font-medium text-sm text-ink-muted">Loading...</p>
         </div>
       </div>
     );
@@ -138,7 +143,7 @@ function App() {
         {showFlowTest && <FlowTestRunner onClose={() => setShowFlowTest(false)} />}
         {showE2ETest && <E2ETestRunner onClose={() => setShowE2ETest(false)} />}
         {showCICDTest && <CICDTestRunner onClose={() => setShowCICDTest(false)} />}
-        <Houston />
+        <Assistant />
       </div>
     </ErrorBoundary>
   );

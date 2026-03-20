@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import type { AppState } from '../useAppStore';
-import type { GamificationStats, MissionRank } from '../../types';
+import type { GamificationStats, UserRank } from '../../types';
+import { persistQueued } from '../../utils/persist';
 
 export interface GamificationSlice {
   gamification: GamificationStats;
@@ -8,9 +9,9 @@ export interface GamificationSlice {
 
   loadGamification: () => Promise<void>;
   saveGamification: () => Promise<void>;
-  recordActivity: (type: 'task_landed' | 'launch' | 'doc_written') => void;
+  recordActivity: (type: 'task_completed' | 'build' | 'doc_written') => void;
   checkAndUpdateStreak: () => void;
-  getMissionRank: () => MissionRank;
+  getUserRank: () => UserRank;
   clearGamificationEvent: () => void;
 }
 
@@ -20,8 +21,8 @@ export const GAMIFICATION_INITIAL_STATE = {
     lastActivityDate: null,
     streakFreezeUsedThisWeek: false,
     lastFreezeWeek: null,
-    totalTasksLanded: 0,
-    totalLaunches: 0,
+    totalTasksCompleted: 0,
+    totalBuilds: 0,
     milestones: [],
   } as GamificationStats,
   gamificationEvent: null as GamificationSlice['gamificationEvent'],
@@ -119,8 +120,8 @@ export const createGamificationSlice: StateCreator<AppState, [], [], Gamificatio
       ...gamification,
       lastActivityDate: today,
       streakCount: isNewDay ? gamification.streakCount + 1 : gamification.streakCount,
-      totalTasksLanded: type === 'task_landed' ? gamification.totalTasksLanded + 1 : gamification.totalTasksLanded,
-      totalLaunches: type === 'launch' ? gamification.totalLaunches + 1 : gamification.totalLaunches,
+      totalTasksCompleted: type === 'task_completed' ? gamification.totalTasksCompleted + 1 : gamification.totalTasksCompleted,
+      totalBuilds: type === 'build' ? gamification.totalBuilds + 1 : gamification.totalBuilds,
     };
 
     const newMilestones = [...updated.milestones];
@@ -134,11 +135,11 @@ export const createGamificationSlice: StateCreator<AppState, [], [], Gamificatio
       }
     }
 
-    const prevRank = get().getMissionRank();
+    const prevRank = get().getUserRank();
     updated.milestones = newMilestones;
 
     set({ gamification: updated });
-    const newRank = get().getMissionRank();
+    const newRank = get().getUserRank();
 
     if (newRank !== prevRank) {
       const rankKey = `rank-${newRank.toLowerCase().replace(/\s+/g, '-')}`;
@@ -151,20 +152,18 @@ export const createGamificationSlice: StateCreator<AppState, [], [], Gamificatio
     updated.milestones = newMilestones;
     set({ gamification: updated, gamificationEvent: event });
 
-    window.api.storage.saveGamification(currentProject.slug, updated).catch((err) => {
-      console.error('Failed to save gamification:', err);
-    });
+    persistQueued(currentProject.slug, 'gamification', updated, window.api.storage.saveGamification);
   },
 
-  getMissionRank: (): MissionRank => {
+  getUserRank: (): UserRank => {
     const { gamification } = get();
-    const { totalTasksLanded, totalLaunches, streakCount } = gamification;
+    const { totalTasksCompleted, totalBuilds, streakCount } = gamification;
 
-    if (totalTasksLanded >= 200 && totalLaunches >= 50 && streakCount >= 30) return 'Houston Actual';
-    if (totalTasksLanded >= 100 && totalLaunches >= 20 && streakCount >= 14) return 'Mission Commander';
-    if (totalTasksLanded >= 50 && totalLaunches >= 5) return 'Mission Specialist';
-    if (totalTasksLanded >= 10) return 'Flight Controller';
-    return 'Cadet';
+    if (totalTasksCompleted >= 200 && totalBuilds >= 50 && streakCount >= 30) return 'Expert';
+    if (totalTasksCompleted >= 100 && totalBuilds >= 20 && streakCount >= 14) return 'Lead';
+    if (totalTasksCompleted >= 50 && totalBuilds >= 5) return 'Builder';
+    if (totalTasksCompleted >= 10) return 'Contributor';
+    return 'Beginner';
   },
 
   clearGamificationEvent: () => set({ gamificationEvent: null }),

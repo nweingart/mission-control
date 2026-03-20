@@ -7,7 +7,11 @@ type CategoryFilter = 'all' | 'bug' | 'security' | 'performance' | 'dead_code';
 type StatusFilter = 'all' | 'open' | 'planned' | 'fixed';
 
 export default function IssuesScreen() {
-  const { currentProject, setScreen, createPlanningChat, addPlanningMessage, goToPlanningChats } = useProjectStore();
+  const currentProject = useProjectStore(s => s.currentProject);
+  const setScreen = useProjectStore(s => s.setScreen);
+  const createPlanningChat = useProjectStore(s => s.createPlanningChat);
+  const addPlanningMessage = useProjectStore(s => s.addPlanningMessage);
+  const goToPlanningChats = useProjectStore(s => s.goToPlanningChats);
   const [issues, setIssues] = useState<CodeIssue[]>([]);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
@@ -101,7 +105,7 @@ export default function IssuesScreen() {
     bug: 'bg-spectrum-red/10 text-spectrum-red border-spectrum-red/20',
     security: 'bg-spectrum-orange/10 text-spectrum-orange border-spectrum-orange/20',
     performance: 'bg-spectrum-yellow/10 text-spectrum-yellow border-spectrum-yellow/20',
-    dead_code: 'bg-spectrum-blue/10 text-spectrum-blue border-spectrum-blue/20',
+    dead_code: 'bg-accent/10 text-accent border-accent/20',
   };
 
   return (

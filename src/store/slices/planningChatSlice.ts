@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import type { AppState } from '../useAppStore';
 import type { ChatMessage, PlanningChat } from '../../types';
+import { persistQueued } from '../../utils/persist';
 
 export interface PlanningChatSlice {
   planningChats: PlanningChat[];
@@ -48,10 +49,7 @@ export const createPlanningChatSlice: StateCreator<AppState, [], [], PlanningCha
       activePlanningChatId: chatId,
     }));
     if (currentProject) {
-      window.api.storage.savePlanningChats(currentProject.slug, get().planningChats).catch((err) => {
-        console.error('Failed to save planning chats:', err);
-        set({ saveError: 'Failed to save planning chats. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'planningChats', get().planningChats, window.api.storage.savePlanningChats);
     }
     return chatId;
   },
@@ -76,10 +74,7 @@ export const createPlanningChatSlice: StateCreator<AppState, [], [], PlanningCha
       return { planningChats: updatedChats };
     });
     if (currentProject) {
-      window.api.storage.savePlanningChats(currentProject.slug, get().planningChats).catch((err) => {
-        console.error('Failed to save planning chats:', err);
-        set({ saveError: 'Failed to save planning chats. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'planningChats', get().planningChats, window.api.storage.savePlanningChats);
     }
   },
 
@@ -106,10 +101,7 @@ export const createPlanningChatSlice: StateCreator<AppState, [], [], PlanningCha
       set({ planningChats: filtered });
     }
     if (currentProject) {
-      window.api.storage.savePlanningChats(currentProject.slug, get().planningChats).catch((err) => {
-        console.error('Failed to save planning chats:', err);
-        set({ saveError: 'Failed to save planning chats. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'planningChats', get().planningChats, window.api.storage.savePlanningChats);
     }
   },
 
@@ -122,10 +114,7 @@ export const createPlanningChatSlice: StateCreator<AppState, [], [], PlanningCha
     );
     set({ planningChats: updated });
     if (currentProject) {
-      window.api.storage.savePlanningChats(currentProject.slug, get().planningChats).catch((err) => {
-        console.error('Failed to save planning chats:', err);
-        set({ saveError: 'Failed to save planning chats. Your changes may not persist.' });
-      });
+      persistQueued(currentProject.slug, 'planningChats', get().planningChats, window.api.storage.savePlanningChats);
     }
   },
 

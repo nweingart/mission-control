@@ -4,7 +4,7 @@ import { useProjectStore } from '../store/ProjectStoreContext';
 import type { FeatureModule } from '../types';
 
 export default function DocsScreen() {
-  const { currentProject } = useProjectStore();
+  const currentProject = useProjectStore(s => s.currentProject);
   const [masterPrd, setMasterPrd] = useState<string | null>(null);
   const [features, setFeatures] = useState<FeatureModule[]>([]);
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
@@ -231,7 +231,7 @@ export default function DocsScreen() {
                           <span className="px-1.5 py-0.5 text-[10px] bg-accent/10 text-accent border border-accent/20">edited</span>
                         )}
                         {feature.proposedPrd && (
-                          <span className="px-1.5 py-0.5 text-[10px] bg-spectrum-blue/10 text-spectrum-blue border border-spectrum-blue/20">update available</span>
+                          <span className="px-1.5 py-0.5 text-[10px] bg-accent/10 text-accent border border-accent/20">update available</span>
                         )}
                         {feature.status === 'outdated' && (
                           <span className="px-1.5 py-0.5 text-[10px] bg-warning/10 text-warning border border-warning/20">outdated</span>

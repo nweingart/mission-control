@@ -1,15 +1,10 @@
 import { useState } from 'react';
+import { useAppStore } from '../store/useAppStore';
 import StageIntro from '../components/onboarding/StageIntro';
-import StageHouston from '../components/onboarding/StageHouston';
+import StageAssistant from '../components/onboarding/StageAssistant';
 import StageWorkspace from '../components/onboarding/StageWorkspace';
-import StageLaunch from '../components/onboarding/StageLaunch';
 
-type Stage = 0 | 1 | 2 | 3;
-
-// Always start at the beginning — the full flow has value even if tools are already set up
-function deriveInitialStage(): Stage {
-  return 0;
-}
+type Stage = 0 | 1 | 2;
 
 function ProgressBar({ current, total }: { current: number; total: number }) {
   return (
@@ -28,20 +23,25 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
 
 export default function OnboardingScreen() {
   const [stage, setStage] = useState<Stage>(0);
+  const setScreen = useAppStore(s => s.setScreen);
+
+  const handleWorkspaceComplete = () => {
+    // Onboarding done — go to Home Screen (user imports a repo from there)
+    setScreen('home');
+  };
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Drag region + progress bar (hidden on intro splash) */}
       <div className="h-14 drag-region flex items-end justify-center pb-2">
-        {stage > 0 && <ProgressBar current={stage} total={3} />}
+        {stage > 0 && <ProgressBar current={stage} total={2} />}
       </div>
 
       {/* Stage content */}
       <main className="flex-1 overflow-y-auto flex items-center justify-center p-8">
         {stage === 0 && <StageIntro onComplete={() => setStage(1)} />}
-        {stage === 1 && <StageHouston onComplete={() => setStage(2)} />}
-        {stage === 2 && <StageWorkspace onComplete={() => setStage(3)} />}
-        {stage === 3 && <StageLaunch />}
+        {stage === 1 && <StageAssistant onComplete={() => setStage(2)} />}
+        {stage === 2 && <StageWorkspace onComplete={handleWorkspaceComplete} />}
       </main>
     </div>
   );

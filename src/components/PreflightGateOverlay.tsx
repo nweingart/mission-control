@@ -17,7 +17,7 @@ export default function PreflightGateOverlay({
   onDismiss,
   context,
 }: PreflightGateOverlayProps) {
-  const { setCLIStatus } = useAppStore();
+  const setCLIStatus = useAppStore(s => s.setCLIStatus);
   const [showTerminal, setShowTerminal] = useState(false);
   const [sessionId, setSessionId] = useState(`preflight-${Date.now()}`);
   const [runningService, setRunningService] = useState<ServiceKey | null>(null);
@@ -87,14 +87,31 @@ export default function PreflightGateOverlay({
     setCommandResult(null);
   }, []);
 
+  const runInExternalTerminal = useCallback(async (command: string, serviceKey: ServiceKey) => {
+    setRunningService(serviceKey);
+    setCommandResult(null);
+    try {
+      await window.api.setup.openInTerminal(command);
+    } catch (err) {
+      console.error('[PreflightGateOverlay] Failed to open Terminal:', err);
+      setCommandResult('error');
+      setRunningService(null);
+    }
+  }, []);
+
   const pendingCommandRef = useRef<{ command: string; serviceKey: ServiceKey } | null>(null);
 
   const handleAction = useCallback((serviceKey: ServiceKey, action: 'install' | 'auth') => {
     const info = SERVICE_REGISTRY[serviceKey];
     const command = action === 'install' ? info.installCommand : info.authCommand;
+    // GitHub commands open in Terminal.app (in-app terminal doesn't work for gh auth)
+    if (serviceKey === 'github') {
+      runInExternalTerminal(command, serviceKey);
+      return;
+    }
     pendingCommandRef.current = { command, serviceKey };
     runCommand(command, serviceKey);
-  }, [runCommand]);
+  }, [runCommand, runInExternalTerminal]);
 
   const handleTerminalReady = useCallback(async () => {
     if (pendingCommandRef.current) {
@@ -124,6 +141,37 @@ export default function PreflightGateOverlay({
     setShowTerminal(false);
     setCommandResult(null);
   }, [runningService, sessionId]);
+
+  // Poll status when GitHub commands run in external terminal
+  useEffect(() => {
+    if (runningService !== 'github') return;
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await window.api.cli.checkAll();
+        setCLIStatus(status);
+
+        const stillFailing = failures.some((f) => {
+          const svc = status[f.key];
+          return !svc?.installed || !svc?.authenticated;
+        });
+
+        if (!stillFailing) {
+          clearInterval(interval);
+          setRunningService(null);
+          setCommandResult('success');
+          setTimeout(() => {
+            setCommandResult(null);
+            onRetry();
+          }, 1000);
+        }
+      } catch (err) {
+        console.error('[PreflightGateOverlay] GitHub poll failed:', err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [runningService, failures, onRetry, setCLIStatus]);
 
   const handleRecheckAll = useCallback(async () => {
     setIsRechecking(true);
@@ -231,6 +279,25 @@ export default function PreflightGateOverlay({
           )}
         </div>
       </div>
+
+      {/* External terminal indicator for GitHub commands */}
+      {runningService === 'github' && !showTerminal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
+          <div className="card-panel p-8 max-w-sm w-full mx-4 text-center">
+            <div className="w-8 h-8 border-3 border-accent border-t-transparent animate-spin mx-auto mb-4" />
+            <h3 className="text-base font-sans font-semibold text-ink mb-2">Complete Setup in Terminal</h3>
+            <p className="text-sm text-ink-muted">
+              Follow the prompts in the Terminal window. This will update automatically when you're done.
+            </p>
+            <button
+              onClick={() => { setRunningService(null); setCommandResult(null); }}
+              className="mt-4 text-sm text-ink-muted hover:text-ink transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Terminal Modal */}
       {showTerminal && (
