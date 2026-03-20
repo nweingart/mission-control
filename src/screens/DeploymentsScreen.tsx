@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useProjectStore } from '../store/ProjectStoreContext';
 import type { DeploymentRecord } from '../types';
 import AssistantCallout from '../components/AssistantCallout';
@@ -40,8 +40,9 @@ export default function DeploymentsScreen() {
     loadDeployments();
   }, [loadDeployments]);
 
-  const sorted = [...deployments].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  const sorted = useMemo(
+    () => [...deployments].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
+    [deployments]
   );
 
   if (sorted.length === 0) {

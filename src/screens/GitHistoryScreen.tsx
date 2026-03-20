@@ -54,7 +54,7 @@ export default function GitHistoryScreen() {
     loadGitEvents();
   }, [loadGitEvents]);
 
-  const groups = groupByTask(gitEvents);
+  const groups = useMemo(() => groupByTask(gitEvents), [gitEvents]);
 
   // Summary stats
   const totalTasks = groups.filter(g => g.taskId !== '__other__').length;

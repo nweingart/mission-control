@@ -3,26 +3,13 @@ import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir, platform } from 'os';
+import { buildEnhancedPath } from '../ipc/env';
 
 const execAsync = promisify(exec);
 
-// Build a PATH that includes common CLI install locations
-function getEnhancedPath(): string {
-  const home = homedir();
-  const extraPaths = [
-    `${home}/.local/bin`,      // Claude CLI
-    '/opt/homebrew/bin',        // Homebrew on Apple Silicon
-    '/usr/local/bin',           // Homebrew on Intel / npm global
-    `${home}/.npm-global/bin`,  // npm global installs
-  ];
-  const currentPath = process.env.PATH || '';
-  const pathParts = currentPath.split(':');
-  return [...new Set([...extraPaths, ...pathParts])].join(':');
-}
-
 const enhancedEnv = {
   ...process.env,
-  PATH: getEnhancedPath(),
+  PATH: buildEnhancedPath(),
 };
 
 interface CLIStatusItem {

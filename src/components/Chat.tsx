@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
+import { ThinkingIndicator, StreamingText } from 'agent-native';
 import type { ChatMessage } from '../types';
-import houstonAvatar from '../assets/houston-avatar.webp';
+import mcAvatar from '../assets/mc-avatar.webp';
 
 interface ChatProps {
   messages: ChatMessage[];
   onSendMessage: (content: string) => void;
   isLoading?: boolean;
+  /** Streaming text content being generated in real-time */
+  streamingContent?: string;
   placeholder?: string;
   hideInput?: boolean;
   onCancel?: () => void;
@@ -14,34 +17,20 @@ interface ChatProps {
 
 const MAX_MESSAGE_LENGTH = 10000;
 
-// Typing indicator with pulsing animation and rotating status messages
-function TypingIndicator() {
-  const messages = [
-    'Thinking...',
-    'Reviewing your project...',
-    'Searching the codebase...',
-    'Reading docs...',
-    'Drafting a response...',
-    'Almost there...',
-  ];
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setIndex((prev) => (prev < messages.length - 1 ? prev + 1 : prev));
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="flex items-center space-x-1.5 px-2 py-1">
-      <div className="w-2 h-2 bg-spectrum-orange animate-pulse" style={{ animationDuration: '1s' }}></div>
-      <div className="w-2 h-2 bg-spectrum-orange animate-pulse" style={{ animationDuration: '1s', animationDelay: '0.2s' }}></div>
-      <div className="w-2 h-2 bg-spectrum-orange animate-pulse" style={{ animationDuration: '1s', animationDelay: '0.4s' }}></div>
-      <span className="text-sm text-ink-muted ml-2 italic">{messages[index]}</span>
-    </div>
-  );
-}
+// Stable Markdown components config — defined once outside render to avoid re-parses
+const markdownComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => <p className="my-1.5 leading-relaxed">{children}</p>,
+  strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-semibold">{children}</strong>,
+  em: ({ children }: { children?: React.ReactNode }) => <em>{children}</em>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="my-1.5 ml-4 list-disc">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="my-1.5 ml-4 list-decimal">{children}</ol>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="my-0.5">{children}</li>,
+  code: ({ children }: { children?: React.ReactNode }) => <code className="bg-surface/50 px-1 rounded text-[13px]">{children}</code>,
+  pre: ({ children }: { children?: React.ReactNode }) => <pre className="bg-surface/50 p-2 rounded my-1.5 overflow-x-auto text-[13px]">{children}</pre>,
+  h1: ({ children }: { children?: React.ReactNode }) => <p className="font-semibold text-base my-2">{children}</p>,
+  h2: ({ children }: { children?: React.ReactNode }) => <p className="font-semibold text-sm my-2">{children}</p>,
+  h3: ({ children }: { children?: React.ReactNode }) => <p className="font-semibold text-sm my-1.5">{children}</p>,
+};
 
 // Message bubble component with hover timestamp
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -56,7 +45,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     >
       {/* AI Avatar */}
       {!isUser && (
-        <div className="flex-shrink-0 w-7 h-7 mr-2 rounded-full overflow-hidden border-[3px] border-spectrum-blue"><img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" /></div>
+        <div className="flex-shrink-0 w-7 h-7 mr-2 rounded-full overflow-hidden border-[3px] border-accent"><img src={mcAvatar} alt="Assistant" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" /></div>
       )}
 
       <div className="flex flex-col max-w-[75%]">
@@ -70,19 +59,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           {isUser ? (
             <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
           ) : (
-            <Markdown components={{
-              p: ({ children }) => <p className="my-1.5 leading-relaxed">{children}</p>,
-              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-              em: ({ children }) => <em>{children}</em>,
-              ul: ({ children }) => <ul className="my-1.5 ml-4 list-disc">{children}</ul>,
-              ol: ({ children }) => <ol className="my-1.5 ml-4 list-decimal">{children}</ol>,
-              li: ({ children }) => <li className="my-0.5">{children}</li>,
-              code: ({ children }) => <code className="bg-surface/50 px-1 rounded text-[13px]">{children}</code>,
-              pre: ({ children }) => <pre className="bg-surface/50 p-2 rounded my-1.5 overflow-x-auto text-[13px]">{children}</pre>,
-              h1: ({ children }) => <p className="font-semibold text-base my-2">{children}</p>,
-              h2: ({ children }) => <p className="font-semibold text-sm my-2">{children}</p>,
-              h3: ({ children }) => <p className="font-semibold text-sm my-1.5">{children}</p>,
-            }}>{message.content}</Markdown>
+            <Markdown components={markdownComponents}>{message.content}</Markdown>
           )}
         </div>
 
@@ -99,7 +76,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-export default function Chat({ messages, onSendMessage, isLoading = false, placeholder = 'Type a message...', hideInput = false, onCancel }: ChatProps) {
+export default function Chat({ messages, onSendMessage, isLoading = false, streamingContent, placeholder = 'Type a message...', hideInput = false, onCancel }: ChatProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -148,10 +125,35 @@ export default function Chat({ messages, onSendMessage, isLoading = false, place
         ))}
         {isLoading && (
           <div className="flex items-start animate-fade-in">
-            <div className="flex-shrink-0 w-7 h-7 mr-2 rounded-full overflow-hidden border-[3px] border-spectrum-blue"><img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" /></div>
-            <div className="bg-surface-light">
-              <TypingIndicator />
+            <div className="flex-shrink-0 w-7 h-7 mr-2 rounded-full overflow-hidden border-[3px] border-accent">
+              <img src={mcAvatar} alt="Assistant" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
             </div>
+            {streamingContent ? (
+              <div className="flex flex-col max-w-[75%]">
+                <div className="bg-surface-light px-4 py-3 text-ink">
+                  <StreamingText
+                    content={streamingContent}
+                    isStreaming={true}
+                    cursorStyle="line"
+                    classNames={{
+                      root: 'leading-relaxed text-sm',
+                    }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="bg-surface-light rounded-lg px-3 py-2">
+                <ThinkingIndicator
+                  isThinking={true}
+                  label="Thinking"
+                  variant="dots"
+                  classNames={{
+                    root: 'flex items-center gap-2',
+                    label: 'text-sm text-ink-muted italic',
+                  }}
+                />
+              </div>
+            )}
             {onCancel && (
               <button
                 onClick={onCancel}

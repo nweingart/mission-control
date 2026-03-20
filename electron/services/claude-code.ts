@@ -1,5 +1,6 @@
 import * as pty from 'node-pty';
 import { randomUUID } from 'crypto';
+import { buildEnhancedPath } from '../ipc/env';
 
 /** Structured event from Claude's stream-json output */
 export interface ClaudeStreamEvent {
@@ -58,15 +59,7 @@ export class ClaudeCodeService {
     this.activeSessionId = sessionId;
 
     try {
-      const homedir = process.env.HOME || '';
-      const extraPaths = [
-        `${homedir}/.local/bin`,
-        '/opt/homebrew/bin',
-        '/usr/local/bin',
-      ];
-      const currentPath = process.env.PATH || '';
-      const pathParts = currentPath.split(':');
-      const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
+      const fullPath = buildEnhancedPath();
 
       // Write prompt to temp file to avoid escaping issues (PTY requires file-based piping)
       const fs = require('fs');
@@ -131,15 +124,7 @@ export class ClaudeCodeService {
     this.activeSessionId = sessionId;
 
     try {
-      const homedir = process.env.HOME || '';
-      const extraPaths = [
-        `${homedir}/.local/bin`,
-        '/opt/homebrew/bin',
-        '/usr/local/bin',
-      ];
-      const currentPath = process.env.PATH || '';
-      const pathParts = currentPath.split(':');
-      const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
+      const fullPath = buildEnhancedPath();
 
       // Spawn interactive bash, then exec claude
       // Use smaller default dimensions - will be resized by terminal component
@@ -428,15 +413,7 @@ export class ClaudeCodeService {
       let timeoutHandle: NodeJS.Timeout | null = null;
 
       // Ensure PATH includes common locations for claude CLI
-      const homedir = process.env.HOME || '';
-      const extraPaths = [
-        `${homedir}/.local/bin`,
-        '/opt/homebrew/bin',
-        '/usr/local/bin',
-      ];
-      const currentPath = process.env.PATH || '';
-      const pathParts = currentPath.split(':');
-      const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
+      const fullPath = buildEnhancedPath();
 
       // Spawn claude directly (no shell) and pipe prompt via stdin.
       // This eliminates temp files and avoids shell injection entirely.
@@ -561,11 +538,7 @@ export class ClaudeCodeService {
       let isResolved = false;
       let timeoutHandle: NodeJS.Timeout | null = null;
 
-      const homedir = process.env.HOME || '';
-      const extraPaths = [`${homedir}/.local/bin`, '/opt/homebrew/bin', '/usr/local/bin'];
-      const currentPath = process.env.PATH || '';
-      const pathParts = currentPath.split(':');
-      const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
+      const fullPath = buildEnhancedPath();
 
       const { spawn } = require('child_process');
       const cleanEnv = { ...process.env, PATH: fullPath };
@@ -761,11 +734,7 @@ export class ClaudeCodeService {
       let isResolved = false;
       let timeoutHandle: NodeJS.Timeout | null = null;
 
-      const homedir = process.env.HOME || '';
-      const extraPaths = [`${homedir}/.local/bin`, '/opt/homebrew/bin', '/usr/local/bin'];
-      const currentPath = process.env.PATH || '';
-      const pathParts = currentPath.split(':');
-      const fullPath = [...new Set([...extraPaths, ...pathParts])].join(':');
+      const fullPath = buildEnhancedPath();
 
       const { spawn } = require('child_process');
       const cleanEnv = { ...process.env, PATH: fullPath };
