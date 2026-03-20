@@ -66,7 +66,9 @@ export class ClaudeCodeService {
       const os = require('os');
       const path = require('path');
       const tempFile = path.join(os.tmpdir(), `mc-prompt-${randomUUID()}.txt`);
+      let tempFileCreated = false;
       fs.writeFileSync(tempFile, prompt, { encoding: 'utf-8', mode: 0o600 });
+      tempFileCreated = true;
 
       console.log('[ClaudeCode.spawn] Spawning bash --norc --noprofile (skip profile garbage)');
 
@@ -100,6 +102,10 @@ export class ClaudeCodeService {
 
       return result;
     } catch (err) {
+      // Clean up temp file if spawn failed before the shell command could rm it
+      if (tempFileCreated) {
+        try { require('fs').unlinkSync(tempFile); } catch { /* best effort */ }
+      }
       return this.handleSpawnError(sessionId, err, onOutput, onExit);
     }
   }
@@ -327,8 +333,12 @@ export class ClaudeCodeService {
       return; // Silently ignore if session doesn't exist
     }
 
+    // Clamp to reasonable bounds to prevent crashes from extreme values
+    const safeCols = Math.max(1, Math.min(cols, 1000));
+    const safeRows = Math.max(1, Math.min(rows, 500));
+
     try {
-      session.pty.resize(cols, rows);
+      session.pty.resize(safeCols, safeRows);
       console.log(`[ClaudeCode.resize] Resized session ${sessionId} to ${cols}x${rows}`);
     } catch (err) {
       console.error('[ClaudeCode.resize] Error resizing PTY:', err);

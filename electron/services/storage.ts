@@ -1,29 +1,39 @@
 import { app, shell } from 'electron';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, renameSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, renameSync, unlinkSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
+
+// Max file size for JSON reads (50MB) to prevent memory exhaustion from corrupted files
+const MAX_JSON_FILE_SIZE = 50 * 1024 * 1024;
 
 import type { Config, Project, Task, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapFinding, GapAnalysis, GamificationStats, FeatureModule, CodeIssue, ScanSnapshot } from '../../src/types/index';
 
 export class StorageService {
-  private houstonDir: string;
+  private appDir: string;
   private projectsDir: string;
   private configPath: string;
   private defaultDevelopmentPath: string;
 
   constructor() {
     const homeDir = app.getPath('home');
-    this.houstonDir = join(homeDir, '.houston');
-    this.projectsDir = join(this.houstonDir, 'projects');
-    this.configPath = join(this.houstonDir, 'config.json');
-    this.defaultDevelopmentPath = join(homeDir, 'development', 'houston');
+    this.appDir = join(homeDir, '.mission-control');
+
+    // Migrate legacy ~/.houston → ~/.mission-control
+    const legacyDir = join(homeDir, '.houston');
+    if (existsSync(legacyDir) && !existsSync(this.appDir)) {
+      renameSync(legacyDir, this.appDir);
+    }
+
+    this.projectsDir = join(this.appDir, 'projects');
+    this.configPath = join(this.appDir, 'config.json');
+    this.defaultDevelopmentPath = join(homeDir, 'development');
 
     this.ensureDirectories();
   }
 
   private ensureDirectories(): void {
-    if (!existsSync(this.houstonDir)) {
-      mkdirSync(this.houstonDir, { recursive: true });
+    if (!existsSync(this.appDir)) {
+      mkdirSync(this.appDir, { recursive: true });
     }
     if (!existsSync(this.projectsDir)) {
       mkdirSync(this.projectsDir, { recursive: true });
@@ -42,6 +52,10 @@ export class StorageService {
    * Returns null if parsing fails and backup recovery also fails
    */
   private safeJsonParse<T>(content: string, filePath: string): T | null {
+    if (content.length > MAX_JSON_FILE_SIZE) {
+      console.error(`File too large to parse (${(content.length / 1024 / 1024).toFixed(1)}MB): ${filePath}`);
+      return null;
+    }
     try {
       return JSON.parse(content) as T;
     } catch (error) {
@@ -139,8 +153,8 @@ export class StorageService {
     const content = readFileSync(this.configPath, 'utf-8');
     const config = this.safeJsonParse<Config>(content, this.configPath);
 
-    // Return default config if parsing failed
-    if (!config) {
+    // Return default config if parsing failed or wrong shape
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
       this.saveConfig(defaultConfig);
       return defaultConfig;
     }
@@ -188,7 +202,8 @@ export class StorageService {
     }
 
     const content = readFileSync(metaPath, 'utf-8');
-    return this.safeJsonParse<Project>(content, metaPath);
+    const project = this.safeJsonParse<Project>(content, metaPath);
+    return (project && typeof project === 'object' && !Array.isArray(project)) ? project : null;
   }
 
   createProject(name: string, idea: string): Project {
@@ -207,15 +222,15 @@ export class StorageService {
       idea,
     };
 
-    // Create project directory in Houston storage
-    const houstonProjectDir = join(this.projectsDir, slug);
-    mkdirSync(houstonProjectDir, { recursive: true });
+    // Create project directory in app storage
+    const projectDataDir = join(this.projectsDir, slug);
+    mkdirSync(projectDataDir, { recursive: true });
 
     // Create project directory in development folder
     mkdirSync(projectPath, { recursive: true });
 
     // Save meta.json atomically
-    const metaPath = join(houstonProjectDir, 'meta.json');
+    const metaPath = join(projectDataDir, 'meta.json');
     this.atomicWriteFile(metaPath, JSON.stringify(project, null, 2));
 
     // Initialize empty tasks.json
@@ -259,7 +274,7 @@ export class StorageService {
       }
     }
 
-    // Delete Houston metadata directory (internal data, not user files)
+    // Delete app metadata directory (internal data, not user files)
     const projectDir = join(this.projectsDir, slug);
     if (existsSync(projectDir)) {
       rmSync(projectDir, { recursive: true, force: true });
@@ -275,7 +290,7 @@ export class StorageService {
 
     const content = readFileSync(tasksPath, 'utf-8');
     const tasks = this.safeJsonParse<Task[]>(content, tasksPath);
-    return tasks ?? [];
+    return Array.isArray(tasks) ? tasks : [];
   }
 
   saveTasks(slug: string, tasks: Task[]): void {
@@ -309,7 +324,7 @@ export class StorageService {
 
     const content = readFileSync(chatPath, 'utf-8');
     const messages = this.safeJsonParse<ChatMessage[]>(content, chatPath);
-    return messages ?? [];
+    return Array.isArray(messages) ? messages : [];
   }
 
   saveChatHistory(slug: string, messages: ChatMessage[]): void {
@@ -328,7 +343,7 @@ export class StorageService {
 
     const content = readFileSync(backlogPath, 'utf-8');
     const items = this.safeJsonParse<BacklogItem[]>(content, backlogPath);
-    return items ?? [];
+    return Array.isArray(items) ? items : [];
   }
 
   saveBacklog(slug: string, items: BacklogItem[]): void {
@@ -347,7 +362,7 @@ export class StorageService {
 
     const content = readFileSync(sprintsPath, 'utf-8');
     const sprints = this.safeJsonParse<Sprint[]>(content, sprintsPath);
-    return sprints ?? [];
+    return Array.isArray(sprints) ? sprints : [];
   }
 
   saveSprints(slug: string, sprints: Sprint[]): void {
@@ -365,7 +380,7 @@ export class StorageService {
 
     const content = readFileSync(chatsPath, 'utf-8');
     const chats = this.safeJsonParse<PlanningChat[]>(content, chatsPath);
-    return chats ?? [];
+    return Array.isArray(chats) ? chats : [];
   }
 
   savePlanningChats(slug: string, chats: PlanningChat[]): void {
@@ -384,7 +399,7 @@ export class StorageService {
 
     const content = readFileSync(eventsPath, 'utf-8');
     const events = this.safeJsonParse<GitEvent[]>(content, eventsPath);
-    return events ?? [];
+    return Array.isArray(events) ? events : [];
   }
 
   saveGitEvents(slug: string, events: GitEvent[]): void {
@@ -398,7 +413,8 @@ export class StorageService {
     const deploymentsPath = join(this.projectsDir, slug, 'deployments.json');
     if (!existsSync(deploymentsPath)) return [];
     const content = readFileSync(deploymentsPath, 'utf-8');
-    return this.safeJsonParse<DeploymentRecord[]>(content, deploymentsPath) ?? [];
+    const deployments = this.safeJsonParse<DeploymentRecord[]>(content, deploymentsPath);
+    return Array.isArray(deployments) ? deployments : [];
   }
 
   saveDeployments(slug: string, deployments: DeploymentRecord[]): void {
@@ -412,7 +428,8 @@ export class StorageService {
     const path = join(this.projectsDir, slug, 'gap-analysis.json');
     if (!existsSync(path)) return [];
     const content = readFileSync(path, 'utf-8');
-    return this.safeJsonParse<GapAnalysis[]>(content, path) ?? [];
+    const analyses = this.safeJsonParse<GapAnalysis[]>(content, path);
+    return Array.isArray(analyses) ? analyses : [];
   }
 
   saveGapAnalysis(slug: string, analyses: GapAnalysis[]): void {
@@ -426,7 +443,8 @@ export class StorageService {
     const path = join(this.projectsDir, slug, 'gamification.json');
     if (!existsSync(path)) return null;
     const content = readFileSync(path, 'utf-8');
-    return this.safeJsonParse<GamificationStats>(content, path);
+    const stats = this.safeJsonParse<GamificationStats>(content, path);
+    return (stats && typeof stats === 'object' && !Array.isArray(stats)) ? stats : null;
   }
 
   saveGamification(slug: string, stats: GamificationStats): void {
@@ -442,7 +460,8 @@ export class StorageService {
       return [];
     }
     const content = readFileSync(featuresPath, 'utf-8');
-    return this.safeJsonParse<FeatureModule[]>(content, featuresPath) ?? [];
+    const features = this.safeJsonParse<FeatureModule[]>(content, featuresPath);
+    return Array.isArray(features) ? features : [];
   }
 
   saveFeatures(slug: string, features: FeatureModule[]): void {
@@ -458,7 +477,8 @@ export class StorageService {
       return [];
     }
     const content = readFileSync(issuesPath, 'utf-8');
-    return this.safeJsonParse<CodeIssue[]>(content, issuesPath) ?? [];
+    const issues = this.safeJsonParse<CodeIssue[]>(content, issuesPath);
+    return Array.isArray(issues) ? issues : [];
   }
 
   saveIssues(slug: string, issues: CodeIssue[]): void {
@@ -474,7 +494,8 @@ export class StorageService {
       return [];
     }
     const content = readFileSync(scanPath, 'utf-8');
-    return this.safeJsonParse<ScanSnapshot[]>(content, scanPath) ?? [];
+    const snapshots = this.safeJsonParse<ScanSnapshot[]>(content, scanPath);
+    return Array.isArray(snapshots) ? snapshots : [];
   }
 
   saveScanHistory(slug: string, snapshots: ScanSnapshot[]): void {
@@ -496,12 +517,12 @@ export class StorageService {
       scanStatus: 'pending',
     };
 
-    // Create project directory in Houston storage
-    const houstonProjectDir = join(this.projectsDir, slug);
-    mkdirSync(houstonProjectDir, { recursive: true });
+    // Create project directory in app storage
+    const projectDataDir = join(this.projectsDir, slug);
+    mkdirSync(projectDataDir, { recursive: true });
 
     // Save meta.json atomically
-    const metaPath = join(houstonProjectDir, 'meta.json');
+    const metaPath = join(projectDataDir, 'meta.json');
     this.atomicWriteFile(metaPath, JSON.stringify(project, null, 2));
 
     // Initialize empty collections

@@ -25,6 +25,9 @@ interface RepoResult {
 // Default timeout for git/gh operations (2 minutes)
 const GIT_TIMEOUT = 2 * 60 * 1000;
 
+// Max diff output size (10MB) to prevent memory exhaustion from large repos
+const MAX_DIFF_SIZE = 10 * 1024 * 1024;
+
 function getEnv(): Record<string, string> {
   return {
     ...process.env as Record<string, string>,
@@ -467,6 +470,9 @@ export class GitHubService {
     if (code !== 0) {
       throw new Error(`git diff failed: ${stderr}`);
     }
+    if (stdout.length > MAX_DIFF_SIZE) {
+      return stdout.slice(0, MAX_DIFF_SIZE) + '\n\n[Diff truncated — exceeded 10MB limit]';
+    }
     return stdout;
   }
 
@@ -609,8 +615,20 @@ export class GitHubService {
   }
 
   async deleteRepo(repoUrl: string): Promise<void> {
-    const fullName = repoUrl.replace('https://github.com/', '').replace(/\.git$/, '').replace(/\/$/, '');
-    if (!fullName || !fullName.includes('/')) {
+    // Parse URL safely to extract owner/repo
+    let fullName: string;
+    try {
+      const parsed = new URL(repoUrl);
+      if (parsed.hostname !== 'github.com') {
+        throw new Error('Not a GitHub URL');
+      }
+      // pathname is e.g. "/owner/repo" or "/owner/repo.git"
+      const parts = parsed.pathname.replace(/^\//, '').replace(/\.git$/, '').split('/');
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        throw new Error('URL must be in format github.com/owner/repo');
+      }
+      fullName = `${parts[0]}/${parts[1]}`;
+    } catch (err) {
       throw new Error(`Invalid GitHub repo URL: ${repoUrl}`);
     }
     const { code, stderr } = await runCommand('gh', ['repo', 'delete', fullName, '--yes'], process.cwd());
