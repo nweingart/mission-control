@@ -45,9 +45,9 @@ But they share:
 
 ```bash
 # Create a worktree for task "auth-component" branching from main
-git worktree add /tmp/houston-worktrees/my-project/task-auth -b feature/task-auth main
+git worktree add /tmp/mc-worktrees/my-project/task-auth -b feature/task-auth main
 
-# Claude builds in /tmp/houston-worktrees/my-project/task-auth/
+# Claude builds in /tmp/mc-worktrees/my-project/task-auth/
 # (completely independent from the main working directory)
 
 # After build completes, back in the main repo:
@@ -55,7 +55,7 @@ git checkout main
 git merge feature/task-auth
 
 # Cleanup
-git worktree remove /tmp/houston-worktrees/my-project/task-auth
+git worktree remove /tmp/mc-worktrees/my-project/task-auth
 git branch -d feature/task-auth
 ```
 
@@ -91,10 +91,10 @@ git branch -d feature/task-auth
 ### Worktree Path Convention
 
 ```
-/tmp/houston-worktrees/<project-slug>/task-<taskId>/
+/tmp/mc-worktrees/<project-slug>/task-<taskId>/
 ```
 
-Example: `/tmp/houston-worktrees/my-saas-app/task-1708012345-3/`
+Example: `/tmp/mc-worktrees/my-saas-app/task-1708012345-3/`
 
 ### node_modules in Worktrees
 
@@ -111,7 +111,7 @@ If the app crashes or the user cancels mid-build, stale worktrees may remain on 
 await cleanupStaleWorktrees(projectPath);
 
 async function cleanupStaleWorktrees(projectPath: string) {
-  const worktreeDir = `/tmp/houston-worktrees/${projectSlug}`;
+  const worktreeDir = `/tmp/mc-worktrees/${projectSlug}`;
   if (await fs.exists(worktreeDir)) {
     // List all worktrees, remove any that exist
     const entries = await fs.readdir(worktreeDir);

@@ -2,90 +2,103 @@ import { StateCreator } from 'zustand';
 import type { AppState } from '../useAppStore';
 import type { Toast } from '../storeTypes';
 import type { HumanTask } from '../../types';
-import { buildTaskCompleteMessage, buildErrorMessage } from '../../utils/houstonGreeting';
+import { buildTaskCompleteMessage, buildErrorMessage } from '../../utils/assistantMessages';
 
 export interface NotificationsSlice {
-  houstonGreeting: string | null;
-  houstonApproval: {
+  assistantGreeting: string | null;
+  assistantApproval: {
     taskTitle: string;
     completedCount: number;
     totalCount: number;
     remaining: number;
+    tierCompletedTaskTitles: string[];
+    diffStat: string;
+    reviewSummary: string;
   } | null;
-  houstonErrorContext: {
+  assistantErrorContext: {
     taskTitle: string;
     errorHint: string;
+    errorOutput: string;
     timestamp: number;
   } | null;
-  houstonHumanTaskContext: {
+  assistantHumanTaskContext: {
     tasks: HumanTask[];
     timestamp: number;
   } | null;
   toasts: Toast[];
 
-  clearHoustonGreeting: () => void;
-  notifyHoustonBuildComplete: (taskTitle: string) => void;
-  notifyHoustonBuildError: (taskTitle: string, errorHint?: string) => void;
-  notifyHoustonTaskApproval: (taskTitle: string, completedCount: number, totalCount: number, remaining: number) => void;
-  clearHoustonApproval: () => void;
-  clearHoustonErrorContext: () => void;
-  notifyHoustonHumanTasks: (tasks: HumanTask[]) => void;
-  clearHoustonHumanTaskContext: () => void;
+  clearAssistantGreeting: () => void;
+  notifyAssistantBuildComplete: (taskTitle: string) => void;
+  notifyAssistantBuildError: (taskTitle: string, errorHint?: string, errorOutput?: string) => void;
+  notifyAssistantTaskApproval: (taskTitle: string, completedCount: number, totalCount: number, remaining: number, tierCompletedTaskTitles?: string[], diffStat?: string, reviewSummary?: string) => void;
+  clearAssistantApproval: () => void;
+  clearAssistantErrorContext: () => void;
+  notifyAssistantHumanTasks: (tasks: HumanTask[]) => void;
+  clearAssistantHumanTaskContext: () => void;
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
 }
 
 export const NOTIFICATIONS_INITIAL_STATE = {
-  houstonGreeting: null as string | null,
-  houstonApproval: null as NotificationsSlice['houstonApproval'],
-  houstonErrorContext: null as NotificationsSlice['houstonErrorContext'],
-  houstonHumanTaskContext: null as NotificationsSlice['houstonHumanTaskContext'],
+  assistantGreeting: null as string | null,
+  assistantApproval: null as NotificationsSlice['assistantApproval'],
+  assistantErrorContext: null as NotificationsSlice['assistantErrorContext'],
+  assistantHumanTaskContext: null as NotificationsSlice['assistantHumanTaskContext'],
   toasts: [] as Toast[],
 };
 
 export const createNotificationsSlice: StateCreator<AppState, [], [], NotificationsSlice> = (set, get) => ({
   ...NOTIFICATIONS_INITIAL_STATE,
 
-  clearHoustonGreeting: () => set({ houstonGreeting: null }),
+  clearAssistantGreeting: () => set({ assistantGreeting: null }),
 
-  notifyHoustonBuildComplete: (taskTitle) => {
+  notifyAssistantBuildComplete: (taskTitle) => {
     const { tasks } = get();
     const completedCount = tasks.filter((t) => t.completed).length;
     const msg = buildTaskCompleteMessage(taskTitle, completedCount, tasks.length);
-    set({ houstonGreeting: msg });
+    set({ assistantGreeting: msg });
   },
 
-  notifyHoustonBuildError: (taskTitle, errorHint) => {
+  notifyAssistantBuildError: (taskTitle, errorHint, errorOutput) => {
     const msg = buildErrorMessage(taskTitle, errorHint);
     set({
-      houstonGreeting: msg,
-      houstonErrorContext: {
+      assistantGreeting: msg,
+      assistantErrorContext: {
         taskTitle,
         errorHint: errorHint || 'Check the build log for details.',
+        errorOutput: errorOutput || '',
         timestamp: Date.now(),
       },
     });
   },
 
-  notifyHoustonTaskApproval: (taskTitle, completedCount, totalCount, remaining) => {
+  notifyAssistantTaskApproval: (taskTitle, completedCount, totalCount, remaining, tierCompletedTaskTitles, diffStat, reviewSummary) => {
     set({
-      houstonApproval: { taskTitle, completedCount, totalCount, remaining },
+      assistantApproval: {
+        taskTitle,
+        completedCount,
+        totalCount,
+        remaining,
+        tierCompletedTaskTitles: tierCompletedTaskTitles || [],
+        diffStat: diffStat || '',
+        reviewSummary: reviewSummary || '',
+      },
     });
   },
 
-  clearHoustonApproval: () => set({ houstonApproval: null }),
-  clearHoustonErrorContext: () => set({ houstonErrorContext: null }),
+  clearAssistantApproval: () => set({ assistantApproval: null }),
+  clearAssistantErrorContext: () => set({ assistantErrorContext: null }),
 
-  notifyHoustonHumanTasks: (tasks) => {
+  notifyAssistantHumanTasks: (tasks) => {
     set({
-      houstonHumanTaskContext: {
+      assistantHumanTaskContext: {
         tasks,
         timestamp: Date.now(),
       },
     });
   },
 
-  clearHoustonHumanTaskContext: () => set({ houstonHumanTaskContext: null }),
+  clearAssistantHumanTaskContext: () => set({ assistantHumanTaskContext: null }),
 
   addToast: (toast) => {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);

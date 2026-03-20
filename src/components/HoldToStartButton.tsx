@@ -1,22 +1,22 @@
 import { useState, useRef, useCallback } from 'react';
 
-interface HoldToLaunchButtonProps {
-  onLaunch: () => void;
+interface HoldToStartButtonProps {
+  onStart: () => void;
   label?: string;
   holdDuration?: number;
   disabled?: boolean;
   className?: string;
 }
 
-export default function HoldToLaunchButton({
-  onLaunch,
-  label = 'Hold to Launch',
+export default function HoldToStartButton({
+  onStart,
+  label = 'Hold to Start',
   holdDuration = 1000,
   disabled = false,
   className = '',
-}: HoldToLaunchButtonProps) {
+}: HoldToStartButtonProps) {
   const [holding, setHolding] = useState(false);
-  const [launched, setLaunched] = useState(false);
+  const [started, setStarted] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startTimeRef = useRef<number>(0);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -33,19 +33,19 @@ export default function HoldToLaunchButton({
   }, [holdDuration]);
 
   const handleStart = () => {
-    if (disabled || launched) return;
+    if (disabled || started) return;
     setHolding(true);
     startTimeRef.current = Date.now();
     animFrameRef.current = requestAnimationFrame(updateProgress);
 
     timerRef.current = setTimeout(() => {
       setHolding(false);
-      setLaunched(true);
+      setStarted(true);
       cancelAnimationFrame(animFrameRef.current);
       if (progressRef.current) progressRef.current.style.width = '100%';
-      onLaunch();
-      // Reset launched state after flash
-      setTimeout(() => setLaunched(false), 1500);
+      onStart();
+      // Reset started state after flash
+      setTimeout(() => setStarted(false), 1500);
     }, holdDuration);
   };
 
@@ -71,8 +71,8 @@ export default function HoldToLaunchButton({
       onTouchEnd={handleEnd}
       disabled={disabled}
       className={`relative overflow-hidden select-none ${
-        launched
-          ? 'btn-solid-success animate-launch-flash'
+        started
+          ? 'btn-solid-success animate-start-flash'
           : 'btn-solid-primary'
       } flex items-center justify-center gap-2 px-6 py-2.5 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
     >
@@ -80,24 +80,24 @@ export default function HoldToLaunchButton({
       <div
         ref={progressRef}
         className={`absolute left-0 top-0 h-full transition-none ${
-          launched ? 'bg-spectrum-green/30' : 'bg-white/15'
+          started ? 'bg-spectrum-green/30' : 'bg-white/15'
         }`}
         style={{ width: '0%' }}
       />
 
       {/* Content */}
       <span className="relative z-10 flex items-center gap-2">
-        {/* Rocket icon */}
+        {/* Play/start icon */}
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth={2}
-            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+            d="M5 3l14 9-14 9V3z"
           />
         </svg>
         <span className="font-semibold">
-          {launched ? 'We have liftoff!' : holding ? 'Launching...' : label}
+          {started ? 'Build started!' : holding ? 'Starting...' : label}
         </span>
       </span>
     </button>

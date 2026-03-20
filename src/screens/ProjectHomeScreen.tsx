@@ -18,17 +18,20 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  useSortable,
   arrayMove,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import houstonAvatar from '../assets/houston-avatar.webp';
-import HoustonCallout from '../components/HoustonCallout';
+import mcAvatar from '../assets/mc-avatar.webp';
+import AssistantCallout from '../components/AssistantCallout';
 import StatusLight from '../components/StatusLight';
+import SortableRoadmapCard from '../components/SortableRoadmapCard';
+import { priorityColors } from '../components/SortableRoadmapCard';
+import { StreamingText } from 'agent-native';
+import { docComponents } from '../utils/markdown-components';
 import ProgressRing from '../components/ProgressRing';
 import CountdownTimer from '../components/CountdownTimer';
 import { getBacklogItemStatus, sprintStatusToBacklogStatus } from '../utils/backlogStatus';
 import type { BacklogStatus } from '../utils/backlogStatus';
+import { getSprintReadiness } from '../utils/missionReadiness';
 
 
 const statusLabel: Record<ProjectStatus, string> = {
@@ -43,239 +46,21 @@ const statusLabel: Record<ProjectStatus, string> = {
 };
 
 const statusColor: Record<ProjectStatus, string> = {
-  idea: 'bg-spectrum-blue/20 text-spectrum-blue',
+  idea: 'bg-accent/20 text-accent',
   discovery: 'bg-spectrum-purple/20 text-spectrum-purple',
   prd_review: 'bg-spectrum-purple/20 text-spectrum-purple',
   planning: 'bg-spectrum-yellow/20 text-spectrum-yellow',
   building: 'bg-spectrum-orange/20 text-spectrum-orange',
   previewing: 'bg-spectrum-green/20 text-spectrum-green',
-  deploying: 'bg-spectrum-blue/20 text-spectrum-blue',
+  deploying: 'bg-accent/20 text-accent',
   complete: 'bg-spectrum-green/20 text-spectrum-green',
 };
 
 
 type Tab = 'plan' | 'docs' | 'ship' | 'data' | 'settings';
 
-const statusBadgeColors: Record<BacklogStatus, string> = {
-  todo: 'bg-surface-light text-ink-muted border-border',
-  in_progress: 'bg-spectrum-orange/20 text-spectrum-orange border-spectrum-orange/30',
-  done: 'bg-spectrum-blue/20 text-spectrum-blue border-spectrum-blue/30',
-};
-
-const statusBadgeLabels: Record<BacklogStatus, string> = {
-  todo: 'On the Pad',
-  in_progress: 'In Orbit',
-  done: 'Landed',
-};
-
-const statusLeftBorder: Record<BacklogStatus, string> = {
-  todo: 'border-l-ink-muted/20',
-  in_progress: 'border-l-spectrum-blue',
-  done: 'border-l-spectrum-green',
-};
-
-const priorityColors: Record<string, string> = {
-  high: 'bg-spectrum-orange/15 text-spectrum-orange border-spectrum-orange/30',
-  medium: 'bg-spectrum-yellow/15 text-spectrum-yellow border-spectrum-yellow/30',
-  low: 'bg-spectrum-blue/15 text-spectrum-blue border-spectrum-blue/30',
-};
 
 
-const typeColors: Record<PlanningType, string> = {
-  bug_fix: 'bg-spectrum-orange/20 text-spectrum-orange border-spectrum-orange/30',
-  feature_refactor: 'bg-spectrum-blue/20 text-spectrum-blue border-spectrum-blue/30',
-  new_feature: 'bg-spectrum-purple/20 text-spectrum-purple border-spectrum-purple/30',
-};
-const typeLabels: Record<PlanningType, string> = {
-  bug_fix: 'Bug',
-  feature_refactor: 'Refactor',
-  new_feature: 'New Feature',
-};
-
-
-// Shared markdown rendering components for professional document look
-const docComponents = {
-  h1: ({ children, ...props }: React.ComponentPropsWithoutRef<'h1'>) => (
-    <div className="mb-8 pb-4 border-b-2 border-border">
-      <h1 className="text-2xl font-bold text-ink tracking-tight" {...props}>{children}</h1>
-    </div>
-  ),
-  h2: ({ children, ...props }: React.ComponentPropsWithoutRef<'h2'>) => (
-    <div className="mt-10 mb-4">
-      <h2 className="text-lg font-bold text-ink uppercase tracking-wide" {...props}>{children}</h2>
-      <div className="mt-2 h-px bg-border" />
-    </div>
-  ),
-  h3: ({ children, ...props }: React.ComponentPropsWithoutRef<'h3'>) => (
-    <h3 className="text-base font-semibold text-ink mt-6 mb-2" {...props}>{children}</h3>
-  ),
-  p: ({ children, ...props }: React.ComponentPropsWithoutRef<'p'>) => (
-    <p className="text-sm text-ink-secondary leading-relaxed mb-3" {...props}>{children}</p>
-  ),
-  ul: ({ children, ...props }: React.ComponentPropsWithoutRef<'ul'>) => (
-    <ul className="space-y-1.5 mb-4 ml-1" {...props}>{children}</ul>
-  ),
-  ol: ({ children, ...props }: React.ComponentPropsWithoutRef<'ol'>) => (
-    <ol className="space-y-2 mb-4 ml-1 list-none" {...props}>{children}</ol>
-  ),
-  li: ({ children, ...props }: React.ComponentPropsWithoutRef<'li'>) => (
-    <li className="text-sm text-ink-secondary leading-relaxed flex items-start gap-2" {...props}>
-      <span className="mt-1.5 flex-shrink-0 w-1.5 h-1.5 bg-ink-muted" />
-      <span className="flex-1">{children}</span>
-    </li>
-  ),
-  strong: ({ children, ...props }: React.ComponentPropsWithoutRef<'strong'>) => (
-    <strong className="font-semibold text-ink" {...props}>{children}</strong>
-  ),
-  hr: () => <div className="my-8 border-t border-border" />,
-  code: ({ children, ...props }: React.ComponentPropsWithoutRef<'code'>) => (
-    <code className="bg-surface-light border border-border text-xs font-mono px-1.5 py-0.5" {...props}>{children}</code>
-  ),
-  pre: ({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) => (
-    <pre className="bg-surface-light border border-border p-4 text-xs font-mono overflow-auto mb-4" {...props}>{children}</pre>
-  ),
-  table: ({ children, ...props }: React.ComponentPropsWithoutRef<'table'>) => (
-    <div className="overflow-auto mb-4 border border-border">
-      <table className="w-full text-sm" {...props}>{children}</table>
-    </div>
-  ),
-  th: ({ children, ...props }: React.ComponentPropsWithoutRef<'th'>) => (
-    <th className="bg-surface-light text-left text-xs font-semibold text-ink uppercase tracking-wider px-4 py-2.5 border-b border-border" {...props}>{children}</th>
-  ),
-  td: ({ children, ...props }: React.ComponentPropsWithoutRef<'td'>) => (
-    <td className="px-4 py-2 text-sm text-ink-secondary border-b border-border" {...props}>{children}</td>
-  ),
-  blockquote: ({ children, ...props }: React.ComponentPropsWithoutRef<'blockquote'>) => (
-    <blockquote className="border-l-[3px] border-border-strong bg-surface-light px-4 py-3 mb-4 text-sm text-ink-muted italic" {...props}>{children}</blockquote>
-  ),
-};
-
-function SortableRoadmapCard({ item, index, isExpanded, onToggle, derivedStatus, onNotesChange, onRemove }: { item: BacklogItem; index: number; isExpanded: boolean; onToggle: () => void; derivedStatus: BacklogStatus; onNotesChange: (notes: string) => void; onRemove: () => void }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`${isDragging ? 'z-10 relative' : ''}`}
-    >
-      <div
-        className={`card-panel border-l-[3px] transition-all duration-200 overflow-hidden hover:shadow-md hover:border-spectrum-blue/30 ${statusLeftBorder[derivedStatus]} ${
-          isDragging ? 'border-spectrum-blue/50 shadow-lg scale-[1.01]' : ''
-        }`}
-      >
-        {/* Card header — clickable */}
-        <button
-          onClick={onToggle}
-          className="w-full text-left px-5 py-4 group"
-        >
-          <div className="flex items-start gap-3">
-            {/* Drag handle */}
-            <div
-              className="flex-shrink-0 cursor-grab active:cursor-grabbing text-ink-muted/40 hover:text-ink-muted transition-colors mt-0.5"
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              {...attributes}
-              {...listeners}
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
-              </svg>
-            </div>
-
-            {/* Main content */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-mono text-ink-muted">#{index + 1}</span>
-                <span className={`text-[14px] font-display font-bold capitalize px-2 py-0.5 border rounded ${priorityColors[item.priority] || priorityColors.low}`}>
-                  {item.priority}
-                </span>
-                <StatusLight status={derivedStatus} />
-                {item.type && (
-                  <span className={`text-[14px] font-display font-bold px-2 py-0.5 border rounded ${typeColors[item.type]}`}>
-                    {typeLabels[item.type]}
-                  </span>
-                )}
-              </div>
-              <h3 className="text-[15px] font-bold text-ink">{item.title}</h3>
-              <p className="text-xs text-ink-secondary mt-1 line-clamp-2">{item.description}</p>
-
-              {/* Stats row — readouts */}
-              <div className="flex items-center gap-2 mt-3">
-                {item.estimatedTasks != null && (
-                  <span className="readout">{item.estimatedTasks} tasks</span>
-                )}
-                {item.storyPoints != null && (
-                  <span className="readout">{item.storyPoints} SP</span>
-                )}
-                {item.prdStatus === 'complete' && (
-                  <span className="readout readout-success">Flight Plan Ready</span>
-                )}
-              </div>
-            </div>
-
-            {/* Expand chevron */}
-            <svg
-              className={`w-4 h-4 text-ink-muted flex-shrink-0 mt-1 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-              fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-        </button>
-
-        {/* Expanded content */}
-        {isExpanded && (
-          <div className="border-t border-border px-5 py-6 space-y-6">
-            {item.prd ? (
-              <ReactMarkdown components={docComponents}>{item.prd}</ReactMarkdown>
-            ) : (
-              <p className="text-sm text-ink-muted italic">No flight plan generated yet.</p>
-            )}
-
-            {/* Notes */}
-            <div>
-              <label className="text-sm font-sans font-medium text-ink-muted">Notes</label>
-              <textarea
-                defaultValue={item.notes || ''}
-                onBlur={(e) => onNotesChange(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                placeholder="Add free-form notes..."
-                className="input-inset mt-1.5 w-full border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted/50 focus:outline-none focus:ring-2 focus:ring-border-strong/30 focus:border-border-strong resize-y min-h-[80px]"
-                rows={3}
-              />
-            </div>
-
-            {/* Remove */}
-            <div className="flex justify-end pt-2 border-t border-border">
-              <button
-                onClick={(e) => { e.stopPropagation(); onRemove(); }}
-                className="text-xs text-ink-muted hover:text-spectrum-red transition-colors flex items-center gap-1"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                Remove from backlog
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export default function ProjectHomeScreen() {
   const {
@@ -303,7 +88,13 @@ export default function ProjectHomeScreen() {
     renameSprint,
     removeSprint,
     setSprintStatus,
+    startBuild,
     setScreen,
+    planAndSprint,
+    retryFailedPRDs,
+    ensureAllPRDsGenerating,
+    addToast,
+    prdStreaming,
   } = useProjectStore();
 
   const [prd, setPrd] = useState<string | null>(null);
@@ -316,6 +107,7 @@ export default function ProjectHomeScreen() {
   const [typeFilter, setTypeFilter] = useState<'all' | PlanningType>('all');
   const [renamingSprintId, setRenamingSprintId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [planAndSprintingId, setPlanAndSprintingId] = useState<string | null>(null);
 
   // Load PRD, features, issues on mount
   useEffect(() => {
@@ -325,6 +117,35 @@ export default function ProjectHomeScreen() {
       window.api.storage.getIssues(currentProject.slug).then(setIssues).catch(() => setIssues([]));
     }
   }, [currentProject]);
+
+  // Stuck-recovery: reset orphaned 'generating' items to 'failed' on mount
+  useEffect(() => {
+    const stuck = backlog.filter((b) => b.prdStatus === 'generating');
+    if (stuck.length > 0) {
+      for (const item of stuck) {
+        updateBacklogItem(item.id, { prdStatus: 'failed' });
+      }
+      addToast({
+        type: 'warning',
+        message: `${stuck.length} flight ${stuck.length === 1 ? 'plan was' : 'plans were'} interrupted. You can retry them.`,
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-trigger pending PRDs for items in planning sprints
+  useEffect(() => {
+    const planningSprints = sprints.filter((s) => s.status === 'planning');
+    for (const sprint of planningSprints) {
+      const pendingItems = backlog.filter(
+        (b) => b.sprintId === sprint.id && (!b.prdStatus || b.prdStatus === 'pending')
+      );
+      for (const item of pendingItems) {
+        generateBacklogPRD(item.id);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backlog.map((b) => `${b.id}:${b.sprintId}:${b.prdStatus}`).join(',')]);
 
   if (!currentProject) return null;
 
@@ -393,7 +214,7 @@ export default function ProjectHomeScreen() {
             <h1 className="text-2xl font-bold text-ink mb-6">Discovery Chat History</h1>
             {chatMessages.map((msg) => (
               <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] px-4 py-3 ${msg.role === 'user' ? 'bg-spectrum-blue/10 text-ink' : 'bg-surface-light text-ink-secondary'}`}>
+                <div className={`max-w-[80%] px-4 py-3 ${msg.role === 'user' ? 'bg-accent/10 text-ink' : 'bg-surface-light text-ink-secondary'}`}>
                   <p className="text-xs font-medium text-ink-muted mb-1">{msg.role === 'user' ? 'You' : 'Claude'}</p>
                   <div className="prose prose-sm max-w-none prose-p:text-inherit prose-p:leading-relaxed">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
@@ -421,7 +242,7 @@ export default function ProjectHomeScreen() {
                         <span className={`px-1.5 py-0.5 text-xs font-medium ${
                           f.severity === 'missing' ? 'bg-spectrum-red/20 text-spectrum-red' :
                           f.severity === 'incomplete' ? 'bg-spectrum-yellow/20 text-spectrum-yellow' :
-                          'bg-spectrum-blue/20 text-spectrum-blue'
+                          'bg-accent/20 text-accent'
                         }`}>{f.severity}</span>
                         <span className="text-ink-secondary">{f.description}</span>
                       </div>
@@ -441,7 +262,7 @@ export default function ProjectHomeScreen() {
                 <div className="px-5 py-3 flex items-center justify-between">
                   <button
                     onClick={() => setExpandedBacklogId(expandedBacklogId === item.id ? null : item.id)}
-                    className="flex items-center gap-2 text-sm font-medium text-ink hover:text-spectrum-blue transition-colors text-left"
+                    className="flex items-center gap-2 text-sm font-medium text-ink hover:text-accent transition-colors text-left"
                   >
                     <svg
                       className={`w-3.5 h-3.5 transition-transform ${expandedBacklogId === item.id ? 'rotate-90' : ''}`}
@@ -476,9 +297,9 @@ export default function ProjectHomeScreen() {
                     {(item.prdStatus === 'pending' || !item.prdStatus) && (
                       <button
                         onClick={() => generateBacklogPRD(item.id)}
-                        className="text-xs text-spectrum-blue hover:text-spectrum-blue/80 transition-colors"
+                        className="text-xs text-accent hover:text-accent/80 transition-colors"
                       >
-                        Generate Flight Plan
+                        Generate Plan
                       </button>
                     )}
                   </div>
@@ -488,6 +309,11 @@ export default function ProjectHomeScreen() {
                     <ReactMarkdown components={docComponents}>{item.prd}</ReactMarkdown>
                   </div>
                 )}
+                {expandedBacklogId === item.id && !item.prd && item.prdStatus === 'generating' && prdStreaming[item.id] && (
+                  <div className="border-t border-border px-5 py-6">
+                    <StreamingText content={prdStreaming[item.id]} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -495,328 +321,6 @@ export default function ProjectHomeScreen() {
       default:
         return null;
     }
-  };
-
-  // Helper to get relative time string
-  const relativeTime = (timestamp: string) => {
-    const now = Date.now();
-    const then = new Date(timestamp).getTime();
-    const diff = now - then;
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  };
-
-  const renderOverview = () => {
-    const completedTasks = tasks.filter((t) => t.completed).length;
-    const totalTasks = tasks.length;
-    const latestDeployment = deployments.length > 0
-      ? [...deployments].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
-      : null;
-
-    // Backlog status counts (derived from sprint status)
-    const statusCounts = {
-      todo: backlog.filter((b) => getBacklogItemStatus(b, sprints) === 'todo').length,
-      in_progress: backlog.filter((b) => getBacklogItemStatus(b, sprints) === 'in_progress').length,
-      done: backlog.filter((b) => getBacklogItemStatus(b, sprints) === 'done').length,
-    };
-    const totalBacklog = backlog.length;
-
-    // Priority counts
-    const priorityCounts = {
-      high: backlog.filter((b) => b.priority === 'high').length,
-      medium: backlog.filter((b) => b.priority === 'medium').length,
-      low: backlog.filter((b) => b.priority === 'low').length,
-    };
-
-    // Recent activity: merge gitEvents + deployments, sort by timestamp, take 5
-    const recentActivity = [
-      ...gitEvents.map((e) => ({
-        id: e.id,
-        type: 'git' as const,
-        description: e.commitMessage || e.taskTitle || e.type.replace(/_/g, ' '),
-        timestamp: e.timestamp,
-        eventType: e.type,
-      })),
-      ...deployments.map((d) => ({
-        id: d.id,
-        type: 'deploy' as const,
-        description: d.commitMessage || `Deploy to ${d.branch}`,
-        timestamp: d.timestamp,
-        eventType: d.status,
-      })),
-    ]
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 5);
-
-    const hasStatusData = statusCounts.in_progress > 0 || statusCounts.done > 0;
-
-    const openIssues = issues.filter(i => i.status === 'open');
-    const criticalIssues = openIssues.filter(i => i.severity === 'critical');
-    const isV2 = currentProject.scanStatus === 'complete';
-
-    return (
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* V2: Scan summary + tech stack */}
-        {isV2 && currentProject.techStack && (
-          <div className="card-panel p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <h3 className="text-sm font-semibold text-ink">Codebase</h3>
-                <span className="text-xs text-ink-muted">
-                  Last scanned {currentProject.lastScannedAt ? new Date(currentProject.lastScannedAt).toLocaleDateString() : 'never'}
-                </span>
-              </div>
-              <button
-                onClick={() => setScreen('scanning')}
-                className="text-xs text-accent hover:text-accent/80 transition-colors font-medium"
-              >
-                Re-scan
-              </button>
-            </div>
-            <p className="text-sm text-ink-secondary mb-3">{currentProject.techStack.summary}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {[...currentProject.techStack.languages, ...currentProject.techStack.frameworks, ...currentProject.techStack.buildTools].map((tech, i) => (
-                <span key={i} className="px-2 py-0.5 text-xs bg-surface-light border border-border text-ink-muted">{tech}</span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* V2: Issues summary */}
-        {isV2 && openIssues.length > 0 && (
-          <div className="card-panel p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-ink">Open Issues</h3>
-              <button
-                onClick={() => setScreen('issues')}
-                className="text-xs text-accent hover:text-accent/80 transition-colors font-medium"
-              >
-                View All
-              </button>
-            </div>
-            <div className="flex items-center gap-4 text-sm">
-              {criticalIssues.length > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 bg-error rounded-full" />
-                  <span className="text-error font-medium">{criticalIssues.length} critical</span>
-                </span>
-              )}
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 bg-warning rounded-full" />
-                <span className="text-ink-muted">{openIssues.filter(i => i.severity === 'warning').length} warnings</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 bg-ink-muted/30 rounded-full" />
-                <span className="text-ink-muted">{openIssues.filter(i => i.severity === 'info').length} info</span>
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Stat cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Backlog card */}
-          <div className="card-panel p-5">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="p-2 bg-spectrum-blue/15 text-spectrum-blue rounded-md">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                </svg>
-              </div>
-              <h3 className="text-sm font-semibold text-ink-muted">Backlog</h3>
-            </div>
-            <p className="text-3xl font-bold text-ink">{totalBacklog}</p>
-            <p className="text-xs text-ink-muted mt-1">
-              {priorityCounts.high > 0 && <span className="text-spectrum-orange">{priorityCounts.high} high</span>}
-              {priorityCounts.high > 0 && priorityCounts.medium > 0 && ' · '}
-              {priorityCounts.medium > 0 && <span className="text-spectrum-yellow">{priorityCounts.medium} med</span>}
-              {(priorityCounts.high > 0 || priorityCounts.medium > 0) && priorityCounts.low > 0 && ' · '}
-              {priorityCounts.low > 0 && <span className="text-spectrum-blue">{priorityCounts.low} low</span>}
-              {totalBacklog === 0 && 'No items yet'}
-            </p>
-          </div>
-
-          {/* Build Tasks card */}
-          <div className="card-panel p-5">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="p-2 bg-spectrum-orange/15 text-spectrum-orange rounded-md">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                </svg>
-              </div>
-              <h3 className="text-sm font-semibold text-ink-muted">Build Tasks</h3>
-            </div>
-            <p className="text-3xl font-bold text-ink">
-              {completedTasks}<span className="text-lg font-normal text-ink-muted">/{totalTasks}</span>
-            </p>
-            <p className="text-xs text-ink-muted mt-1">
-              {totalTasks === 0 ? 'No tasks yet' : completedTasks === totalTasks ? 'All complete' : `${totalTasks - completedTasks} remaining`}
-            </p>
-          </div>
-
-          {/* Deployments card */}
-          <div className="card-panel p-5">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="p-2 bg-spectrum-purple/15 text-spectrum-purple rounded-md">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-              </div>
-              <h3 className="text-sm font-semibold text-ink-muted">Deployments</h3>
-            </div>
-            <p className="text-3xl font-bold text-ink">{deployments.length}</p>
-            <p className="text-xs text-ink-muted mt-1">
-              {latestDeployment ? (
-                <span className={latestDeployment.status === 'success' ? 'text-spectrum-green' : latestDeployment.status === 'failed' ? 'text-spectrum-red' : 'text-spectrum-yellow'}>
-                  Latest: {latestDeployment.status}
-                </span>
-              ) : (
-                'No deployments yet'
-              )}
-            </p>
-          </div>
-
-          {/* Features card (V2) or Status card (V1) */}
-          {currentProject.scanStatus === 'complete' ? (
-            <div className="card-panel p-5">
-              <div className="flex items-center gap-2.5 mb-3">
-                <div className="p-2 bg-spectrum-green/15 text-spectrum-green rounded-md">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                </div>
-                <h3 className="text-sm font-semibold text-ink-muted">Features</h3>
-              </div>
-              <p className="text-3xl font-bold text-ink">{features.length}</p>
-              <p className="text-xs text-ink-muted mt-1">
-                {features.length === 0 ? 'No features detected' : `${features.filter(f => f.status === 'documented').length} documented`}
-              </p>
-            </div>
-          ) : (
-            <div className="card-panel p-5">
-              <div className="flex items-center gap-2.5 mb-3">
-                <div className="p-2 bg-spectrum-green/15 text-spectrum-green rounded-md">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-sm font-semibold text-ink-muted">Status</h3>
-              </div>
-              <div className="mt-1">
-                <span className={`px-2 py-0.5 text-xs font-medium ${currentProject.status ? statusColor[currentProject.status] : 'bg-surface-light text-ink-muted'}`}>
-                  {currentProject.status ? statusLabel[currentProject.status] : 'Imported'}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Backlog status bar */}
-        {totalBacklog > 0 && (
-          <div className="card-panel p-4">
-            <h3 className="text-base font-sans font-semibold text-ink-muted mb-3">
-              {hasStatusData ? 'Backlog Progress' : 'Backlog by Priority'}
-            </h3>
-            {hasStatusData ? (
-              <>
-                <div className="flex overflow-hidden h-3 bg-surface-light">
-                  {statusCounts.done > 0 && (
-                    <div
-                      className="bg-spectrum-green transition-all"
-                      style={{ width: `${(statusCounts.done / totalBacklog) * 100}%` }}
-                    />
-                  )}
-                  {statusCounts.in_progress > 0 && (
-                    <div
-                      className="bg-spectrum-orange transition-all"
-                      style={{ width: `${(statusCounts.in_progress / totalBacklog) * 100}%` }}
-                    />
-                  )}
-                  {statusCounts.todo > 0 && (
-                    <div
-                      className="bg-surface transition-all"
-                      style={{ width: `${(statusCounts.todo / totalBacklog) * 100}%` }}
-                    />
-                  )}
-                </div>
-                <div className="flex items-center gap-4 mt-2 text-xs text-ink-muted">
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-spectrum-green" /> Landed {statusCounts.done}</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-spectrum-orange" /> In Orbit {statusCounts.in_progress}</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-surface" /> On the Pad {statusCounts.todo}</span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex overflow-hidden h-3 bg-surface-light">
-                  {priorityCounts.high > 0 && (
-                    <div
-                      className="bg-spectrum-orange transition-all"
-                      style={{ width: `${(priorityCounts.high / totalBacklog) * 100}%` }}
-                    />
-                  )}
-                  {priorityCounts.medium > 0 && (
-                    <div
-                      className="bg-spectrum-yellow transition-all"
-                      style={{ width: `${(priorityCounts.medium / totalBacklog) * 100}%` }}
-                    />
-                  )}
-                  {priorityCounts.low > 0 && (
-                    <div
-                      className="bg-spectrum-blue transition-all"
-                      style={{ width: `${(priorityCounts.low / totalBacklog) * 100}%` }}
-                    />
-                  )}
-                </div>
-                <div className="flex items-center gap-4 mt-2 text-xs text-ink-muted">
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-spectrum-orange" /> High {priorityCounts.high}</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-spectrum-yellow" /> Medium {priorityCounts.medium}</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-spectrum-blue" /> Low {priorityCounts.low}</span>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Recent Activity */}
-        <div className="card-panel p-4">
-          <h3 className="text-base font-sans font-semibold text-ink-muted mb-3">Recent Activity</h3>
-          {recentActivity.length === 0 ? (
-            <p className="text-sm text-ink-muted py-4 text-center">No activity yet</p>
-          ) : (
-            <div className="space-y-2">
-              {recentActivity.map((activity) => (
-                <div key={activity.id} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
-                  <div className={`p-1.5 flex-shrink-0 ${
-                    activity.type === 'deploy'
-                      ? 'bg-spectrum-blue/10 text-spectrum-blue'
-                      : 'bg-surface-light text-ink-muted'
-                  }`}>
-                    {activity.type === 'deploy' ? (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                    ) : (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-ink truncate">{activity.description}</p>
-                  </div>
-                  <span className="text-xs text-ink-muted flex-shrink-0">{relativeTime(activity.timestamp)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
   };
 
   const renderDocuments = () => {
@@ -853,12 +357,12 @@ export default function ProjectHomeScreen() {
               disabled={!card.available}
               className={`text-left card-panel p-5 transition-colors ${
                 card.available
-                  ? 'hover:border-spectrum-blue/50 cursor-pointer'
+                  ? 'hover:border-accent/50 cursor-pointer'
                   : 'opacity-50 cursor-not-allowed'
               }`}
             >
               <div className="flex items-start gap-4">
-                <div className={`p-2.5 ${card.available ? 'bg-spectrum-blue/10 text-spectrum-blue' : 'bg-border/30 text-ink-muted'}`}>
+                <div className={`p-2.5 ${card.available ? 'bg-accent/10 text-accent' : 'bg-border/30 text-ink-muted'}`}>
                   {card.icon}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -881,10 +385,12 @@ export default function ProjectHomeScreen() {
 
   const renderPlanning = () => (
     <div className="flex-1 flex flex-col items-center justify-center p-8">
-      <HoustonCallout
-        message="Use Houston to brainstorm features, plan bug fixes, and add items to your backlog."
-        ctaLabel="Open Houston"
-        onCtaClick={() => (window as unknown as { openHouston?: () => void }).openHouston?.()}
+      <AssistantCallout
+        message="Use the assistant to brainstorm features, plan bug fixes, and add items to your backlog."
+        actions={[
+          { label: 'Fix a Bug', onClick: () => window.openAssistant?.(), variant: 'secondary' },
+          { label: 'Plan a Feature', onClick: () => window.openAssistant?.() },
+        ]}
       />
     </div>
   );
@@ -924,9 +430,9 @@ export default function ProjectHomeScreen() {
 
     const filterButtons: { key: 'all' | BacklogStatus; label: string }[] = [
       { key: 'all', label: 'All' },
-      { key: 'todo', label: 'On the Pad' },
-      { key: 'in_progress', label: 'In Orbit' },
-      { key: 'done', label: 'Landed' },
+      { key: 'todo', label: 'To Do' },
+      { key: 'in_progress', label: 'In Progress' },
+      { key: 'done', label: 'Done' },
     ];
 
     const typeFilterButtons: { key: 'all' | PlanningType; label: string }[] = [
@@ -968,8 +474,8 @@ export default function ProjectHomeScreen() {
       )}
 
       {backlog.length === 0 ? (
-        <HoustonCallout
-          message="Launch pad is clear. Load some payloads."
+        <AssistantCallout
+          message="Backlog is empty. Add some items."
           ctaLabel="Add to Backlog"
           onCtaClick={() => setPlanSubTab('planning')}
         />
@@ -987,6 +493,17 @@ export default function ProjectHomeScreen() {
                   derivedStatus={getBacklogItemStatus(item, sprints)}
                   onNotesChange={(notes) => updateBacklogItem(item.id, { notes })}
                   onRemove={() => removeBacklogItem(item.id)}
+                  sprints={sprints.filter((s) => s.status !== 'completed')}
+                  onSprintAssign={(sprintId) => updateBacklogItem(item.id, { sprintId })}
+                  onPlanAndSprint={!item.sprintId ? async () => {
+                    setPlanAndSprintingId(item.id);
+                    try {
+                      await planAndSprint(item.id);
+                    } finally {
+                      setPlanAndSprintingId(null);
+                    }
+                  } : undefined}
+                  isPlanAndSprinting={planAndSprintingId === item.id}
                 />
               ))}
             </div>
@@ -1012,30 +529,30 @@ export default function ProjectHomeScreen() {
           <div>
             <h2 className="text-xl font-bold text-ink">Roadmap</h2>
             <p className="text-xs text-ink-muted mt-0.5">
-              Plan missions and allocate backlog items — recommended {recommendedCap} SP per mission
+              Plan sprints and allocate backlog items — recommended {recommendedCap} SP per sprint
             </p>
           </div>
           <button
             onClick={() => {
               const num = sprints.length + 1;
-              addSprint(`Mission ${num}`);
+              addSprint(`Sprint ${num}`);
             }}
             className="btn-solid-primary flex items-center gap-2 px-5 py-2.5 text-sm font-bold"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
             </svg>
-            New Mission
+            New Sprint
           </button>
         </div>
 
         {activeSprints.length === 0 && completedSprints.length === 0 ? (
-          <HoustonCallout
-            message="No orbits mapped yet. Create one?"
-            ctaLabel="New Mission"
+          <AssistantCallout
+            message="No sprints created yet. Create one?"
+            ctaLabel="New Sprint"
             onCtaClick={() => {
               const num = sprints.length + 1;
-              addSprint(`Mission ${num}`);
+              addSprint(`Sprint ${num}`);
             }}
           />
         ) : (
@@ -1046,9 +563,10 @@ export default function ProjectHomeScreen() {
               const doneSP = sprint.status === 'completed' ? totalSP : 0;
               const overCap = totalSP > recommendedCap;
               const derivedStatus = sprintStatusToBacklogStatus(sprint.status);
+              const readiness = getSprintReadiness(items);
 
               return (
-                <div key={sprint.id} className="card-panel overflow-hidden transition-all duration-200 hover:shadow-md hover:border-spectrum-blue/30">
+                <div key={sprint.id} className="card-panel overflow-hidden transition-all duration-200 hover:shadow-md hover:border-accent/30">
                   {/* Sprint header */}
                   <div className="px-5 py-3 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -1069,7 +587,7 @@ export default function ProjectHomeScreen() {
                             }
                             if (e.key === 'Escape') setRenamingSprintId(null);
                           }}
-                          className="input-inset text-sm font-semibold text-ink bg-transparent border-b border-spectrum-blue outline-none px-0 py-0"
+                          className="input-inset text-sm font-semibold text-ink bg-transparent border-b border-accent outline-none px-0 py-0"
                         />
                       ) : (
                         <h3 className="text-sm font-semibold text-ink">{sprint.name}</h3>
@@ -1077,13 +595,29 @@ export default function ProjectHomeScreen() {
                       {/* Sprint status badge */}
                       <span className={`text-[11px] font-display font-bold uppercase tracking-wider px-2 py-0.5 border rounded ${
                         sprint.status === 'active'
-                          ? 'bg-spectrum-blue/15 text-spectrum-blue border-spectrum-blue/30'
+                          ? 'bg-accent/15 text-accent border-accent/30'
                           : 'bg-surface-light text-ink-muted border-border'
                       }`}>
                         {sprint.status === 'active' ? 'Active' : 'Planning'}
                       </span>
                       <span className="text-xs text-ink-muted">({items.length} {items.length === 1 ? 'item' : 'items'})</span>
-                      <span className={`text-[14px] font-display font-bold px-2 py-0.5 border rounded ${overCap ? 'bg-spectrum-orange/15 text-spectrum-orange border-spectrum-orange/30' : 'bg-spectrum-blue/15 text-spectrum-blue border-spectrum-blue/30'}`}>
+                      {/* Readiness badge — only for planning sprints with items */}
+                      {sprint.status === 'planning' && items.length > 0 && (
+                        readiness.isReady ? (
+                          <span className="text-[11px] font-display font-bold px-2 py-0.5 bg-spectrum-green/15 text-spectrum-green border border-spectrum-green/30 rounded">
+                            All Planned
+                          </span>
+                        ) : (
+                          <span className={`text-[11px] font-display font-bold px-2 py-0.5 border rounded ${
+                            readiness.isBlocked
+                              ? 'bg-spectrum-red/15 text-spectrum-red border-spectrum-red/30'
+                              : 'bg-spectrum-yellow/15 text-spectrum-yellow border-spectrum-yellow/30'
+                          }`}>
+                            {readiness.complete}/{readiness.total} Planned
+                          </span>
+                        )
+                      )}
+                      <span className={`text-[14px] font-display font-bold px-2 py-0.5 border rounded ${overCap ? 'bg-spectrum-orange/15 text-spectrum-orange border-spectrum-orange/30' : 'bg-accent/15 text-accent border-accent/30'}`}>
                         {totalSP} / {recommendedCap} SP
                       </span>
                       {overCap && (
@@ -1096,23 +630,37 @@ export default function ProjectHomeScreen() {
                       {sprint.status === 'planning' && (
                         <button
                           onClick={() => setSprintStatus(sprint.id, 'active')}
-                          className="px-2.5 py-1 text-xs font-bold text-spectrum-blue hover:bg-spectrum-blue/10 border border-spectrum-blue/30 rounded transition-colors"
-                          title="Start this mission"
+                          disabled={!readiness.isReady}
+                          className={`px-2.5 py-1 text-xs font-bold border rounded transition-colors ${
+                            readiness.isReady
+                              ? 'text-accent hover:bg-accent/10 border-accent/30 cursor-pointer'
+                              : 'text-ink-muted border-border opacity-60 cursor-not-allowed'
+                          }`}
+                          title={readiness.isReady ? 'Start this sprint' : readiness.blockReason || 'Sprint not ready'}
                         >
-                          Start Mission
+                          Start Sprint
                         </button>
                       )}
                       {sprint.status === 'active' && (
-                        <button
-                          onClick={() => setSprintStatus(sprint.id, 'completed')}
-                          className="px-2.5 py-1 text-xs font-bold text-spectrum-green hover:bg-spectrum-green/10 border border-spectrum-green/30 rounded transition-colors"
-                          title="Complete this mission"
-                        >
-                          Complete Mission
-                        </button>
+                        <>
+                          <button
+                            onClick={() => startBuild(sprint.id)}
+                            className="px-2.5 py-1 text-xs font-bold text-white bg-accent hover:bg-accent/80 border border-accent rounded transition-colors"
+                            title="Start build with this sprint's items"
+                          >
+                            Start Build
+                          </button>
+                          <button
+                            onClick={() => setSprintStatus(sprint.id, 'completed')}
+                            className="px-2.5 py-1 text-xs font-bold text-spectrum-green hover:bg-spectrum-green/10 border border-spectrum-green/30 rounded transition-colors"
+                            title="Complete this sprint"
+                          >
+                            Complete Sprint
+                          </button>
+                        </>
                       )}
                       <label
-                        className="p-1 text-ink-muted hover:text-houston-amber transition-colors cursor-pointer"
+                        className="p-1 text-ink-muted hover:text-mc-amber transition-colors cursor-pointer"
                         title={sprint.deadline ? `Deadline: ${new Date(sprint.deadline).toLocaleDateString()}` : 'Set deadline'}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1134,7 +682,7 @@ export default function ProjectHomeScreen() {
                           setRenameValue(sprint.name);
                         }}
                         className="p-1 text-ink-muted hover:text-ink transition-colors"
-                        title="Rename mission"
+                        title="Rename sprint"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1143,7 +691,7 @@ export default function ProjectHomeScreen() {
                       <button
                         onClick={() => removeSprint(sprint.id)}
                         className="p-1 text-ink-muted hover:text-spectrum-red transition-colors"
-                        title="Delete mission"
+                        title="Delete sprint"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1155,7 +703,7 @@ export default function ProjectHomeScreen() {
                   {/* Sprint items */}
                   {items.length === 0 ? (
                     <div className="px-5 py-4 flex items-center justify-between">
-                      <span className="text-sm text-ink-muted">Empty mission — assign items from the backlog</span>
+                      <span className="text-sm text-ink-muted">Empty sprint — assign items from the backlog</span>
                       <div className="flex items-center gap-1">
                         {unassigned.length > 0 && (
                           <button
@@ -1182,11 +730,33 @@ export default function ProjectHomeScreen() {
                   ) : (
                     <div className="divide-y divide-border">
                       {items.map((item) => (
-                        <div key={item.id} className="px-5 py-3 flex items-center gap-3 transition-all duration-150 hover:bg-spectrum-blue/5">
+                        <div key={item.id} className="px-5 py-3 flex items-center gap-3 transition-all duration-150 hover:bg-accent/5">
                           <StatusLight status={derivedStatus} size="sm" />
                           <span className={`text-[14px] font-display font-bold capitalize px-2 py-0.5 border rounded ${priorityColors[item.priority] || priorityColors.low}`}>
                             {item.priority}
                           </span>
+                          {/* Per-item planning status */}
+                          {item.prdStatus === 'generating' ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-spectrum-yellow">
+                              <span className="w-3 h-3 border-2 border-spectrum-yellow border-t-transparent rounded-full animate-spin" />
+                              Planning
+                            </span>
+                          ) : item.prdStatus === 'complete' ? (
+                            <span className="text-[11px] font-medium px-1.5 py-0.5 bg-spectrum-green/15 text-spectrum-green border border-spectrum-green/30 rounded">
+                              Planned
+                            </span>
+                          ) : item.prdStatus === 'failed' ? (
+                            <button
+                              onClick={() => generateBacklogPRD(item.id)}
+                              className="text-[11px] font-medium px-1.5 py-0.5 bg-spectrum-red/15 text-spectrum-red border border-spectrum-red/30 rounded hover:bg-spectrum-red/25 transition-colors"
+                            >
+                              Failed — Retry
+                            </button>
+                          ) : (
+                            <span className="text-[11px] font-medium text-ink-muted/60">
+                              Unplanned
+                            </span>
+                          )}
                           <span className="text-sm text-ink flex-1 truncate">{item.title}</span>
                           {item.storyPoints != null && (
                             <span className="text-xs text-ink-muted">{item.storyPoints} SP</span>
@@ -1271,7 +841,7 @@ export default function ProjectHomeScreen() {
                           <button
                             onClick={() => removeSprint(sprint.id)}
                             className="p-1 text-ink-muted hover:text-spectrum-red transition-colors"
-                            title="Delete mission"
+                            title="Delete sprint"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1375,7 +945,7 @@ export default function ProjectHomeScreen() {
               {currentProject.scanStatus ? (
                 <span className={`px-2 py-0.5 text-xs font-medium ${
                   currentProject.scanStatus === 'complete' ? 'bg-spectrum-green/20 text-spectrum-green' :
-                  currentProject.scanStatus === 'scanning' ? 'bg-spectrum-blue/20 text-spectrum-blue' :
+                  currentProject.scanStatus === 'scanning' ? 'bg-accent/20 text-accent' :
                   currentProject.scanStatus === 'failed' ? 'bg-spectrum-red/20 text-spectrum-red' :
                   'bg-surface-light text-ink-muted'
                 }`}>
@@ -1395,7 +965,7 @@ export default function ProjectHomeScreen() {
           {currentProject.githubRepo && (
             <div>
               <label className="text-sm font-sans font-medium text-ink-muted">GitHub</label>
-              <p className="text-sm text-spectrum-blue mt-1 break-all">{currentProject.githubRepo}</p>
+              <p className="text-sm text-accent mt-1 break-all">{currentProject.githubRepo}</p>
             </div>
           )}
         </div>

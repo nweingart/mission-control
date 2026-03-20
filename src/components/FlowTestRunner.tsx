@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import type { Project } from '../types';
 
 type StepStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
 
@@ -9,12 +10,15 @@ interface TestStep {
   run: () => Promise<void>;
 }
 
-const TEST_PROJECT = {
+const TEST_PROJECT: Project = {
   slug: 'flow-test-habit-tracker',
   name: 'Habit Tracker',
-  status: 'idea' as const,
   createdAt: new Date().toISOString(),
   projectPath: '/tmp/flow-test/habit-tracker',
+  githubRepo: '',
+  scanStatus: 'pending',
+  // V1 legacy fields for test flow
+  status: 'idea',
   idea: 'A habit tracking app with streak tracking, calendar view, and daily reminders. Users can set goals, track streaks, and see progress charts.',
 };
 
@@ -122,8 +126,8 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
       run: async () => {
         console.log('[FlowTest:CreateProject] Creating test project...');
         const project = { ...TEST_PROJECT };
-        store.getState().setCurrentProject(project as any);
-        store.getState().setProjects([project as any]);
+        store.getState().setCurrentProject(project);
+        store.getState().setProjects([project]);
         await delay(1500);
         console.log('[FlowTest:CreateProject] Done.');
       },
@@ -155,7 +159,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
       run: async () => {
         console.log('[FlowTest:PRDReview] Setting project with PRD...');
         const project = { ...TEST_PROJECT, status: 'planning' as const, prd: TEST_PRD };
-        store.getState().setCurrentProject(project as any);
+        store.getState().setCurrentProject(project);
         store.getState().setScreen('prd-review');
         await delay(STEP_DELAY);
         console.log('[FlowTest:PRDReview] Done.');
@@ -183,7 +187,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
         }));
         store.getState().setTasks(tasksInProgress);
         const project = { ...TEST_PROJECT, status: 'building' as const };
-        store.getState().setCurrentProject(project as any);
+        store.getState().setCurrentProject(project);
         store.getState().setScreen('building');
         await delay(STEP_DELAY);
         console.log('[FlowTest:Building] Done.');
@@ -246,7 +250,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
         const allDone = TEST_TASKS.map(t => ({ ...t, completed: true }));
         store.getState().setTasks(allDone);
         const project = { ...TEST_PROJECT, status: 'previewing' as const };
-        store.getState().setCurrentProject(project as any);
+        store.getState().setCurrentProject(project);
         store.getState().setScreen('previewing');
         await delay(STEP_DELAY);
         console.log('[FlowTest:Preview] Done.');
@@ -262,7 +266,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
           status: 'deploying' as const,
           githubRepo: 'https://github.com/testuser/habit-tracker',
         };
-        store.getState().setCurrentProject(project as any);
+        store.getState().setCurrentProject(project);
         store.getState().setScreen('deploying');
         await delay(STEP_DELAY);
         console.log('[FlowTest:Deploy] Done.');
@@ -278,7 +282,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
           status: 'complete' as const,
           githubRepo: 'https://github.com/testuser/habit-tracker',
         };
-        store.getState().setCurrentProject(project as any);
+        store.getState().setCurrentProject(project);
         store.getState().setScreen('complete');
         await delay(STEP_DELAY);
         console.log('[FlowTest:Complete] Done.');
@@ -345,7 +349,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
 
       // Clear planning data and git events
       store.getState().setActivePlanningChat(null);
-      store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksLanded: 0, totalLaunches: 0, milestones: [] }, gamificationEvent: null, houstonGreeting: null, houstonApproval: null, houstonErrorContext: null, houstonHumanTaskContext: null, toasts: [] });
+      store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, oneOffBacklogItemId: null, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksCompleted: 0, totalBuilds: 0, milestones: [] }, gamificationEvent: null, assistantGreeting: null, assistantApproval: null, assistantErrorContext: null, assistantHumanTaskContext: null, toasts: [], buildPipelineResume: null, buildPipelineAutoApprove: null });
 
       store.getState().setScreen('home');
 
@@ -375,7 +379,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
     const skipped = stepStatuses.filter(s => s === 'skipped').length;
     const total = steps.length;
 
-    let report = `HOUSTON FLOW TEST REPORT\n`;
+    let report = `MC FLOW TEST REPORT\n`;
     report += `========================\n`;
     report += `Date: ${timestamp}\n`;
     report += `Result: ${failed === 0 ? 'ALL PASSED' : `${failed} FAILED`}\n`;
@@ -586,7 +590,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-spectrum-blue animate-pulse" />
+            <div className="w-2 h-2 bg-accent animate-pulse" />
             <h3 className="text-base font-sans font-semibold text-ink">Flow Test</h3>
           </div>
           <button
@@ -602,10 +606,10 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
 
         {/* Current step callout */}
         {isRunning && currentStep >= 0 && currentStep < steps.length && (
-          <div className="mx-4 mt-3 px-3 py-2 bg-spectrum-blue/15 border border-spectrum-blue/30 flex items-center space-x-2">
-            <div className="w-4 h-4 border-4 border-spectrum-blue border-t-transparent animate-spin flex-shrink-0" />
-            <span className="text-sm text-spectrum-blue font-semibold">{steps[currentStep].name}</span>
-            <span className="text-[13px] text-spectrum-blue/60 font-mono ml-auto">{steps[currentStep].screen}</span>
+          <div className="mx-4 mt-3 px-3 py-2 bg-accent/15 border border-accent/30 flex items-center space-x-2">
+            <div className="w-4 h-4 border-4 border-accent border-t-transparent animate-spin flex-shrink-0" />
+            <span className="text-sm text-accent font-semibold">{steps[currentStep].name}</span>
+            <span className="text-[13px] text-accent/60 font-mono ml-auto">{steps[currentStep].screen}</span>
           </div>
         )}
 
@@ -621,7 +625,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
                 {/* Status icon */}
                 <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
                   {status === 'running' && (
-                    <div className="w-2.5 h-2.5 bg-spectrum-blue animate-pulse" />
+                    <div className="w-2.5 h-2.5 bg-accent animate-pulse" />
                   )}
                   {status === 'passed' && (
                     <svg className="w-5 h-5 text-success" fill="currentColor" viewBox="0 0 20 20">
@@ -678,7 +682,7 @@ export default function FlowTestRunner({ onClose }: { onClose: () => void }) {
           >
             {isRunning ? (
               <span className="flex items-center justify-center space-x-2">
-                <div className="w-4 h-4 border-4 border-spectrum-blue border-t-transparent animate-spin" />
+                <div className="w-4 h-4 border-4 border-accent border-t-transparent animate-spin" />
                 <span>Running...</span>
               </span>
             ) : (

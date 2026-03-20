@@ -1,4 +1,4 @@
-import type { Task, ReviewFinding, ReviewArtifact } from '../types';
+import type { Task, ReviewFinding, ReviewArtifact, InteractionDepth } from '../types';
 
 export function slugify(text: string): string {
   return text
@@ -105,6 +105,62 @@ export function hasCriticalUnfixable(artifact: ReviewArtifact): boolean {
 /**
  * Build the review prompt for Claude code review.
  */
+/**
+ * Returns prompt instructions that control how Claude interacts during a build,
+ * based on the task's interaction depth.
+ */
+export function buildDepthInstructions(depth: InteractionDepth): string {
+  switch (depth) {
+    case 'small':
+      return '';
+    case 'medium':
+      return `
+IMPORTANT — INTERACTION PROTOCOL:
+Before you start writing any code, pause and confirm your approach with the user.
+Emit exactly ONE <DECISION> block describing your planned approach:
+
+<DECISION>
+  <question>Brief question about your approach</question>
+  <context>What you found in the codebase and why you're proposing this approach</context>
+  <options>
+    <option>Approach A description</option>
+    <option>Approach B description</option>
+  </options>
+</DECISION>
+
+After emitting the <DECISION> block, STOP and wait. Do not write any code until you receive the user's response in a follow-up message. The user will either pick an option or provide free-form guidance. Then proceed with the build based on their response.
+
+You must emit exactly ONE <DECISION> block, before any code changes. Do not emit more than one.
+`;
+    case 'large':
+      return `
+IMPORTANT — INTERACTION PROTOCOL:
+This is a complex task that requires human collaboration. You MUST pause and ask the user at key decision points during the build.
+
+Emit a <DECISION> block whenever you encounter:
+- Architectural choices (e.g., which pattern to use, where to put new code)
+- Ambiguity in the requirements that could go multiple ways
+- Tradeoffs that affect performance, security, or maintainability
+- Unexpected complexity or findings in the codebase
+- Any point where you're choosing between meaningfully different approaches
+
+Format for each decision point:
+<DECISION>
+  <question>Clear question for the user</question>
+  <context>What you've found and why this decision matters</context>
+  <options>
+    <option>Option A</option>
+    <option>Option B</option>
+  </options>
+</DECISION>
+
+After emitting a <DECISION> block, STOP and wait. Do not continue working until you receive the user's response. The user will provide guidance, then you should continue building.
+
+You may emit multiple <DECISION> blocks throughout the build as needed. Always pause after each one.
+`;
+  }
+}
+
 export function buildReviewPrompt(task: Task, diff: string): string {
   const truncatedDiff = diff.slice(0, 50000);
   return `You are a senior code reviewer. Review this diff for task "${task.title}".

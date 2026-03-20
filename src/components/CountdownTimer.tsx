@@ -30,9 +30,9 @@ function formatCountdown(ms: number): { text: string; urgency: 'normal' | 'warni
 
 const urgencyStyles: Record<string, string> = {
   normal: 'text-ink-secondary',
-  warning: 'text-houston-amber shadow-glow-amber',
-  critical: 'text-houston-red animate-houston-blink',
-  overtime: 'text-houston-red',
+  warning: 'text-mc-amber shadow-glow-amber',
+  critical: 'text-mc-red animate-mc-blink',
+  overtime: 'text-mc-red',
 };
 
 export default function CountdownTimer({ deadline }: CountdownTimerProps) {

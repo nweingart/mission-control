@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import houstonAvatar from '../../assets/houston-avatar.webp';
+import mcAvatar from '../../assets/mc-avatar.webp';
 
 const INSPIRATION_EXAMPLES = [
   'A habit tracker with streaks and reminders',
@@ -58,10 +58,10 @@ export default function StageLaunch() {
 
   return (
     <div className="max-w-xl w-full">
-      {/* Houston avatar with celebration glow */}
+      {/* Assistant avatar with celebration glow */}
       <div className="flex flex-col items-center mb-6">
-        <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-spectrum-blue mb-4 shadow-glow-blue animate-houston-pulse">
-          <img src={houstonAvatar} alt="Houston" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
+        <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-accent mb-4 shadow-glow-green animate-mc-pulse">
+          <img src={mcAvatar} alt="Assistant" className="w-full h-full object-cover scale-[1.3] translate-y-[15%]" />
         </div>
         <div className="card-panel p-4 max-w-md text-center">
           <p className="text-sm text-ink leading-relaxed">

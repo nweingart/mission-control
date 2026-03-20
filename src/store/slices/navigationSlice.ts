@@ -3,6 +3,7 @@ import type { AppState } from '../useAppStore';
 import type { Screen } from '../../types';
 import { getOrCreateProjectStore, destroyProjectStore, getProjectStoreBySlug } from '../projectStoreRegistry';
 import { cancelBuildAgents } from '../../utils/agent-router';
+import { clearProjectChat } from '../../utils/assistant-chat-state';
 
 const MAX_OPEN_PROJECTS = 5;
 
@@ -22,10 +23,7 @@ export interface NavigationSlice {
   goToProjectHome: () => void;
 
   goToHome: () => void;
-  startNewProject: () => void;
   startImportProject: () => void;
-  goToDiscovery: () => void;
-  goToPRDReview: () => void;
   goToPlanning: () => void;
   goToBuilding: () => void;
   goToPreview: () => void;
@@ -71,13 +69,6 @@ export const createNavigationSlice: StateCreator<AppState, [], [], NavigationSli
     });
   },
 
-  startNewProject: () => {
-    set({
-      screen: 'idea',
-      activeProjectSlug: null,
-    });
-  },
-
   startImportProject: () => {
     set({
       screen: 'import',
@@ -85,8 +76,6 @@ export const createNavigationSlice: StateCreator<AppState, [], [], NavigationSli
     });
   },
 
-  goToDiscovery: () => set({ screen: 'discovery' }),
-  goToPRDReview: () => set({ screen: 'prd-review' }),
   goToPlanning: () => set({ screen: 'planning' }),
   goToBuilding: () => set({ screen: 'building' }),
   goToPreview: () => set({ screen: 'previewing' }),
@@ -110,9 +99,11 @@ export const createNavigationSlice: StateCreator<AppState, [], [], NavigationSli
       if (store) {
         // Cancel any running builds before destroying
         try {
-          await cancelBuildAgents([]);
+          const chatIds = store.getState().activeBuildChatIds;
+          await cancelBuildAgents(chatIds);
         } catch { /* best effort */ }
         destroyProjectStore(oldestSlug);
+        clearProjectChat(oldestSlug);
       }
       set({ openProjectSlugs: openProjectSlugs.slice(1) });
     }
@@ -147,7 +138,8 @@ export const createNavigationSlice: StateCreator<AppState, [], [], NavigationSli
         );
         if (!confirmed) return;
         try {
-          await cancelBuildAgents([]);
+          const chatIds = store.getState().activeBuildChatIds;
+          await cancelBuildAgents(chatIds);
         } catch { /* best effort */ }
       }
     }
@@ -155,6 +147,7 @@ export const createNavigationSlice: StateCreator<AppState, [], [], NavigationSli
     // Remove from open list
     const newSlugs = openProjectSlugs.filter(s => s !== slug);
     destroyProjectStore(slug);
+    clearProjectChat(slug);
 
     // If closing the active project, switch to the next one or go home
     let newActive = activeProjectSlug;

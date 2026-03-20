@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { waitForStore, waitForStoreValue } from '../lib/storeWatcher';
+import type { GapFinding } from '../types';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -532,7 +533,7 @@ Do not ask questions - make reasonable decisions and proceed.`;
       pass: 1,
       grade: parsedAnalysis.grade,
       validatedGrade: parsedMeta.validatedGrade,
-      findings: (parsedMeta.adjustedFindings || []) as any,
+      findings: (parsedMeta.adjustedFindings || []) as GapFinding[],
       summary: parsedMeta.summary,
       fixesApplied: false,
       remainingItems: parsedMeta.remainingItems || [],
@@ -570,7 +571,7 @@ Do not ask questions - make reasonable decisions and proceed.`;
       checkCancelled();
 
       const reJson = extractJsonObject(reResponse);
-      let reParsed: { grade: number; summary: string; findings: any[]; remainingItems: string[] };
+      let reParsed: { grade: number; summary: string; findings: GapFinding[]; remainingItems: string[] };
 
       if (reJson) {
         try { reParsed = JSON.parse(reJson); } catch {
@@ -586,7 +587,7 @@ Do not ask questions - make reasonable decisions and proceed.`;
       checkCancelled();
 
       const reMetaJson = extractJsonObject(reMetaResponse);
-      let reMetaParsed: { validatedGrade: number; summary: string; adjustedFindings: any[]; remainingItems: string[] };
+      let reMetaParsed: { validatedGrade: number; summary: string; adjustedFindings: GapFinding[]; remainingItems: string[] };
 
       if (reMetaJson) {
         try { reMetaParsed = JSON.parse(reMetaJson); } catch {
@@ -608,7 +609,7 @@ Do not ask questions - make reasonable decisions and proceed.`;
         pass: 2,
         grade: reParsed.grade,
         validatedGrade: reMetaParsed.validatedGrade,
-        findings: (reMetaParsed.adjustedFindings || []) as any,
+        findings: (reMetaParsed.adjustedFindings || []) as GapFinding[],
         summary: reMetaParsed.summary,
         fixesApplied: true,
         remainingItems: reMetaParsed.remainingItems || [],
@@ -1045,7 +1046,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
 
     // Clear planning data and git events
     store.getState().setActivePlanningChat(null);
-    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksLanded: 0, totalLaunches: 0, milestones: [] }, gamificationEvent: null, houstonGreeting: null, houstonApproval: null, houstonErrorContext: null, houstonHumanTaskContext: null, toasts: [] });
+    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, oneOffBacklogItemId: null, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksCompleted: 0, totalBuilds: 0, milestones: [] }, gamificationEvent: null, assistantGreeting: null, assistantApproval: null, assistantErrorContext: null, assistantHumanTaskContext: null, toasts: [], buildPipelineResume: null, buildPipelineAutoApprove: null });
 
     // Clear checkpoint
     localStorage.removeItem('e2e-checkpoint');
@@ -1249,7 +1250,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
     store.getState().clearTerminalOutput();
 
     store.getState().setActivePlanningChat(null);
-    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksLanded: 0, totalLaunches: 0, milestones: [] }, gamificationEvent: null, houstonGreeting: null, houstonApproval: null, houstonErrorContext: null, houstonHumanTaskContext: null, toasts: [] });
+    store.setState({ gitEvents: [], backlog: [], sprints: [], planningChats: [], deployments: [], gapAnalyses: [], saveError: null, projectHomeTab: 'plan' as const, planSubTab: 'planning' as const, shipSubTab: 'commits' as const, buildTaskPhase: 'idle' as const, buildCurrentTaskId: null, buildSessionActive: false, oneOffBacklogItemId: null, gamification: { streakCount: 0, lastActivityDate: null, streakFreezeUsedThisWeek: false, lastFreezeWeek: null, totalTasksCompleted: 0, totalBuilds: 0, milestones: [] }, gamificationEvent: null, assistantGreeting: null, assistantApproval: null, assistantErrorContext: null, assistantHumanTaskContext: null, toasts: [], buildPipelineResume: null, buildPipelineAutoApprove: null });
 
     // Clear checkpoint
     localStorage.removeItem('e2e-checkpoint');
@@ -1282,7 +1283,7 @@ Please suggest 2-3 V2 features that would naturally extend this MVP. Use the exa
     const failed = phases.filter(p => p.status === 'failed').length;
     const skipped = phases.filter(p => p.status === 'skipped').length;
 
-    let report = `HOUSTON E2E TEST REPORT\n`;
+    let report = `MC E2E TEST REPORT\n`;
     report += `========================\n`;
     report += `Date: ${ts}\n`;
     report += `Idea: ${config.idea}\n`;

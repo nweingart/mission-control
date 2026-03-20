@@ -1,4 +1,4 @@
--- Houston Pro subscriptions table
+-- Mission Control Pro subscriptions table
 CREATE TABLE IF NOT EXISTS public.subscriptions (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,

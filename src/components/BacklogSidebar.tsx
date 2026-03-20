@@ -299,8 +299,8 @@ export default function BacklogSidebar({
         {mediumItems.length > 0 && (
           <div className="space-y-1">
             <div className="flex items-center gap-2 px-1 py-1.5">
-              <span className="w-2.5 h-2.5 bg-spectrum-blue rounded" />
-              <span className="font-display font-bold text-[14px] text-spectrum-blue">
+              <span className="w-2.5 h-2.5 bg-accent rounded" />
+              <span className="font-display font-bold text-[14px] text-accent">
                 Medium Priority
               </span>
               <span className="text-xs text-ink-muted font-medium">({mediumItems.length})</span>
