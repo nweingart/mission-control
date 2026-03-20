@@ -1,5 +1,14 @@
 import type { CLIStatus, Project, Task, Config, ChatMessage, BacklogItem, Sprint, PlanningChat, GitEvent, DeploymentRecord, GapAnalysis, GamificationStats, ChatResult, AgentProvider, FeatureModule, CodeIssue, ScanSnapshot } from './index';
 
+export interface ClaudeStreamEvent {
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'error' | 'done';
+  content?: string;
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+  toolResult?: string;
+  isError?: boolean;
+}
+
 export interface ElectronAPI {
   // Storage
   storage: {
@@ -56,10 +65,14 @@ export interface ElectronAPI {
     spawn: (projectPath: string, prompt: string) => Promise<string>;
     spawnInteractive: (projectPath: string) => Promise<string>;
     chat: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) => Promise<ChatResult>;
+    chatStreaming: (projectPath: string, prompt: string, inactivityTimeoutMs?: number, chatId?: string) => Promise<ChatResult>;
+    chatWithResume: (projectPath: string, prompt: string, sessionId: string | null, inactivityTimeoutMs?: number, chatId?: string) => Promise<{ response: string; sessionId: string }>;
     onOutput: (callback: (data: { sessionId: string; type: 'stdout' | 'stderr'; content: string }) => void) => void;
     onChatOutput: (callback: (content: string) => void) => void;
     onChatOutputForTask: (chatId: string, callback: (content: string) => void) => void;
     offChatOutputForTask: (chatId: string) => void;
+    onStreamEventForTask: (chatId: string, callback: (event: ClaudeStreamEvent) => void) => void;
+    offStreamEventForTask: (chatId: string) => void;
     onExit: (callback: (data: { sessionId: string; code: number }) => void) => void;
     sendInput: (sessionId: string, input: string) => Promise<void>;
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>;
@@ -109,7 +122,7 @@ export interface ElectronAPI {
       headSha: string; createdAt: string; event: string;
     }>>;
     writeWorkflowFile: (projectPath: string, content: string) => Promise<void>;
-    runShellCommand: (cwd: string, command: string) => Promise<string>;
+    runShellCommand: (cwd: string, command: string, args?: string[]) => Promise<string>;
     deleteRepo: (repoUrl: string) => Promise<void>;
     createWorktree: (repoPath: string, worktreePath: string, branchName: string, startPoint?: string) => Promise<void>;
     removeWorktree: (repoPath: string, worktreePath: string) => Promise<void>;
@@ -165,6 +178,10 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     api: ElectronAPI;
+    openAssistant?: () => void;
+    openFlowTest?: () => void;
+    openE2ETest?: () => void;
+    openCICDTest?: () => void;
   }
 }
 

@@ -211,7 +211,7 @@ export class GitHubService {
       }
 
       if (entriesToAdd.length > 0) {
-        const appendContent = '\n# Added by Houston\n' + entriesToAdd.join('\n') + '\n';
+        const appendContent = '\n# Added by Mission Control\n' + entriesToAdd.join('\n') + '\n';
         writeFileSync(gitignorePath, existing + appendContent, 'utf-8');
       }
     }
@@ -579,10 +579,20 @@ export class GitHubService {
     writeFileSync(join(workflowDir, 'deploy.yml'), content, 'utf-8');
   }
 
-  async runShellCommand(cwd: string, command: string): Promise<string> {
-    const args = command.split(' ');
-    const cmd = args.shift()!;
-    const { stdout, stderr, code } = await runCommand(cmd, args, cwd, undefined, 5 * 60 * 1000);
+  async runShellCommand(cwd: string, command: string, args: string[] = []): Promise<string> {
+    let cmd: string;
+    let cmdArgs: string[];
+    if (args.length > 0) {
+      // New safe path: command + pre-split args
+      cmd = command;
+      cmdArgs = args;
+    } else {
+      // Legacy fallback: split on spaces (only used if no args provided)
+      const parts = command.split(' ');
+      cmd = parts.shift()!;
+      cmdArgs = parts;
+    }
+    const { stdout, stderr, code } = await runCommand(cmd, cmdArgs, cwd, undefined, 5 * 60 * 1000);
     if (code !== 0) {
       throw new Error(stderr || `Command failed with code ${code}`);
     }

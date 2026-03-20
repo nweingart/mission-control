@@ -42,7 +42,7 @@ export default function ImportScreen() {
       // Clone the repo
       await window.api.github.runShellCommand(
         config.developmentPath,
-        `git clone ${fullUrl} ${parsed.repo}`
+        'git', ['clone', fullUrl, parsed.repo]
       );
 
       // Create the project record and open it
@@ -97,7 +97,7 @@ export default function ImportScreen() {
           Import Repository
         </h1>
         <p className="text-ink-muted text-sm mb-8">
-          Enter a GitHub repository URL. Houston will clone it and scan the codebase to generate
+          Enter a GitHub repository URL. Mission Control will clone it and scan the codebase to generate
           documentation, find bugs, and map features.
         </p>
 

@@ -27,11 +27,11 @@ const setupSessions: Map<string, pty.IPty> = new Map();
 // Shared mutable state for dev server session (passed to IPC handler module)
 const devServerState: { session: { pty: pty.IPty; sessionId: string } | null } = { session: null };
 
-// Register houston:// custom protocol for OAuth/Stripe callbacks
+// Register missioncontrol:// custom protocol for OAuth/Stripe callbacks
 if (process.defaultApp) {
-  app.setAsDefaultProtocolClient('houston', process.execPath, [__dirname]);
+  app.setAsDefaultProtocolClient('missioncontrol', process.execPath, [__dirname]);
 } else {
-  app.setAsDefaultProtocolClient('houston');
+  app.setAsDefaultProtocolClient('missioncontrol');
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -158,7 +158,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-// Handle houston:// deep links (macOS)
+// Handle missioncontrol:// deep links (macOS)
 app.on('open-url', (event, url) => {
   event.preventDefault();
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -249,6 +249,34 @@ ipcMain.handle('claude:chat', async (event, projectPath, prompt, inactivityTimeo
     return result;
   } catch (err) {
     console.error('[main.ts] claude:chat error:', err);
+    throw err;
+  }
+});
+ipcMain.handle('claude:chatStreaming', async (event, projectPath, prompt, inactivityTimeoutMs?, chatId?) => {
+  console.log('[main.ts] claude:chatStreaming IPC handler called');
+  try {
+    const result = await claudeCodeService.chatStreaming(projectPath, prompt, (streamEvent) => {
+      safeSend('claude:streamEvent', { chatId: chatId || '__legacy__', event: streamEvent });
+    }, (content) => {
+      safeSend('claude:chatOutput', { chatId: chatId || '__legacy__', content });
+    }, inactivityTimeoutMs, chatId);
+    return result;
+  } catch (err) {
+    console.error('[main.ts] claude:chatStreaming error:', err);
+    throw err;
+  }
+});
+ipcMain.handle('claude:chatWithResume', async (event, projectPath, prompt, sessionId, inactivityTimeoutMs?, chatId?) => {
+  console.log('[main.ts] claude:chatWithResume IPC handler called, session:', sessionId || 'new');
+  try {
+    const result = await claudeCodeService.chatWithResume(projectPath, prompt, sessionId, (streamEvent) => {
+      safeSend('claude:streamEvent', { chatId: chatId || '__legacy__', event: streamEvent });
+    }, (content) => {
+      safeSend('claude:chatOutput', { chatId: chatId || '__legacy__', content });
+    }, inactivityTimeoutMs, chatId);
+    return result;
+  } catch (err) {
+    console.error('[main.ts] claude:chatWithResume error:', err);
     throw err;
   }
 });
@@ -371,8 +399,8 @@ ipcMain.handle('github:getWorkflowRuns', (_, projectPath: string, limit?: number
 ipcMain.handle('github:writeWorkflowFile', (_, projectPath: string, content: string) => {
   return githubService.writeWorkflowFile(projectPath, content);
 });
-ipcMain.handle('github:runShellCommand', (_, cwd: string, command: string) => {
-  return githubService.runShellCommand(cwd, command);
+ipcMain.handle('github:runShellCommand', (_, cwd: string, command: string, args?: string[]) => {
+  return githubService.runShellCommand(cwd, command, args);
 });
 ipcMain.handle('github:deleteRepo', (_, repoUrl: string) => githubService.deleteRepo(repoUrl));
 ipcMain.handle('github:createWorktree', (_, repoPath: string, worktreePath: string, branchName: string, startPoint?: string) =>
